@@ -103,7 +103,7 @@ def update_sales(page, company_id):
 
 
 def home(page, company):
-    page.goto('/')
+    page.goto('/#/map')
     page.get_by_test_id('company-switcher').select_option(str(company['company_id']))
     stage = page.get_by_test_id('map-stage')
     expect(stage).to_be_visible()

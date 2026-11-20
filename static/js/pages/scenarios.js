@@ -11,7 +11,7 @@ document.addEventListener('alpine:init', () => {
         models: [], saved: [], drivers: [], scope: '', scenarioIds: [], driverIds: [],
         weeks: 52, variation: 10, kpi: 'profit', comparison: null, tornado: null,
         busy: '', error: '',
-        kpis, number, signed, enterpriseResultContext,
+        kpis, number, signed, animateValue, enterpriseResultContext,
         get scopes() {
             const models = new Map(this.models.map(row => [row.id, row.name]));
             const options = new Map([['demo', 'ديمو شركة روافد']]);
@@ -54,7 +54,7 @@ document.addEventListener('alpine:init', () => {
             return this.perform('load', async () => {
                 [this.models, this.saved] = await Promise.all([api('/enterprise/models'), api(base)]);
                 const app = this.$store.app;
-                const model = app.isOnboardingCompany && this.models.find(item => item.company_id === app.companyId);
+                const model = this.models.find(item => item.company_id === app.companyId);
                 if (model) this.scope = scopeKey({ ...model, model_id: model.id });
                 else if (!(this.scope in this.scopes)) this.scope = this.saved.length ? scopeKey(this.saved[0]) : 'demo';
                 await this.loadDrivers();

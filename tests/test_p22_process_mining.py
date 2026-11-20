@@ -230,7 +230,7 @@ def test_process_flow_browser(width):
                 route.abort()
 
         page.route('**/*', local_only)
-        page.goto('/')
+        page.goto('/#/map')
         login(page, 'qa-owner')
         source = page.get_by_test_id('process-flow-source')
         expect(source).to_have_text('افتراضي')

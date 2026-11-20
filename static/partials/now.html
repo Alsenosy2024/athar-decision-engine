@@ -1,0 +1,129 @@
+<header class="now-heading">
+    <div><p class="now-context"><span></span><bdi x-text="$store.app.company?.name"></bdi></p><h1>الآن</h1></div>
+    <a class="now-text-link" href="#/map">الخريطة الحية <span aria-hidden="true">←</span></a>
+</header>
+<p class="notice error" role="alert" x-show="error" x-text="error"></p>
+<p class="now-loading" role="status" x-show="busy">بنحمّل مؤشرات الشركة…</p>
+<template x-if="snapshot">
+    <div class="now-grid">
+        <section class="now-kpis" aria-label="المؤشرات الرئيسية">
+            <template x-for="(kpi, index) in snapshot.kpis" :key="kpi.name">
+                <article class="now-card now-kpi" :data-kpi="index" :data-tone="change(kpi).tone">
+                    <h2>
+                        <button type="button" class="now-kpi-link" x-show="canFocus(kpi.focus)"
+                                @click="openEntity([kpi.focus])" x-text="kpi.name"></button>
+                        <span x-show="!canFocus(kpi.focus)" x-text="kpi.name"></span>
+                    </h2>
+                    <div class="now-kpi-main">
+                        <div class="now-value"><bdi x-effect="animateValue($el, kpi.value)"></bdi>
+                            <small x-show="kpi.value != null" x-text="unit(kpi.unit)"></small></div>
+                        <div class="now-spark" x-show="kpi.points.length > 1">
+                            <canvas role="img" :aria-label="'اتجاه ' + kpi.name"
+                                    x-effect="paintSpark($el, kpi, index, $store.app.theme)"></canvas>
+                        </div>
+                    </div>
+                    <div class="now-delta"><bdi x-text="[change(kpi).arrow, change(kpi).text].filter(Boolean).join(' ')"></bdi></div>
+                    <p class="now-source" x-text="sourceText(kpi, pointPeriod(kpi))"></p>
+                </article>
+            </template>
+        </section>
+
+        <div class="now-analysis">
+            <article class="now-card now-chart-card">
+                <header class="now-card-head">
+                    <div><p class="now-eyebrow">التوقع</p><h2 x-text="forecastPoint?.name || 'نطاق التوقع'"></h2></div>
+                    <template x-if="snapshot.forecast?.series.length > 1">
+                        <select aria-label="سلسلة التوقع" :value="forecastKey" @change="forecastKey = $event.target.value">
+                            <template x-for="series in snapshot.forecast.series" :key="series.key">
+                                <option :value="series.key" :selected="series.key === forecastKey" x-text="series.name"></option>
+                            </template>
+                        </select>
+                    </template>
+                </header>
+                <template x-if="forecastPoint">
+                    <div>
+                        <div class="now-legend">
+                            <span class="legend-band" x-text="bandLabel('p10')"></span>
+                            <span class="legend-mid">P50 · متوقع</span>
+                            <span class="legend-band" x-text="bandLabel('p90')"></span>
+                        </div>
+                        <div class="now-chart now-fan"><canvas role="img"
+                             :aria-label="'نطاق التوقع لـ' + forecastPoint.name + ' · آخر نقطة: ' + [forecastPoint.p10.at(-1), forecastPoint.p50.at(-1), forecastPoint.p90.at(-1)].map(number).join('، ') + ' ' + unit(snapshot.forecast.unit)"
+                             x-effect="paintForecast($el, forecastPoint, $store.app.theme)"></canvas></div>
+                        <p class="now-source" x-text="sourceText(snapshot.forecast,
+                            forecastPoint.labels.length > 1 ? forecastPoint.labels[0] + ' – ' + forecastPoint.labels.at(-1) : forecastPoint.labels[0])"></p>
+                    </div>
+                </template>
+                <div class="now-empty" x-show="!forecastPoint">
+                    <p>مفيش توقع محفوظ للشركة.</p>
+                    <a :href="$store.app.isOnboardingCompany ? '/ai?company_id=' + $store.app.companyId : '#/forecast'">افتح التوقعات</a>
+                </div>
+            </article>
+            <article class="now-card now-chart-card">
+                <header class="now-card-head">
+                    <div><p class="now-eyebrow">Monte Carlo</p><h2>توزيع مخاطر التأخير</h2></div>
+                    <span class="now-sample" x-show="snapshot.simulation" x-text="number(snapshot.simulation?.n) + ' تجربة'"></span>
+                </header>
+                <template x-if="snapshot.simulation">
+                    <div>
+                        <div class="now-legend">
+                            <span class="legend-median">P50 <bdi x-effect="animateValue($el, snapshot.simulation.p50)"></bdi></span>
+                            <span class="legend-tail">CVaR 95% <bdi x-effect="animateValue($el, snapshot.simulation.cvar)"></bdi></span>
+                            <span class="legend-risk">الذيل الأعلى</span>
+                        </div>
+                        <div class="now-chart now-histogram"><canvas role="img" aria-label="توزيع نتائج التأخير وعدد التجارب، مع الوسيط ومتوسط أسوأ خمسة بالمئة"
+                             x-effect="paintSimulation($el, snapshot.simulation, $store.app.theme)"></canvas></div>
+                        <p class="now-source" x-text="sourceText(snapshot.simulation)"></p>
+                    </div>
+                </template>
+                <div class="now-empty" x-show="!snapshot.simulation">
+                    <p>مفيش توزيع Monte Carlo محفوظ للخطة الحالية.</p>
+                    <a x-show="!$store.app.isOnboardingCompany" href="#/whatif">افتح المحاكاة</a>
+                </div>
+            </article>
+        </div>
+
+        <section class="now-decisions" aria-labelledby="now-decisions-title" x-html="decisionMarkup"></section>
+        <article class="now-card now-actual">
+            <header class="now-card-head"><div><p class="now-eyebrow">الفعلي مقابل الخطة</p><h2>إحنا فين؟</h2></div>
+                <a class="now-text-link" x-show="!$store.app.isOnboardingCompany" href="#/actuals">الفعلي <span aria-hidden="true">←</span></a>
+            </header>
+            <template x-if="snapshot.actuals">
+                <div>
+                    <p x-show="snapshot.actuals.name" x-text="snapshot.actuals.name"></p>
+                    <div class="now-actual-values">
+                        <span>فعلي <bdi x-effect="animateValue($el, snapshot.actuals.actual)"></bdi> <small x-text="unit(snapshot.actuals.unit)"></small></span>
+                        <span>خطة <bdi x-effect="animateValue($el, snapshot.actuals.plan)"></bdi></span>
+                    </div>
+                    <div class="now-chart now-bullet"><canvas role="img" aria-label="شريط الفعلي وعلامة الخطة"
+                         x-effect="paintActual($el, snapshot.actuals, $store.app.theme)"></canvas></div>
+                    <p class="now-source" x-text="sourceText(snapshot.actuals) + ' · ' + number(snapshot.actuals.count) + ' بند مقاس'"></p>
+                </div>
+            </template>
+            <div class="now-empty" x-show="!snapshot.actuals"><p>مفيش قياس فعلي مرتبط بخطة معتمدة.</p></div>
+        </article>
+
+        <article class="now-card now-map" x-show="mapReady">
+            <header class="now-card-head">
+                <div><p class="now-eyebrow">النموذج المؤسسي</p><h2>الخريطة الحية</h2></div>
+                <a class="now-text-link" href="#/map">افتح الخريطة <span aria-hidden="true">←</span></a>
+            </header>
+            <template x-if="preview.departments.length">
+                <div class="lm-stage now-map-stage" x-effect="paintMap($el, preview, $store.app.theme)">
+                    <canvas aria-hidden="true"></canvas>
+                    <div class="lm-departments">
+                        <template x-for="dept in preview.departments" :key="dept.id">
+                            <button class="lm-department" type="button" :data-department="dept.id" style="--lm-enter:0"
+                                    @click="openEntity([dept.id])">
+                                <span class="lm-node-label"><i aria-hidden="true"></i><span x-text="dept.name_ar"></span></span>
+                                <bdi class="lm-node-value" x-text="previewValue(dept)"></bdi>
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </template>
+            <div class="now-empty" x-show="!preview.departments.length"><p>مفيش شبكة أقسام مرتبطة بالشركة.</p><a href="#/enterprise">اربط نموذج مؤسسي</a></div>
+            <p class="now-source" x-show="preview.departments.length" x-text="previewCaption"></p>
+        </article>
+    </div>
+</template>

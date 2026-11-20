@@ -61,13 +61,12 @@ def motion(page, files, size):
     profit = next(row['after'] for row in result['nodes'] if row['id'] == 'pnl.result')
     assert first['targetValue'] == second['targetValue'] == profit == 490
     assert 490 < second['renderedValue'] < first['renderedValue'] < old_value == 1090
-    page.clock.run_for(800)
-    assert chart.evaluate('''canvas => {
-        const chart = Chart.getChart(canvas);
+    page.clock.resume()
+    page.wait_for_function('''() => {
+        const chart = Chart.getChart(document.querySelector('[data-testid=chart-impact-pnl]'));
         const bar = chart.getDatasetMeta(1).data[chart.data.labels.indexOf('النتيجة')];
         return bar.x === bar.getProps(['x'], true).x;
     }''')
-    page.clock.resume()
     page.emulate_media(reduced_motion='reduce')
     page.get_by_test_id('impact-value').fill('-40')
     post_from(page, '/enterprise/whatif', run)
@@ -137,7 +136,7 @@ def ready_company(page, files, size):
         goal.get_by_label('المدخل القابل للتحكم').select_option('price')
         goal.get_by_label('إلى', exact=True).fill('30')
         goal.get_by_label('زيادة الربح المطلوبة (%)').fill('5')
-        goal.get_by_label('أقل سيولة مقبولة (ريال)').fill('1500')
+        goal.get_by_label('الحد الأدنى المقبول للسيولة (ر.س)').fill('1500')
         advice = post_from(page, '/enterprise/map/goal-seek', goal.get_by_role('button', name='دور على توصيات'))
         assert advice['evaluated_trials'] == 4 and advice['recommendations'][0]['target_met']
         recommendations = page.get_by_test_id('map-recommendations')
@@ -154,14 +153,15 @@ def exercise(browser, origin, files, width, height):
     page.on('pageerror', lambda error: errors.append(str(error)))
     page.on('console', lambda event: errors.append(event.text) if event.type == 'error' else None)
     page.route('**/*', lambda route: route.continue_() if route.request.url.startswith(origin + '/') else route.abort())
-    page.goto('/')
+    page.goto('/#/map')
+    login(page, 'qa-owner')
     with page.expect_response(lambda response: '/api/enterprise/map/baseline?' in response.url,
                               timeout=90_000) as baseline:
-        login(page, 'qa-owner')
+        page.get_by_role('button', name='افتح ديمو روافد').click()
     assert baseline.value.ok, baseline.value.text()
     executive = page.get_by_test_id('map-kpis')
     expect(executive.locator('article')).to_have_count(4)
-    profit = page.evaluate('value => number(value)', baseline.value.json()['profit'])
+    profit = page.evaluate('value => number(value)', baseline.value.json()['kpis']['profit'])
     expect(executive.locator('.lm-ribbon-value bdi').first).to_have_text(profit)
     capture(page, size, '.lm-identity h1', None)
     assert executive.locator('article').first.bounding_box()['y'] < height

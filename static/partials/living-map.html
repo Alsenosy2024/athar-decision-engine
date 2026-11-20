@@ -18,7 +18,7 @@
           <strong x-text="number(map.readiness) + '%'"></strong>
         </div>
         <button class="lm-action lm-baseline-button" type="button"
-                x-show="editable && map.has_engines && !result && !baselineKpis && !map.analysis_error"
+                x-show="editable && map?.has_engines && !result && !baselineKpis && !map.analysis_error"
                 :disabled="!!busy || baselineLoading" @click="refreshExecutiveBaseline()"
                 x-text="baselineLoading ? 'بنحسب المؤشرات…' : 'احسب خط الأساس'"></button>
         <button class="lm-action" type="button" @click="toggleDemo()"
@@ -68,7 +68,11 @@
       <div class="lm-ribbon executive-grid" aria-label="مؤشرات الشركة" data-testid="map-kpis">
         <template x-for="metric in executiveMetrics" :key="metric.id">
           <article :data-tone="executiveChange(metric).tone">
-            <h2 x-text="metric.label"></h2>
+            <h2>
+              <button class="now-kpi-link" type="button" x-show="hasEntity(metric.node_id)"
+                      @click="focusEntity(metric.node_id, true)" x-text="metric.label"></button>
+              <span x-show="!hasEntity(metric.node_id)" x-text="metric.label"></span>
+            </h2>
             <div class="lm-ribbon-value">
               <bdi x-effect="animateValue($el, metric.headline)"
                    :aria-label="mapValue(metric.headline, metric.unit)"></bdi>
@@ -185,32 +189,39 @@
             <span class="lm-pill" data-testid="process-flow-source" x-text="flowSourceLabel"></span>
             <p><bdi x-text="map.departments.length"></bdi> قسم · <bdi x-text="showsCausalRoads ? map?.edges.length : observedRoads.length"></bdi> طريق</p>
           </div>
-          <select x-show="map.departments.length" aria-label="تركيز على قسم" x-model="focus" @change="selectAlert('')">
+          <div class="lm-focus-tools">
+          <button class="lm-action" type="button" x-show="focus" @click="resetEntityFocus()" data-testid="map-reset-focus">رجوع للكل</button>
+          <select x-show="map.departments.length" aria-label="تركيز على قسم" x-model="focus" @change="selectAlert(''); focusedEntityName = focusedNodeId = ''">
             <option value="">كل الأقسام</option>
             <template x-for="dept in map.departments" :key="dept.id">
               <option :value="dept.id" x-text="dept.name_ar"></option>
             </template>
           </select>
+          </div>
         </header>
+        <p class="lm-focus-name" role="status" x-show="focusedEntityName" x-text="'التركيز على ' + focusedEntityName"></p>
         <div class="lm-stage" x-show="map.departments.length" x-ref="livingStage" data-testid="map-stage"
              x-effect="paint($store.app.theme)" :data-ripple="playing ? 'running' : (result || simulation) ? 'complete' : 'idle'"
              :data-active-flows="processFrame ? processFrame.flows.filter(row => row.from_department !== row.to_department).length : 0">
+          <div class="lm-camera" :data-focused="String(!!focus)" x-effect="positionCamera($el, focus)">
           <canvas aria-hidden="true"></canvas>
           <div class="lm-departments">
             <template x-for="(dept, index) in map.departments" :key="dept.id">
               <button class="lm-department" type="button" :data-department="dept.id"
                       :data-tone="deptTone(dept)" :data-traced="String(traced(dept.id))" :aria-pressed="focus === dept.id"
-                      :style="'--lm-enter:' + index" @click="openDepartment(dept.id)">
+                      :style="{'--lm-enter': index, '--lm-weight': departmentImpact(dept)}"
+                      @click="focusedEntityName = focusedNodeId = ''; openDepartment(dept.id)">
                 <span class="lm-node-label"><i aria-hidden="true"></i><span x-text="dept.name_ar"></span></span>
-                <span class="lm-node-measure" x-show="dept.headline_id" x-text="label(dept.headline_id)"></span>
-                <bdi class="lm-node-value" x-show="dept.headline_id"
-                     x-effect="animateValue($el, nodeAtWeek(dept.headline_id)?.value, value => mapValue(value, unit(dept.headline_id)))"></bdi>
-                <span class="lm-node-meta" x-show="dept.headline_id" x-text="source(nodeAtWeek(dept.headline_id)?.source)"></span>
+                <span class="lm-node-measure" x-show="displayedNode(dept)" x-text="label(displayedNode(dept))"></span>
+                <bdi class="lm-node-value" x-show="displayedNode(dept)"
+                     x-effect="animateValue($el, nodeAtWeek(displayedNode(dept))?.value, value => mapValue(value, unit(displayedNode(dept))))"></bdi>
+                <span class="lm-node-meta" x-show="displayedNode(dept)" x-text="source(nodeAtWeek(displayedNode(dept))?.source)"></span>
                 <span class="lm-alert-pin" x-show="alertsFor(dept.id).length" data-testid="map-alert-pin">
                   <i aria-hidden="true"></i><span>تنبيهات</span><bdi x-text="number(alertsFor(dept.id).length)"></bdi>
                 </span>
               </button>
             </template>
+          </div>
           </div>
         </div>
         <div class="lm-time" x-show="map.departments.length" data-testid="map-timeline">

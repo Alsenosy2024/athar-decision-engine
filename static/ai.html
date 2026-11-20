@@ -30,7 +30,7 @@
     </div>
 </header>
 <section class="athar-assistant" x-data="atharAssistant" x-show="companyId"
-         x-effect="select(companyId, modelId, assistantVersion)"
+         x-effect="select(companyId, modelId, assistantVersion)" @keydown.window="focusOnShortcut($event)"
          x-html="markup" aria-labelledby="athar-assistant-title"></section>
 <main id="main" class="ai-main">
     <header class="page-title">

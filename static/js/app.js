@@ -18,7 +18,7 @@ const pages = [
 ];
 
 const onboardingSectors = new Set(['enterprise_company', 'trading', 'retail', 'services', 'custom']);
-const onboardingPages = new Set(['map', 'onboarding', 'enterprise', 'connectors', 'impact', 'scenarios', 'prescriptive', 'chat']);
+const onboardingPages = new Set(['dashboard', 'map', 'onboarding', 'enterprise', 'connectors', 'impact', 'scenarios', 'prescriptive', 'chat']);
 
 const locale = 'ar-SA-u-ca-gregory-nu-latn';
 const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
@@ -148,7 +148,8 @@ document.addEventListener('alpine:init', () => {
     let toastTimer;
     Alpine.store('app', {
         pages, number,
-        page: 'map',
+        page: 'dashboard',
+        entityFocus: null,
         mapDemo: false,
         user: null,
         companies: [],
@@ -171,6 +172,16 @@ document.addEventListener('alpine:init', () => {
         get company() { return this.companies.find(company => company.id === this.companyId); },
         get template() { return this.company?.template; },
         get isOnboardingCompany() { return onboardingSectors.has(this.template); },
+        get sectionTools() {
+            const groups = [
+                ['prescriptive', 'approvals'],
+                ['scenarios', 'impact', 'forecast', 'optimize', 'whatif'],
+                ['connectors', 'data', 'onboarding', 'model', 'enterprise', 'actuals'],
+            ];
+            const group = groups.find(items => items.includes(this.page));
+            if (!group) return [];
+            return group.map(key => this.visiblePages.find(([id]) => key === id)).filter(Boolean);
+        },
         get visiblePages() {
             return this.isOnboardingCompany ? this.pages.filter(([id]) => onboardingPages.has(id)) : this.pages;
         },
@@ -221,10 +232,10 @@ document.addEventListener('alpine:init', () => {
             const changed = this.companyId !== id;
             this.companyId = id;
             if (changed) {
-                this.assistantMapModel = null;
+                this.assistantMapModel = this.entityFocus = null;
                 this.mapDemo = false;
             }
-            if (changed && this.isOnboardingCompany && !['map', 'chat'].includes(this.page)) {
+            if (changed && this.isOnboardingCompany && !this.visiblePages.some(([key]) => key === this.page)) {
                 this.page = 'onboarding';
                 location.hash = '#/onboarding';
             }
@@ -236,7 +247,7 @@ document.addEventListener('alpine:init', () => {
         },
         readHash() {
             const target = location.hash.slice(2);
-            const page = pages.some(([id]) => id === target) ? target : 'map';
+            const page = pages.some(([id]) => id === target) ? target : 'dashboard';
             this.page = this.isOnboardingCompany && !onboardingPages.has(page) ? 'onboarding' : page;
         },
         setTheme(theme) {

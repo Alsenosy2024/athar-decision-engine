@@ -1,0 +1,46 @@
+<div class="now-decision-panel" x-show="snapshot">
+    <header class="now-card-head">
+        <h2 id="now-decisions-title" x-text="$store.app.page === 'dashboard' ? 'أهم 3 قرارات' : 'القرارات الأعلى أثرًا'"></h2>
+        <a class="now-text-link" href="#/prescriptive" x-show="$store.app.page === 'dashboard'">كل القرارات <span aria-hidden="true">←</span></a>
+    </header>
+    <p class="now-empty" x-show="!snapshot?.decisions.length">مفيش قرارات مسجلة للشركة.</p>
+    <div class="now-decision-grid">
+        <template x-for="item in snapshot?.decisions || []" :key="item.id">
+            <article class="now-card now-decision" :data-status="item.status">
+                <span class="now-status" x-text="statusLabel(item.status)"></span>
+                <h3>
+                    <button type="button" class="now-kpi-link"
+                            x-show="canFocusDecision(item)"
+                            @click="openEntity(item.focus, {modelId: item.model_id, version: item.version})" x-text="item.name"></button>
+                    <span x-show="!canFocusDecision(item)" x-text="item.name"></span>
+                </h3>
+                <div class="now-value"><bdi x-effect="animateValue($el, item.impact, signed)"></bdi>
+                    <small x-show="item.impact != null">ريال</small>
+                    <small x-show="item.impact == null">الأثر غير متاح</small></div>
+                <div class="now-decision-actions">
+                    <small x-text="item.confidence == null ? 'الثقة غير مسجلة' : 'ثقة فهم السؤال ' + percent(item.confidence)"></small>
+                    <button class="now-explain" type="button" @click="explain(item, $event.currentTarget)">اشرح</button>
+                </div>
+            </article>
+        </template>
+    </div>
+    <dialog class="now-dialog" x-ref="explanation" @close="returnFocus()" aria-labelledby="now-explain-heading">
+        <template x-if="selected">
+            <div>
+                <header class="now-card-head"><h2 id="now-explain-heading" x-text="selected.name"></h2>
+                    <button type="button" class="now-explain" @click="$refs.explanation.close()">اقفل</button></header>
+                <dl class="now-decision-facts">
+                    <div><dt>الحالة</dt><dd x-text="statusLabel(selected.status)"></dd></div>
+                    <div><dt x-text="selected.impact_label || 'الأثر المالي'"></dt>
+                        <dd x-text="selected.impact == null ? 'غير متاح' : signed(selected.impact) + ' ريال'"></dd></div>
+                    <div><dt x-text="selected.confidence == null ? 'الثقة' : 'ثقة فهم السؤال'"></dt><dd x-text="selected.confidence == null ? 'غير مسجلة' : percent(selected.confidence)"></dd></div>
+                </dl>
+                <p x-show="selected.before != null && selected.value != null">المرجع <bdi x-text="number(selected.before)"></bdi> ريال
+                    · المتوقع <bdi x-text="number(selected.value)"></bdi> ريال</p>
+                <p x-show="selected.note" x-text="selected.note"></p>
+                <p class="now-source" x-text="sourceText(selected, selected.created.slice(0, 10))"></p>
+                <a class="now-text-link" :href="selected.href" @click="$refs.explanation.close(); if (selected.href === '#/prescriptive') document.getElementById('decision-workflow')?.scrollIntoView()">افتح سجل المراجعة ←</a>
+            </div>
+        </template>
+    </dialog>
+</div>

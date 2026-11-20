@@ -154,7 +154,7 @@ def test_briefing_browser(width):
                 route.abort()
 
         page.route('**/*', local_only)
-        page.goto('/')
+        page.goto('/#/map')
         login(page, 'qa-owner')
         headers = {'X-CSRF-Token': page.request.get('/api/auth/me').json()['csrf_token']}
         body = signal_model()

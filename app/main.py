@@ -24,7 +24,7 @@ from app.process_mining import store as process_store
 from app.routers import embed_map, integration_keys, public_v1
 from app.routers import (
     actuals, auth, chat, companies, connectors, data, enterprise, enterprise_chat,
-    forecast, health, intelligence, living_map, map_briefing, model, onboarding, optimize, plans, prescriptive, process_mining, whatif,
+    forecast, health, intelligence, living_map, map_briefing, model, onboarding, optimize, plans, prescriptive, process_mining, ui, whatif,
 )
 from app.routers import department_owners
 from app.templates_registry import load_templates
@@ -93,7 +93,7 @@ def create_app(settings: Settings | None = None):
                    forecast.router, whatif.router, chat.router, plans.router, actuals.router, enterprise.router,
                    connectors.router, enterprise_chat.router, auth.router, onboarding.router,
                    prescriptive.router, intelligence.router, living_map.router, map_briefing.router,
-                   process_mining.router, decision_benchmark.router, decision_loop.router):
+                   process_mining.router, decision_benchmark.router, decision_loop.router, ui.router):
         application.include_router(router, prefix='/api', dependencies=[Depends(protected)])
 
     @application.exception_handler(RequestValidationError)

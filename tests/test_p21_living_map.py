@@ -200,13 +200,13 @@ def test_map_browser(width):
                 route.abort()
 
         page.route('**/*', local_only)
-        page.goto('/')
+        page.goto('/#/map')
         login(page, 'qa-owner')
         page.get_by_role('button', name='افتح ديمو روافد').click()
         stage = page.get_by_test_id('map-stage')
         expect(stage).to_be_visible()
         expect(page.get_by_role('heading', name='خريطة الشركة')).to_be_visible()
-        assert page.url == origin + '/'
+        assert page.url == origin + '/#/map'
         expect(stage.locator('[data-department]')).to_have_count(10)
         page.wait_for_function("Number(document.querySelector('.lm-stage').dataset.roadCount) > 0")
         assert stage.locator('canvas').evaluate("""el => {

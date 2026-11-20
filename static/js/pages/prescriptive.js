@@ -136,6 +136,7 @@ document.addEventListener('alpine:init', () => {
             if (live()) {
                 this.message = 'اتحفظت مسودة القرار رقم ' + number(result.id) + '.';
                 this.draftName = '';
+                window.dispatchEvent(new Event('decisions-changed'));
             }
         },
         async preview(_, live) {
@@ -166,7 +167,10 @@ document.addEventListener('alpine:init', () => {
                 post({ decision, comment: this.reviewed[id] || '' }));
             if (!live()) return;
             await this.loadTab(base, live);
-            if (live()) this.message = 'اتسجلت المراجعة.';
+            if (live()) {
+                this.message = 'اتسجلت المراجعة.';
+                window.dispatchEvent(new Event('decisions-changed'));
+            }
         },
         startActuals(item) {
             this.actualForms[item.id] = {

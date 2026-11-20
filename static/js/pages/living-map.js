@@ -54,14 +54,14 @@ function mapTimeline(result, assumptions) {
 
 document.addEventListener('alpine:init', () => {
     Alpine.data('livingMapPage', () => {
-        let renderer, animation = 0, timeline;
+        let renderer, animation = 0, timeline, cameraObserver, cameraFrame;
         let visit = 0, active = '';
         let nodeById = new Map(), resultById = new Map(), departmentById = new Map(), edgeByPair = new Map();
         const reduced = executiveMotion.reduced;
 
         const page = {
             processMarkup: '',
-            markup: '', map: null, emptyScope: false, company: null, causalRoads: [], observedRoads: [], focus: '', selectedModel: '',
+            markup: '', map: null, emptyScope: false, company: null, causalRoads: [], observedRoads: [], focus: '', focusedEntityName: '', focusedNodeId: '', selectedModel: '',
             busy: '', error: '', feedback: '', question: '', provider: '', lastMetric: null, answerContext: null, edits: [], driverId: '',
             weeks: 52, baselineKpis: null, result: null, submitted: [], week: 0, clock: null, playing: false,
             saved: [], scenarioName: '', compareIds: [], comparison: null,
@@ -113,6 +113,85 @@ document.addEventListener('alpine:init', () => {
             get models() { return this.map?.models || []; },
             get availableDrivers() {
                 return (this.map?.drivers || []).filter(row => !this.edits.some(edit => edit.node_id === row.id));
+            },
+            hasEntity(value) { return !!mapEntity(this.map, value); },
+            focusEntity(value, reveal = false) {
+                const entity = mapEntity(this.map, value);
+                if (!entity || !this.$refs.livingStage) return false;
+                // Department rows carry node_ids. Node rows carry their owning department.
+                const department = entity.node_ids ? entity.id : entity.department;
+                if (!departmentById.has(department)) return false;
+                this.selectAlert('');
+                this.focusedEntityName = entity.name_ar;
+                this.focusedNodeId = entity.node_ids ? '' : entity.id;
+                this.focus = department;
+                if (reveal) this.$nextTick(() => this.$refs.executiveNetwork?.scrollIntoView({
+                    block: 'start', behavior: reduced.matches ? 'instant' : 'smooth',
+                }));
+                return true;
+            },
+            resetEntityFocus() {
+                this.selectAlert('');
+                this.focus = this.focusedEntityName = this.focusedNodeId = '';
+            },
+            consumeFocus(request, map, busy) {
+                if (!request || !map || busy || !active || this.$store.app.page !== 'map' ||
+                    request.companyId !== this.$store.app.companyId) return;
+                const current = () => this.$store.app.entityFocus?.sequence === request.sequence;
+                this.$nextTick(() => {
+                    if (!current() || !this.$refs.livingStage ||
+                        this.map?.model?.id !== map.model?.id || this.map?.model?.version !== map.model?.version) return;
+                    if (request.modelId && (request.modelId !== map.model?.id ||
+                        (request.version && request.version !== map.model?.version))) {
+                        // A decision may refer to an older model version. Load that exact graph first.
+                        this.load(this.scopeId, request.modelId, {version: request.version})
+                            .finally(() => {
+                                if (current() && this.error) this.$store.app.entityFocus = null;
+                            });
+                        return;
+                    }
+                    const entity = entityFromCandidates(map, request);
+                    if (entity) this.focusEntity(entity.id, true);
+                    this.$store.app.entityFocus = null;
+                });
+            },
+            positionCamera(camera, focus) {
+                if (!camera.isConnected || !active) return;
+                const center = () => {
+                    const stage = camera.parentElement;
+                    const card = [...camera.querySelectorAll('[data-department]')].find(node => node.dataset.department === focus);
+                    if (!card || !stage.clientWidth) {
+                        camera.style.transform = '';
+                        return;
+                    }
+                    const zoom = Math.min(stage.clientWidth < 500 ? 1.7 : 2.05,
+                        (stage.clientWidth - 28) / card.offsetWidth, (stage.clientHeight - 28) / card.offsetHeight);
+                    const viewportX = (stage.clientWidth / 2) - zoom * (card.offsetLeft + card.offsetWidth / 2);
+                    const viewportY = (stage.clientHeight / 2) - zoom * (card.offsetTop + card.offsetHeight / 2);
+                    camera.style.transform = 'translate(' + viewportX + 'px, ' + viewportY + 'px) scale(' + zoom + ')';
+                };
+                cameraObserver?.disconnect();
+                cancelAnimationFrame(cameraFrame);
+                cameraFrame = requestAnimationFrame(center);
+                if (focus) {
+                    cameraObserver = new ResizeObserver(center);
+                    cameraObserver.observe(camera);
+                    cameraObserver.observe(camera.parentElement);
+                }
+            },
+            displayedNode(department) {
+                return this.focus === department.id && this.focusedNodeId || department.headline_id;
+            },
+            departmentImpact(department) {
+                if (this.result && this.flowMode === 'impact') {
+                    const magnitude = Math.max(0, ...department.node_ids.map(id => {
+                        const node = this.nodeAtWeek(id);
+                        return node?.affected ? mapMagnitude(node) : 0;
+                    }));
+                    return Math.min(1, magnitude / 50);
+                }
+                return Math.max(0, ...this.roads.filter(edge => edge.from === department.id || edge.to === department.id)
+                    .map(edge => Math.min(1, edge.weight || 0)));
             },
             get focusedDepartment() { return departmentById.get(this.focus); },
             get focusedNodes() { return this.focusedDepartment?.node_ids.map(id => this.nodeAtWeek(id)) || []; },
@@ -212,8 +291,16 @@ document.addEventListener('alpine:init', () => {
                 this.stop();
                 renderer?.destroy();
                 renderer = null;
-                if (!key) return;
+                cameraObserver?.disconnect();
+                cancelAnimationFrame(cameraFrame);
+                if (window.focusEntity === this.publicFocus) delete window.focusEntity;
+                if (key) {
+                    this.publicFocus = value => this.focusEntity(value, true);
+                    window.focusEntity = this.publicFocus;
+                }
                 this.map = null;
+                this.focus = this.focusedEntityName = this.focusedNodeId = '';
+                if (!key) return;
                 this.emptyScope = key === 'empty';
                 this.edits = [];
                 this.driverId = this.question = '';
@@ -229,6 +316,9 @@ document.addEventListener('alpine:init', () => {
                 this.resetExecutiveBaseline();
                 this.stop();
                 renderer?.destroy();
+                cameraObserver?.disconnect();
+                cancelAnimationFrame(cameraFrame);
+                if (window.focusEntity === this.publicFocus) delete window.focusEntity;
             },
             async work(action, fn) {
                 if (this.busy || !active) return;
@@ -242,11 +332,12 @@ document.addEventListener('alpine:init', () => {
                 catch (error) { if (live()) this.error = error.message; }
                 finally { if (live()) this.busy = ''; }
             },
-            load(companyId, modelId = '', { processImport = null, refresh = false } = {}) {
+            load(companyId, modelId = '', { version, processImport = null, refresh = false } = {}) {
                 return this.work('load', async live => {
                     const query = new URLSearchParams();
                     if (companyId != null) query.set('company_id', companyId);
                     if (modelId) query.set('model_id', modelId);
+                    if (version) query.set('version', version);
                     if (processImport) {
                         await api('/companies/' + companyId + '/process-mining/' + processImport.endpoint,
                             processImport.options);
@@ -295,7 +386,7 @@ document.addEventListener('alpine:init', () => {
                     this.resetProcessFlow(map);
                     Object.assign(this, { map, markup, processMarkup, company: original.company, causalRoads: [...grouped.values()],
                         selectedModel: map.model.id == null ? '' : String(map.model.id),
-                        focus: '', edits: [], question: '', provider: '', lastMetric: null, answerContext: null,
+                        focus: '', focusedEntityName: '', focusedNodeId: '', edits: [], question: '', provider: '', lastMetric: null, answerContext: null,
                         driverId: '', result: null, submitted: [], baselineKpis: null,
                         ledgerPhase: 'after',
                         weeks: this.map?.model?.id === map.model.id ? this.weeks
@@ -348,6 +439,8 @@ document.addEventListener('alpine:init', () => {
                     this.provider = response.provider;
                     this.answerContext = response.context;
                     this.feedback = response.reply_ar;
+                    const entity = entityFromCandidates(this.map, askEntityCandidates(message, response));
+                    if (entity) this.focusEntity(entity.id);
                     if (response.scenario.intent === 'what_if') {
                         this.edits = response.scenario.assumptions.map(row => this.makeEdit(row));
                         this.driverId = '';

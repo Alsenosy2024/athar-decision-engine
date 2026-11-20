@@ -94,12 +94,27 @@ def login(page, username):
 
 
 def click_workspace_link(page, name):
-    # The heading can appear before CSS loads and Alpine initializes the menu.
-    toggle = page.locator('button[aria-controls="workspace-nav"][aria-expanded]')
-    toggle.wait_for(state='attached')
-    if toggle.is_visible() and toggle.get_attribute('aria-expanded') == 'false':
-        toggle.click()
-    page.locator('#workspace-nav').get_by_role('link', name=name, exact=True).click()
+    rail = page.get_by_role('navigation', name='الأقسام الرئيسية')
+    primary = {
+        'لوحة التحكم': 'الآن', 'خريطة الشركة': 'الخريطة الحية',
+        'القرارات والمتابعة': 'القرارات', 'مقارنة السيناريوهات': 'السيناريوهات',
+        'ربط البيانات': 'الربط',
+    }
+    if name in primary:
+        rail.get_by_role('link', name=primary[name], exact=True).click()
+        return
+    if name in {'أصحاب البيانات', 'المستخدمين', 'مختبر الذكاء الاصطناعي'}:
+        page.locator('.workspace-settings summary').click()
+        page.locator('.workspace-settings').get_by_role('link', name=name, exact=True).click()
+        return
+    if name == 'اسأل أثر':
+        page.locator('.athar-assistant-options summary').click()
+        page.get_by_role('link', name='افتح المحادثة', exact=True).click()
+        return
+    category = ('السيناريوهات' if name in {'أثر الفرضية', 'التوقعات', 'التحسين', 'ماذا لو'}
+                else 'القرارات' if name == 'الاعتمادات والتصدير' else 'الربط')
+    rail.get_by_role('link', name=category, exact=True).click()
+    page.get_by_role('navigation', name='أدوات القسم').get_by_role('link', name=name, exact=True).click()
 
 
 def capture(page, name, heading, screens):
@@ -291,7 +306,7 @@ def exercise(base, width, screens):
         draft = post_from(page, '/companies/1/plans', page.get_by_test_id('draft-scenario'))
         assert draft['status'] == 'draft' and draft['run_id'] == sector_run['run_id']
 
-        page.get_by_role('link', name='المستخدمين').click()
+        click_workspace_link(page, 'المستخدمين')
         page.get_by_label('اسم المستخدم').fill(REVIEWER)
         page.get_by_label('الدور').select_option('approver')
         page.get_by_role('checkbox', name='شركة البناء النموذجية').check()
