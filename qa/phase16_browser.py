@@ -103,7 +103,10 @@ def click_workspace_link(page, name):
 
 
 def capture(page, name, heading, screens):
+    expect(page.locator(heading)).to_be_visible()
     page.evaluate('document.fonts.ready')
+    # Chromium reports the heading's actual fonts after it has painted.
+    page.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     assert page.locator('html').get_attribute('dir') == 'rtl'
     assert page.evaluate('document.documentElement.scrollWidth === innerWidth'), name
     client = page.context.new_cdp_session(page)

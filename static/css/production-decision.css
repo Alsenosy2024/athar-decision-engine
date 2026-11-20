@@ -1,0 +1,14 @@
+.decision-loop { margin-block: 1rem; }
+.decision-heading, .decision-actions { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: center; }
+.decision-heading { justify-content: space-between; }
+.decision-actions label { display: inline-flex; gap: 0.4rem; align-items: center; }
+.decision-recommendation { padding: 0.85rem 1rem; border-inline-start: 3px solid var(--accent); background: var(--success-bg); }
+.decision-table th, .decision-table td { vertical-align: top; }
+.decision-table small { display: block; color: var(--muted); }
+.decision-selected { background: var(--success-bg); }
+.decision-link { padding: 0; border: 0; background: transparent; text-align: start; text-decoration: underline; }
+.decision-details { margin-block-start: 0.5rem; }
+.decision-loop h3 { margin-block-end: 0.3rem; }
+@media (max-width: 520px) {
+    .decision-actions, .decision-actions button { width: 100%; }
+}

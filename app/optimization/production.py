@@ -132,7 +132,8 @@ def baseline(problem):
     return plan if production_kpis(problem, plan)['feasible'] else None
 
 
-def build_model(problem, weights, hint, *, warm=None, targets=None, diagnosis=None):
+def build_model(problem, weights, hint, *, warm=None, targets=None, diagnosis=None,
+                preserve_hint_lateness=True):
     model = cp_model.CpModel()
     if diagnosis:
         diagnosis.attach(model)
@@ -276,7 +277,7 @@ def build_model(problem, weights, hint, *, warm=None, targets=None, diagnosis=No
     model.minimize(objective)
 
     baseline_kpis = production_kpis(problem, hint) if hint is not None else None
-    if baseline_kpis is not None:
+    if preserve_hint_lateness and baseline_kpis is not None:
         late_cap = baseline_kpis['late_orders']
         model.add(sum(variable for (order, day), variable in ship.items()
                       if day > problem.orders[order]['due_day']) <= late_cap)

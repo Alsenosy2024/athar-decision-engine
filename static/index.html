@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="/static/css/process-flow.css">
     <link rel="stylesheet" href="/static/css/map-briefing.css">
     <link rel="stylesheet" href="/static/css/executive.css">
+    <link rel="stylesheet" href="/static/css/production-decision.css">
     <script defer src="/static/vendor/chart.umd.js"></script>
     <script defer src="/static/js/executive-motion.js"></script>
     <script defer src="/static/js/charts.js"></script>
@@ -32,6 +33,7 @@
     <script defer src="/static/js/pages/forecast.js"></script>
     <script defer src="/static/js/pages/solution-record.js"></script>
     <script defer src="/static/js/pages/optimize.js"></script>
+    <script defer src="/static/js/pages/production-decision.js"></script>
     <script defer src="/static/js/pages/whatif.js"></script>
     <script defer src="/static/js/pages/chat.js"></script>
     <script defer src="/static/js/pages/approvals.js"></script>
@@ -887,6 +889,108 @@
                             :disabled="!!busy || !$store.app.company?.active_dataset_id" @click="optimize({ replan: true })">أعد التخطيط بالخطة السابقة</button>
                     </div>
                 </header>
+                <article class="card decision-loop stack" data-testid="production-decision" x-show="template === 'production'"
+                         x-data="productionDecision" x-effect="activate($store.app.page, $store.app.companyId)">
+                    <header class="decision-heading">
+                        <div>
+                            <h2>خطط الإنتاج تحت عدم اليقين</h2>
+                            <p>بنثبّت الطلبات المؤكدة ونختبر طلب تقديري إضافي بيتغيّر عبر الأسابيع.</p>
+                        </div>
+                        <div class="decision-actions">
+                            <label><input type="checkbox" x-model="rolling"> جرّب إعادة التخطيط أسبوعيًا</label>
+                            <button class="button secondary" data-testid="run-production-decision"
+                                    :disabled="!!busy || !$store.app.company?.active_dataset_id"
+                                    @click="runExperiment()" x-text="busy === 'experiment' ? 'جاري تقييم الخطط…' : 'قيّم البدائل'"></button>
+                        </div>
+                    </header>
+                    <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+                    <template x-if="result">
+                        <div class="stack" data-testid="production-decision-result">
+                            <p class="notice" x-show="result.dataset_id !== $store.app.company?.active_dataset_id">النتيجة تخص مجموعة بيانات سابقة.</p>
+                            <div class="decision-recommendation">
+                                <h3 x-text="selected ? 'الخطة المختارة · ' + label(selected.id) : 'مفيش بديل عدّى قواعد التشغيل'"></h3>
+                                <p x-show="selected">أقل درجة بين الخطط المؤهلة، بحساب متوسط الكلفة وخسائر الذيل في الكلفة والخدمة والسيولة.</p>
+                                <p x-text="'متوسط أسوأ ' + percent(1 - result.policy.alpha) + ' من النتائج (CVaR) · '
+                                    + number(result.scenario_set.full_count) + ' سيناريو مترابط على '
+                                    + number(result.settings.horizon_days) + ' يوم · '
+                                    + (result.comparison.same_selection ? 'العينة المختصرة اختارت نفس الخطة' :
+                                      'العينة المختصرة اختارت ' + label(result.comparison.reduced_selected_id))"></p>
+                            </div>
+                            <div>
+                                <h3>الخطط المرشحة</h3>
+                                <div class="table-scroll" tabindex="0" aria-label="متوسط وذيل نتائج الخطط">
+                                    <table class="numeric-table decision-table">
+                                        <thead><tr><th scope="col">الخطة</th><th scope="col">الكلفة<br>ريال</th><th scope="col">الطلب المتأخر أو غير المشحون<br>٪</th>
+                                            <th scope="col">أقصى سحب ائتماني<br>ريال</th><th scope="col">الجدوى عبر السيناريوهات</th></tr></thead>
+                                        <tbody><template x-for="row in result.candidates" :key="row.id">
+                                            <tr :class="{'decision-selected': row.id === result.selected_id}">
+                                                <th scope="row"><button class="decision-link" type="button" @click="activeCandidate = row.id"
+                                                      x-text="label(row.id)" :aria-pressed="activeCandidate === row.id"></button>
+                                                    <small x-text="status(row.solver.status) + ' · ' + number(row.solver.wall_s) + ' ثانية'"></small></th>
+                                                <template x-for="metric in ['cost_sar', 'service_loss_pct', 'peak_credit_sar']" :key="metric">
+                                                    <td><bdi x-text="number(row.assessment.mean[metric])"></bdi>
+                                                        <small>الذيل <bdi x-text="number(row.assessment.cvar[metric])"></bdi></small></td>
+                                                </template>
+                                                <td><span x-text="row.assessment.eligible ? 'مؤهلة' : row.assessment.failed_rules.map(rule).join('، ')"></span>
+                                                    <small x-text="'احتمال تجاوز الائتمان ' + percent(row.assessment.breaches.credit.probability)"></small>
+                                                    <small x-show="row.assessment.breaches.credit.max_excess > 0"
+                                                        x-text="'أكبر تجاوز ' + number(row.assessment.breaches.credit.max_excess) + ' ريال'"></small></td>
+                                            </tr>
+                                        </template></tbody>
+                                    </table>
+                                </div>
+                                <template x-for="row in result.candidates" :key="row.id">
+                                    <details class="decision-details" x-show="activeCandidate === row.id">
+                                        <summary x-text="'تفاصيل ' + label(row.id)"></summary>
+                                        <p x-text="number(row.plan.schedule.length) + ' تشغيلات إنتاج · ' + number(row.plan.shipments.length) + ' شحنات مخططة'"></p>
+                                        <ul><template x-for="slot in row.plan.schedule" :key="slot.line + ':' + slot.day">
+                                            <li><bdi x-text="slot.line + ' / ' + slot.sku"></bdi> · يوم <bdi x-text="number(slot.day)"></bdi> · <bdi x-text="number(slot.qty)"></bdi> وحدة</li>
+                                        </template></ul>
+                                    </details>
+                                </template>
+                            </div>
+                            <div>
+                                <h3>ثمن المفاضلة لكل إدارة</h3>
+                                <p x-show="result.frontier.length" x-text="'الفروق قدام ' + label(result.reference_id) + '. البدائل دي على جبهة الخطط المؤهلة اللي اتولّدت في المهلة.'"></p>
+                                <p x-show="!result.frontier.length">مفيش نقاط مؤهلة للمفاضلة.</p>
+                                <div class="table-scroll" x-show="result.frontier.length" tabindex="0" aria-label="ثمن المفاضلة حسب الإدارة">
+                                    <table class="numeric-table decision-table">
+                                        <thead><tr><th scope="col">البديل</th><th scope="col">الإدارة العليا<br>الكلفة · ريال</th>
+                                            <th scope="col">المبيعات<br>الخدمة · نقطة مئوية</th><th scope="col">المالية<br>السحب · ريال</th>
+                                            <th scope="col">التشغيل<br>التخزين والتبديل · ريال</th></tr></thead>
+                                        <tbody><template x-for="point in result.frontier" :key="point.candidate_id">
+                                            <tr><th scope="row" x-text="label(point.candidate_id)"></th>
+                                                <td><bdi x-text="signed(point.department_deltas.leadership.cost_sar)"></bdi></td>
+                                                <td><bdi x-text="signed(point.department_deltas.sales.on_time_service_pp)"></bdi></td>
+                                                <td><bdi x-text="signed(point.department_deltas.finance.peak_credit_sar)"></bdi></td>
+                                                <td><bdi x-text="signed(point.department_deltas.operations.holding_and_setup_sar)"></bdi></td></tr>
+                                        </template></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <template x-if="result.rolling">
+                                <div data-testid="decision-rolling">
+                                    <h3>إعادة التخطيط بعد تثبيت الوردية الأولى</h3>
+                                    <p x-text="stageStatus(result.rolling.status) + ' · تجربة على مسار طلب اصطناعي'"></p>
+                                    <p x-text="'اتثبّت ' + number(result.rolling.first_shift.schedule.length) + ' تشغيل إنتاج و'
+                                        + number(result.rolling.first_shift.shipments.length) + ' شحنة في أول وردية.'"></p>
+                                    <ul><template x-for="stage in result.rolling.stages" :key="stage.day">
+                                        <li><span x-text="'يوم ' + number(stage.day) + ' · ' + status(stage.solver.status)"></span>
+                                            <span x-show="stage.ledger_verified" x-text="' · المخزون والكاش اتراجعوا · رصيد الإغلاق ' + number(stage.closing?.cash_sar) + ' ريال'"></span></li>
+                                    </template></ul>
+                                    <p x-show="result.rolling.metrics" x-text="'الكلفة بعد إعادة التخطيط '
+                                        + number(result.rolling.metrics?.cost_sar) + ' ريال مقابل '
+                                        + number(result.rolling.fixed_plan_metrics?.cost_sar) + ' ريال للخطة الثابتة على نفس الطلب.'"></p>
+                                    <p x-show="result.rolling.metrics" x-text="'الخدمة في الموعد '
+                                        + percent(1 - (result.rolling.metrics?.service_loss_pct ?? 0) / 100) + ' مقابل '
+                                        + percent(1 - (result.rolling.fixed_plan_metrics?.service_loss_pct ?? 0) / 100)
+                                        + ' · أقصى سحب ائتماني ' + number(result.rolling.metrics?.peak_credit_sar)
+                                        + ' مقابل ' + number(result.rolling.fixed_plan_metrics?.peak_credit_sar) + ' ريال.'"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                </article>
                 <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
                 <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
                 <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
