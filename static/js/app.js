@@ -12,13 +12,13 @@ const pages = [
     ['impact', 'أثر الفرضية', 'analysis'],
     ['scenarios', 'مقارنة السيناريوهات', 'analysis'],
     ['prescriptive', 'القرارات والمتابعة', 'analysis'],
-    ['chat', 'المساعد الذكي', 'analysis'],
+    ['chat', 'اسأل أثر', 'analysis'],
     ['approvals', 'الاعتمادات والتصدير', 'delivery'],
     ['actuals', 'الفعلي مقابل المخطط', 'delivery'],
 ];
 
 const onboardingSectors = new Set(['trading', 'retail', 'services', 'custom']);
-const onboardingPages = new Set(['map', 'onboarding', 'enterprise', 'connectors', 'impact', 'scenarios', 'prescriptive']);
+const onboardingPages = new Set(['map', 'onboarding', 'enterprise', 'connectors', 'impact', 'scenarios', 'prescriptive', 'chat']);
 
 const locale = 'ar-SA-u-ca-gregory-nu-latn';
 const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
@@ -160,6 +160,7 @@ document.addEventListener('alpine:init', () => {
         plans: [],
         chatScenario: null,
         enterpriseChatImpact: null,
+        assistantMapModel: null,
         onboardingImpactModel: null,
         error: '',
         toast: '',
@@ -177,7 +178,8 @@ document.addEventListener('alpine:init', () => {
             try {
                 this.user = await api('/auth/me');
                 csrfToken = this.user.csrf_token;
-                await this.loadCompanies();
+                const requestedCompany = Number(new URLSearchParams(location.search).get('company_id'));
+                await this.loadCompanies(requestedCompany || null);
             } catch (error) {
                 this.error = error.message;
                 this.loading = false;
@@ -215,7 +217,8 @@ document.addEventListener('alpine:init', () => {
             this.toast = '';
             const changed = this.companyId !== id;
             this.companyId = id;
-            if (changed && this.isOnboardingCompany && this.page !== 'map') {
+            if (changed) this.assistantMapModel = null;
+            if (changed && this.isOnboardingCompany && !['map', 'chat'].includes(this.page)) {
                 this.page = 'onboarding';
                 location.hash = '#/onboarding';
             }

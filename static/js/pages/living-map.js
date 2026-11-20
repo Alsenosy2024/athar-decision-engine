@@ -54,11 +54,11 @@ document.addEventListener('alpine:init', () => {
         const page = {
             processMarkup: '',
             markup: '', map: null, company: null, causalRoads: [], observedRoads: [], focus: '', selectedModel: '',
-            busy: '', error: '', feedback: '', question: '', provider: '', edits: [], driverId: '',
+            busy: '', error: '', feedback: '', question: '', provider: '', lastMetric: null, edits: [], driverId: '',
             weeks: 52, baselineKpis: null, result: null, submitted: [], week: 0, clock: null, playing: false,
             saved: [], scenarioName: '', compareIds: [], comparison: null,
             goalDriver: '', goalLow: '', goalHigh: '', goalProfit: '', goalCash: '', recommendations: null,
-            number, mapValue,
+            number, mapValue, assistant: ATHAR_ASSISTANT,
             unitLabel(unit) { return mapUnits[unit] || unit; },
             get editable() { return ['admin', 'planner'].includes(this.$store.app.user?.role); },
             get selection() {
@@ -168,6 +168,9 @@ document.addEventListener('alpine:init', () => {
                 renderer = null;
                 if (!key) return;
                 this.map = null;
+                this.edits = [];
+                this.driverId = this.question = '';
+                this.lastMetric = null;
                 this.busy = this.error = this.feedback = '';
                 this.weeks = 52;
                 const current = visit;
@@ -183,7 +186,8 @@ document.addEventListener('alpine:init', () => {
             async work(action, fn) {
                 if (this.busy || !active) return;
                 const current = visit;
-                const live = () => current === visit && this.$store.app.page === 'map';
+                const companyId = this.$store.app.companyId;
+                const live = () => current === visit && this.$store.app.companyId === companyId && this.$store.app.page === 'map';
                 this.busy = action;
                 this.error = this.feedback = '';
                 try { await fn(live); }
@@ -241,9 +245,10 @@ document.addEventListener('alpine:init', () => {
                     this.resetProcessFlow(map);
                     Object.assign(this, { map, markup, processMarkup, company: original.company, causalRoads: [...grouped.values()],
                         selectedModel: map.model.id == null ? '' : String(map.model.id),
-                        focus: '', edits: [], question: '', provider: '', driverId: '', result: null, submitted: [], baselineKpis: null,
+                        focus: '', edits: [], question: '', provider: '', lastMetric: null, driverId: '', result: null, submitted: [], baselineKpis: null,
                         week: 0, saved: scoped, scenarioName: '', comparison: null, compareIds: [],
                         goalDriver: '', goalLow: '', goalHigh: '', goalProfit: '', goalCash: '', recommendations: null });
+                    this.$store.app.assistantMapModel = map.model?.id == null ? null : map.model;
                     if (!map.process_only) this.refreshBriefing();
                     this.refreshExecutiveBaseline({ defer: true });
                     this.$nextTick(() => {
@@ -278,8 +283,14 @@ document.addEventListener('alpine:init', () => {
                 const message = this.question.trim();
                 if (!message) return;
                 return this.work('ask', async live => {
-                    const response = await api('/enterprise/chat', post({ ...this.selection, message, parse_only: true }));
+                    this.edits = [];
+                    this.driverId = '';
+                    const selection = { ...this.selection, company_id: this.map.is_demo ? null : this.$store.app.companyId };
+                    const response = await askAthar(message, selection, {
+                        parse_only: true, weeks: Number(this.weeks), focus_node: this.lastMetric,
+                    });
                     if (!live()) return;
+                    this.lastMetric = response.follow_up_metric;
                     this.provider = response.provider;
                     this.feedback = response.reply_ar;
                     if (response.scenario.intent === 'what_if') {
@@ -302,6 +313,18 @@ document.addEventListener('alpine:init', () => {
                     this.result = result;
                     this.submitted = assumptions;
                     this.showImpact();
+                    const nodes = result.nodes.filter(row => ['pnl.result', 'cash', 'pnl.revenue'].includes(row.id)
+                        && row.before != null && row.after != null);
+                    const changes = (nodes.length ? nodes : result.nodes.filter(row => row.affected
+                        && row.before != null && row.after != null).slice(0, 3))
+                        .map(row => row.name_ar + ' من ' + mapValue(row.before, row.unit)
+                            + ' لـ' + mapValue(row.after, row.unit));
+                    const dates = result.charts.cash?.dates;
+                    const period = result.onboarding ? 'أسبوع تقديري واحد' :
+                        dates?.length ? dates[0] + ' إلى ' + dates.at(-1) : number(this.weeks) + ' أسبوع';
+                    const scope = result.name + (result.version ? ' · إصدار ' + number(result.version) : '');
+                    this.feedback = scope + '. ' + (changes.join('، ') || 'المدخلات الحالية مش كفاية لحساب أثر المؤشر.')
+                        + '. الفترة ' + period + '. المصدر حساب أثر الفرضية في النموذج.';
                 });
             },
             highlight() {

@@ -47,7 +47,8 @@ class ArabicReply(StrictBody):
 class CodexProvider:
     name = 'codex'
 
-    def __init__(self, settings):
+    def __init__(self, settings, *, timeout=None):
+        self.timeout = timeout
         self.settings = settings
         self.rules = RulesProvider()
 
@@ -64,7 +65,8 @@ class CodexProvider:
             f'Schema: {json.dumps(schema, ensure_ascii=False)}\n'
             f'Input: {json.dumps(data, ensure_ascii=False, allow_nan=False)}'
         )
-        content = codex_cli.complete(self.settings.codex_home, prompt, schema)
+        options = {} if self.timeout is None else {"timeout": self.timeout}
+        content = codex_cli.complete(self.settings.codex_home, prompt, schema, **options)
         return schema_type.model_validate(codex_cli.strict_object(content))
 
     def parse(self, message, ctx):
@@ -219,9 +221,9 @@ class OpenAICompatProvider:
         return self.explain(facts, facts['answer_ar'])
 
 
-def get_enterprise_provider(settings):
+def get_enterprise_provider(settings, *, remote=True):
     # The enterprise assistant supports Codex and its local rules fallback.
-    return CodexProvider(settings) if settings.llm_provider == 'codex' else RulesProvider()
+    return CodexProvider(settings, timeout=3) if remote and settings.llm_provider == 'codex' else RulesProvider()
 
 
 def get_provider(settings) -> LLMProvider:

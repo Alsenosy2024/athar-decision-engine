@@ -7,10 +7,12 @@
     <title>مختبر الذكاء الاصطناعي | أثر</title>
     <link rel="stylesheet" href="/static/css/app.css">
     <link rel="stylesheet" href="/static/css/ai.css">
+    <link rel="stylesheet" href="/static/css/athar-assistant.css">
     <script defer src="/static/vendor/chart.umd.js"></script>
     <script defer src="/static/js/executive-motion.js"></script>
     <script defer src="/static/js/charts.js"></script>
     <script defer src="/static/js/app.js"></script>
+    <script defer src="/static/js/athar-assistant.js"></script>
     <script defer src="/static/js/pages/ai.js"></script>
     <script defer src="/static/vendor/alpine.min.js"></script>
 </head>
@@ -22,10 +24,13 @@
         <span>كل قرار.. وأثره على شركتك كلها</span>
     </div>
     <div class="actions">
-        <a class="button secondary" href="/">مساحة العمل</a>
+        <a class="button secondary" :href="'/' + (companyId ? '?company_id=' + companyId : '')">مساحة العمل</a>
         <button class="theme-button" type="button" @click="$store.app.toggleTheme()" x-text="$store.app.theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></button>
     </div>
 </header>
+<section class="athar-assistant" x-data="atharAssistant" x-show="companyId"
+         x-effect="select(companyId, modelId, assistantVersion)"
+         x-html="markup" aria-labelledby="athar-assistant-title"></section>
 <main id="main" class="ai-main">
     <header class="page-title">
         <div><h1>مختبر الذكاء الاصطناعي</h1><p>استخرج البيانات وراجع الأدلة قبل ما تحدّث النموذج أو تحفظ قرار.</p></div>
@@ -189,7 +194,7 @@
                     </div>
                 </form>
                 <form class="stack" x-show="section === 'question'" @submit.prevent="ask()">
-                    <h2>اسأل عن رقم أو مسار أثر</h2>
+                    <h2>راجع أدلة المؤشر أو التوصية</h2>
                     <label class="field">سؤالك
                         <textarea maxlength="1600" rows="3" x-model="topic" placeholder="ليه الكاش نزل؟"></textarea>
                     </label>

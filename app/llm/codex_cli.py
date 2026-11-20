@@ -82,17 +82,17 @@ def _run(command, *, cwd, env, input, timeout):
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
-def complete(codex_home, prompt, schema):
+def complete(codex_home, prompt, schema, *, timeout=None):
     # Keep the queue bounded in time even if multiple HTTP requests arrive together.
-    if not _SLOT.acquire(timeout=TIMEOUT):
+    if not _SLOT.acquire(timeout=TIMEOUT if timeout is None else 0):
         raise TimeoutError('Codex worker queue timed out')
     try:
-        return _execute(codex_home, prompt, schema)
+        return _execute(codex_home, prompt, schema, timeout=TIMEOUT if timeout is None else timeout)
     finally:
         _SLOT.release()
 
 
-def _execute(codex_home, prompt, schema):
+def _execute(codex_home, prompt, schema, *, timeout):
     binary = find_codex()
     if binary is None:
         raise FileNotFoundError('Codex CLI is unavailable')
@@ -100,7 +100,7 @@ def _execute(codex_home, prompt, schema):
            if key in os.environ}
     env['PATH'] = os.pathsep.join((str(binary.parent), os.environ.get('PATH') or os.defpath))
     env['CODEX_HOME'] = str(Path(codex_home).expanduser().absolute())
-    deadline = monotonic() + TIMEOUT
+    deadline = monotonic() + timeout
     with TemporaryDirectory(prefix='athar-codex-') as work:
         schema_path = Path(work) / 'response.json'
         schema_path.write_text(json.dumps(strict_schema(schema), ensure_ascii=False), encoding='utf-8')

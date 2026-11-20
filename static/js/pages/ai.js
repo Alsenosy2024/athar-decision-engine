@@ -1,7 +1,7 @@
 document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => ({
     sections: [
         ['entry', 'إدخال البيانات'], ['analysis', 'تحليل ومعايرة'], ['forecast', 'التوقعات'],
-        ['decision', 'اختبار قرار'], ['question', 'اسأل أثر'],
+        ['decision', 'اختبار قرار'], ['question', 'مراجعة الأدلة'],
     ],
     kinds: {
         entry: 'فرق البيانات', refresh: 'إشارات البيانات', forecast: 'توقع', calibration: 'معايرة العلاقات',
@@ -31,6 +31,7 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     },
     get questionFacts() { return this.payload.facts || this.payload.insight?.facts || []; },
     get reviewTitle() { return this.kinds[this.review?.kind] || ''; },
+    get assistantVersion() { return this.data?.models.find(model => String(model.id) === this.modelId)?.version; },
     get scope() { return '/companies/' + this.companyId + '/ai'; },
     get canAccept() {
         if (this.review.kind === 'entry') {
@@ -45,7 +46,8 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
         if (this.companyId || !companies.length) return;
         const initial = Number(new URLSearchParams(location.search).get('company_id'));
         const company = companies.find(item => item.id === initial) || companies[0];
-        this.changeCompany(company.id);
+        const initialModel = Number(new URLSearchParams(location.search).get('model_id'));
+        this.changeCompany(company.id, initialModel);
     },
     async work(callback) {
         this.busy = true;
@@ -58,7 +60,7 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
             this.busy = false;
         }
     },
-    changeCompany(id) {
+    changeCompany(id, initialModel = null) {
         this.companyId = String(id);
         this.modelId = '';
         this.review = this.data = null;
@@ -69,6 +71,10 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
         this.controls = [];
         return this.work(async () => {
             await this.loadCatalog();
+            if (initialModel && this.data.models.some(model => model.id === initialModel)) {
+                this.modelId = String(initialModel);
+                await this.loadCatalog();
+            }
             await this.loadReviews();
         });
     },

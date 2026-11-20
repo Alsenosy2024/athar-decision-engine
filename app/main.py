@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -125,4 +126,4 @@ def create_app(settings: Settings | None = None):
     return application
 
 
-app = create_app()
+app = create_app(Settings(llm_provider=os.getenv('LLM_PROVIDER', 'rules')))

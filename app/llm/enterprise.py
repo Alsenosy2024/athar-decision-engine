@@ -5,7 +5,8 @@ from typing import Literal
 from pydantic import Field, ValidationError, model_validator
 
 from app.enterprise.impact_graph import Assumption, ImpactError
-from app.llm.rules_ar import CREDIT, DECREASE, INCREASE, normalize, number_words
+from app.llm import assistant_language as language
+from app.llm.rules_ar import normalize, number_words
 from app.llm.schema import StrictBody
 
 EXAMPLE = 'لو خفّضنا حد الائتمان 15% وأخّرنا المورد أسبوعين، إيه الأثر؟'
@@ -18,16 +19,15 @@ COMPARE_FIRST = ('pnl.result', 'cash', 'risk.credit', 'risk.delay')
 
 CLAUSES = re.compile(
     r'\s*(?:[،,;؛]|\bثم\b)\s*|\s+و\s*(?=(?:اخر\w*|تاخير|تاخر\w*|خفض\w*|تقليل|'
-    r'زياده|رفع\w*|زاد\w*|قل\w*|حد|المورد|مهله|سعه|الطلب)\b)'
+    r'زياده|رفع\w*|زاد\w*|زود\w*|قل\w*|حد|المورد|مهله|سعه|الطلب)\b)'
 )
-DELAY = r'\b(?:اخر\w*|تاخر\w*|تاخير|اجل\w*|زاد\w*|زياده)\b'
-SUPPLIER = r'\b(?:المورد|مورد الخامات|مهله التوريد)\b'
+DELAY = r'\b(?:اخر\w*|اتاخر\w*|تاخر\w*|تاخير|اجل\w*|زاد\w*|زياده)\b'
 AMOUNT = re.compile(r'(?<!\w)[+-]?\d+(?:\.\d+)?(?![\w.])')
 
 
 class EnterpriseScenario(StrictBody):
     template: Literal['enterprise'] = 'enterprise'
-    intent: Literal['what_if', 'help']
+    intent: Literal['what_if', 'query', 'explain', 'help']
     assumptions: list[Assumption] = Field(default_factory=list, max_length=50)
 
     @model_validator(mode='after')
@@ -45,21 +45,33 @@ def validate_enterprise_changes(model, scenario):
 
 
 def _rule_change(clause, drivers):
-    if re.search(r'\b(?:بدل|مليون|ملايين|الف|الاف|نص|نصف|بدون|متخفضش|ماتخفضش|مش)\b', clause):
-        return None
-    if 'credit' in drivers and re.search(rf'\b{CREDIT}\b', clause):
-        key = 'credit'
-    elif 'supplier' in drivers and re.search(SUPPLIER, clause) and not re.search(r'\b(?:دفع|سداد|تحصيل)\b', clause):
-        key = 'supplier'
-    else:
-        matches = {(key, label) for key, row in drivers.items()
-                   for label in (normalize(key), normalize(row['name_ar']))
-                   if re.search(rf'(?<!\w){re.escape(label)}(?!\w)', clause)}
+    if 'credit' in drivers and language.alias(clause, language.METRICS['credit']):
+        return _change(clause, 'credit')
+    supplier = next((key for key in ('supplier', 'supplier.delay') if key in drivers), None)
+    if supplier and language.alias(clause, language.METRICS['supplier']) and not re.search(
+        r'\b(?:دفع|سداد|تحصيل)\b', clause
+    ):
+        return _change(clause, supplier)
+    matches = [(key, normalize(label)) for key, row in drivers.items()
+               for label in (key, row['name_ar']) if language.alias(clause, (label,))]
+    if matches:
         if len({key for key, _ in matches}) != 1:
             return None
-        key, label = max(matches, key=lambda item: len(item[1]))
-        clause = clause.replace(label, ' ')
-    if key == 'supplier':
+        key, label = max(matches, key=lambda match: len(match[1]))
+        return _change(clause.replace(label, ' ', 1), key)
+    if language.alias(clause, language.METRICS['demand']):
+        keys = [key for key in drivers if key == 'demand' or key.startswith('demand.')]
+        changes = [_change(clause, key) for key in keys]
+        return changes if changes and all(changes) else None
+    if 'price' in drivers and language.alias(clause, ('السعر', 'سعر البيع', 'سعر')):
+        return _change(clause, 'price')
+    return None
+
+
+def _change(clause, key):
+    if re.search(r'\b(?:بدل|مليون|ملايين|الف|الاف|نص|نصف|بدون|متخفضش|ماتخفضش|مش)\b', clause):
+        return None
+    if key in ('supplier', 'supplier.delay'):
         if not AMOUNT.search(clause):
             clause = re.sub(r'\b(اسبوع|يوم)\b', r'1 \1', clause)
     numbers = list(AMOUNT.finditer(clause))
@@ -68,14 +80,14 @@ def _rule_change(clause, drivers):
     token = numbers[0][0]
     value = float(token)
     if '%' in clause:
-        if re.search(DECREASE, clause) or re.search(r'\bخفض\w*\b', clause):
+        if language.has(clause, language.DECREASE):
             value = -abs(value)
-        elif re.search(INCREASE, clause) or re.search(r'\bرفع\w*\b', clause):
+        elif language.has(clause, language.INCREASE):
             value = abs(value)
         elif not token.startswith(('+', '-')):
             return None
         return Assumption(node_id=key, operation='pct', value=value)
-    if key == 'supplier' and re.search(DELAY, clause):
+    if key in ('supplier', 'supplier.delay') and re.search(DELAY, clause):
         if re.search(r'\bاسبوع(?:ات|ا)?\b|\bاسابيع\b', clause):
             value *= 7
         elif not re.search(r'\b(?:يوم|ايام)\b', clause):
@@ -86,19 +98,31 @@ def _rule_change(clause, drivers):
     return None
 
 
-def parse_rules(message, model):
+def rule_draft(message, model):
     drivers = {row['id']: row for row in model.drivers()}
-    assumptions = []
     text = number_words(normalize(message)).strip(' ؟?')
-    text = re.sub(r'[ ،,]*(?:ايه الاثر|ايه اللي هيحصل|هيحصل ايه)$', '', text)
+    text = language.QUESTION_TAIL.sub('', text)
+    assumptions, unresolved = [], []
     for clause in CLAUSES.split(text.strip(' ،,؛;')):
+        if assumptions and not AMOUNT.search(clause) and language.metrics(clause) and language.has(
+            clause, r'هيتغير\w*|بيتغير\w*|يتغير\w*|هيبقي|هيبقوا'
+        ):
+            continue
         try:
             change = _rule_change(clause, drivers)
-        except ValidationError:
-            return EnterpriseScenario(intent='help')
+        except (ValidationError, OverflowError, ValueError):
+            change = None
         if change is None:
-            return EnterpriseScenario(intent='help')
-        assumptions.append(change)
+            unresolved.append(clause)
+        else:
+            assumptions.extend(change if isinstance(change, list) else [change])
+    return assumptions, unresolved
+
+
+def parse_rules(message, model):
+    assumptions, unresolved = rule_draft(message, model)
+    if unresolved or not assumptions:
+        return EnterpriseScenario(intent='help')
     if len({item.node_id for item in assumptions}) != len(assumptions) or len(assumptions) > 50:
         return EnterpriseScenario(intent='help')
     scenario = EnterpriseScenario(intent='what_if', assumptions=assumptions)
@@ -121,16 +145,20 @@ def _display(value, unit):
     return f'{formatted} {UNIT_LABELS[unit]}'
 
 
-def grounded_explanation(result):
+def grounded_explanation(result, preferred=()):
     rows = {row['id']: row for row in result['nodes'] if row['before'] is not None and row['after'] is not None}
-    selected = [rows[key] for key in COMPARE_FIRST if key in rows]
+    priority = dict.fromkeys((*preferred, *COMPARE_FIRST))
+    selected = [rows[key] for key in priority if key in rows]
     selected.extend(row for key, row in rows.items()
-                    if key not in COMPARE_FIRST and row['before'] != row['after'])
+                    if key not in priority and row['before'] != row['after'])
     if not selected:
         return 'النموذج ما حسبش تغيّر في المؤشرات المتاحة.'
     parts = []
     for row in selected[:6]:
-        name = 'أقل رصيد سيولة' if row['id'] == 'cash' else row['name_ar']
+        name = row['name_ar']
+        if row['id'] == 'cash':
+            name = ('رصيد السيولة الأسبوعي التقديري' if 'onboarding' in result else
+                    'أقل رصيد سيولة' if (result['charts']['cash'] or {}).get('dates') else name)
         if row['id'] == 'risk.credit':
             parts.append(f"{name} بعد التغيير بلغ {_display(row['after'], row['unit'])} حسب المحاكاة.")
         else:

@@ -236,6 +236,7 @@ def sector_flow(page, cid, template):
     screenshot(page, template, 'whatif')
 
     chat = enter(page, 'chat')
+    chat.get_by_test_id('chat-scope').select_option('sector')
     chat.get_by_test_id('chat-input').fill(QUESTION)
     reply = after_action(page, base + '/chat', chat.get_by_test_id('chat-send').click)
     assert reply['action'] == 'whatif' and reply['provider'] == 'rules'

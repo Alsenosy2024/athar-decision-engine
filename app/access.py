@@ -159,7 +159,7 @@ def authorize(request):
             raise api_error(403, 'invalid_csrf', 'الجلسة أو رمز الحماية اتغيّر. حدّث الصفحة.')
     if decision:
         require_role(principal, 'approver')
-    elif method not in READ_METHODS and not route.startswith('/api/auth/'):
+    elif method not in READ_METHODS and not route.startswith('/api/auth/') and route != '/api/enterprise/chat':
         if route == '/api/companies' or route.startswith('/api/users'):
             require_role(principal)
         else:

@@ -7,6 +7,7 @@
     <title>أثر | Athar</title>
     <link rel="stylesheet" href="/static/css/app.css">
     <link rel="stylesheet" href="/static/css/access.css">
+    <link rel="stylesheet" href="/static/css/athar-assistant.css">
     <link rel="stylesheet" href="/static/css/onboarding.css">
     <link rel="stylesheet" href="/static/css/prescriptive.css">
     <link rel="stylesheet" href="/static/css/living-map.css">
@@ -17,6 +18,7 @@
     <script defer src="/static/js/executive-motion.js"></script>
     <script defer src="/static/js/charts.js"></script>
     <script defer src="/static/js/app.js"></script>
+    <script defer src="/static/js/athar-assistant.js"></script>
     <script defer src="/static/js/pages/data.js"></script>
     <script defer src="/static/js/pages/model.js"></script>
     <script defer src="/static/js/pages/enterprise.js"></script>
@@ -66,7 +68,7 @@
                 </div>
             </template>
             <div class="nav-group">
-                <a :href="'/ai?company_id=' + ($store.app.companyId || '')">مختبر الذكاء الاصطناعي</a>
+                <a :href="'/ai?company_id=' + ($store.app.companyId || '') + ($store.app.assistantMapModel ? '&amp;model_id=' + $store.app.assistantMapModel.id : '')">مختبر الذكاء الاصطناعي</a>
                 <a x-show="$store.app.user?.role === 'admin'" href="/department-owners">أصحاب البيانات</a>
             </div>
         </nav>
@@ -93,6 +95,10 @@
                 <span class="theme-caption" aria-hidden="true" x-text="$store.app.theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></span>
             </button>
         </header>
+
+        <section class="athar-assistant" x-data="atharAssistant" x-show="$store.app.company && !$store.app.loading"
+                 x-effect="select($store.app.companyId, $store.app.assistantMapModel?.id, $store.app.assistantMapModel?.version)"
+                 x-html="markup" aria-labelledby="athar-assistant-title"></section>
 
         <main id="main" x-ref="main" tabindex="-1">
             <p class="empty" role="status" x-show="$store.app.loading">جارٍ تحميل مساحة العمل…</p>
@@ -983,7 +989,7 @@
             <section data-testid="page-chat" x-show="$store.app.company && $store.app.page === 'chat'" x-data="chatPage"
                      x-effect="activate($store.app.page, $store.app.companyId)">
                 <header class="page-title">
-                    <div><h1>المساعد الذكي</h1><p>اسأل عن نتيجة، اطلب تفسير، أو جرّب سيناريو باللغة العربية.</p></div>
+                    <div><h1 x-text="assistant.name"></h1><p x-text="assistant.promise"></p></div>
                     <p class="sector" x-show="scope === 'sector'" x-text="$store.app.templates[template]?.name_ar"></p>
                 </header>
                 <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
@@ -997,13 +1003,13 @@
                     <div class="actions">
                         <label>نطاق المحادثة
                             <select data-testid="chat-scope" x-model="scope" @change="$nextTick(() => switchScope())" :disabled="!!busy">
-                                <option value="sector">خطة القطاع</option>
+                                <option value="sector" x-show="sectorAvailable">خطة القطاع</option>
                                 <option value="enterprise">النموذج المؤسسي</option>
                             </select>
                         </label>
                         <label x-show="scope === 'enterprise'">النموذج
                             <select data-testid="chat-model" x-model="modelId" @change="switchModel()" :disabled="!!busy">
-                                <option value="">ديمو روافد</option>
+                                <option value="">نموذج الشركة المربوط</option>
                                 <template x-for="model in models" :key="model.id">
                                     <option :value="String(model.id)" x-text="model.name"></option>
                                 </template>
@@ -1014,19 +1020,22 @@
                         <p class="empty" x-show="!messages.length">ابدأ بسؤال من الاقتراحات أو اكتب سؤالك تحت.</p>
                         <template x-for="(item, index) in messages" :key="index">
                             <article class="bubble" :class="item.role">
-                                <h3 x-text="item.role === 'user' ? 'أنت' : 'المساعد'"></h3><p dir="auto" x-text="item.content"></p>
+                                <h3 x-text="item.role === 'user' ? 'أنت' : assistant.name"></h3><p dir="auto" x-text="item.content"></p>
                             </article>
                         </template>
                     </div>
                     <div class="actions presets"><template x-for="question in suggestions" :key="question">
                         <button type="button" class="button chip" @click="input = question; $refs.chatInput.focus()" :disabled="!!busy" x-text="question"></button>
                     </template></div>
+                    <label x-show="scope === 'enterprise'"><input type="checkbox" x-model="remote" :disabled="!!busy">
+                        السماح بـCodex لفهم الفرضية</label>
+                    <small x-show="scope === 'enterprise' && remote">سؤال الفرضية والمدخلات المتاحة ممكن يتبعتوا لـCodex.</small>
                     <form class="compose" @submit.prevent="send()">
                         <label class="visually-hidden" for="chat-input">رسالتك</label>
                         <input type="text" id="chat-input" x-ref="chatInput" data-testid="chat-input" maxlength="2000" required
                             placeholder="اكتب سؤالك عن الخطة…" x-model="input" :disabled="!!busy">
                         <button class="button primary" data-testid="chat-send" :disabled="!!busy || !input.trim()"
-                            x-text="busy === 'chat' ? 'جارٍ إعداد الرد…' : 'إرسال'"></button>
+                            x-text="busy === 'chat' ? 'بيفكر…' : 'إرسال'"></button>
                     </form>
                 </article>
                 <article class="card spaced chat-panel" data-testid="chat-enterprise-result" x-show="reply?.result">

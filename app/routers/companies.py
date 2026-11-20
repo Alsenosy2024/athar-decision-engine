@@ -24,11 +24,11 @@ def get_template(template_id):
     return template
 
 
-def get_company(connection, company_id):
+def get_company(connection, company_id, *, allow_enterprise=False):
     company = connection.execute(COMPANY_SELECT + ' WHERE c.id = ?', (company_id,)).fetchone()
     if company is None:
         raise api_error(404, 'company_not_found', 'الشركة غير موجودة.')
-    if company['template'] not in load_templates():
+    if not allow_enterprise and company['template'] not in load_templates():
         raise api_error(422, 'enterprise_company', 'استخدم تجهيز الشركة والتحليلات المؤسسية للشركة دي.')
     return dict(company)
 

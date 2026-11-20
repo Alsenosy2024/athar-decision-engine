@@ -66,18 +66,19 @@
     <div class="lm-layout" :class="{ 'lm-process-only': map.process_only }">
       <aside class="lm-panel lm-input" x-show="!map.process_only" x-ref="inputPanel" aria-labelledby="lm-input-title">
         <header class="lm-panel-head">
-          <h2 id="lm-input-title">اسأل أثر</h2>
-          <span class="lm-pill" x-show="provider" x-text="provider === 'codex' ? 'Codex' : 'قواعد محلية'"></span>
+          <h2 id="lm-input-title" x-text="assistant.name"></h2>
+          <span class="lm-pill" x-show="provider" x-text="assistant.providers[provider]"></span>
         </header>
         <template x-if="editable && !map.analysis_error">
           <div class="lm-stack">
             <form class="lm-stack" @submit.prevent="ask()">
-              <label class="visually-hidden" for="lm-question">اكتب الفرضية لأثر</label>
+              <p x-text="assistant.promise"></p>
+              <label class="visually-hidden" for="lm-question">اكتب سؤالك لأثر</label>
               <textarea id="lm-question" x-model="question" rows="3" maxlength="2000"
                 placeholder="لو خفّضنا حد الائتمان 15%، إيه الأثر؟"
                 data-testid="map-question" :disabled="!!busy"></textarea>
               <button class="lm-action lm-primary" :disabled="!!busy || !question.trim()"
-                data-testid="map-ask" x-text="busy === 'ask' ? 'بنفهم الفرضية…' : 'حضّر الفرضيات'"></button>
+                data-testid="map-ask" x-text="busy === 'ask' ? 'بيفكر…' : 'اسأل'"></button>
             </form>
             <p role="status" class="lm-feedback" x-show="feedback" x-text="feedback"></p>
 

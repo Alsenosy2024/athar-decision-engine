@@ -114,7 +114,7 @@ def operational_series(connection, company):
 @router.get('/catalog')
 def catalog(cid: Id, request: Request, model_id: Annotated[int | None, Query(ge=1, lt=2**63)] = None,
             connection=Depends(request_conn)):
-    company = get_company(connection, cid)
+    company = get_company(connection, cid, allow_enterprise=True)
     models = [item for item in store.list_models(connection) if item['company_id'] == cid]
     series = []
     drivers = []
@@ -148,7 +148,7 @@ def entry(cid: Id, request: Request, files: Annotated[list[UploadFile] | None, F
           remote: Annotated[bool, Form()] = True,
           fx_rates: Annotated[str, Form(max_length=1000)] = '{}',
           connection=Depends(request_conn)):
-    company = get_company(connection, cid)
+    company = get_company(connection, cid, allow_enterprise=True)
     snapshot = company_snapshot(connection, cid, model_id) if model_id else None
     if len(files or ()) > 8:
         raise api_error(422, 'ai_too_many_documents', 'الحد الأقصى 8 ملفات للمعاينة.')
@@ -200,7 +200,7 @@ def refresh(cid: Id, body: Refresh, request: Request, connection=Depends(request
 
 @router.post('/forecast', status_code=201)
 def forecast(cid: Id, body: Forecast, request: Request, connection=Depends(request_conn)):
-    company = get_company(connection, cid)
+    company = get_company(connection, cid, allow_enterprise=True)
     snapshot = company_snapshot(connection, cid, body.model_id) if body.model_id else None
     if snapshot:
         graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'])
@@ -292,7 +292,7 @@ def question(cid: Id, body: Question, request: Request, connection=Depends(reque
 @router.get('/reviews')
 def list_reviews(cid: Id, before: Annotated[int | None, Query(ge=1, lt=2**63)] = None,
                  connection=Depends(request_conn)):
-    get_company(connection, cid)
+    get_company(connection, cid, allow_enterprise=True)
     return reviews.recent(connection, cid, before)
 
 
@@ -346,7 +346,7 @@ def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connectio
                 raise api_error(422, 'ai_recommendation_infeasible', 'اختار توصية بتحترم القيود قبل الحفظ.')
             return reviews.save_recommendation(connection, cid, current, review_id, body.rank, options[body.rank])
         if review['kind'] == 'forecast' and review['model_id'] is None:
-            company = get_company(connection, cid)
+            company = get_company(connection, cid, allow_enterprise=True)
             if company['active_dataset_id'] != payload['dataset_id']:
                 raise api_error(409, 'ai_stale_review', 'بيانات الشركة اتغيّرت. شغّل التوقع من جديد.')
         return {}

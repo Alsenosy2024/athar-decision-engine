@@ -14,6 +14,7 @@ from unittest.mock import patch
 from openpyxl import load_workbook
 from playwright.sync_api import expect, sync_playwright
 import uvicorn
+from ortools.sat.python import cp_model
 
 from app.config import Settings
 from app.forecasting.foundation import TimesFMWorker
@@ -213,9 +214,10 @@ def exercise(base, width, screens):
         shot('forecast')
 
         switcher.select_option('1')
-        navigate('المساعد الذكي', 'chat')
+        chat = navigate('اسأل أثر', 'chat')
         page.get_by_test_id('chat-scope').select_option('enterprise')
         page.get_by_test_id('chat-model').select_option(str(model['id']))
+        chat.get_by_role('checkbox', name='السماح بـCodex لفهم الفرضية').check()
         page.get_by_test_id('chat-input').fill(EXAMPLE)
         started = monotonic()
         reply = post_from(page, '/enterprise/chat', page.get_by_test_id('chat-send'))
@@ -256,7 +258,7 @@ def exercise(base, width, screens):
         by_id = {row['id']: row['kpis'] for row in comparison['scenarios']}
         profit = next(row for row in reply['result']['nodes'] if row['id'] == 'pnl.result')
         assert by_id[baseline['id']] == comparison['baseline']
-        assert by_id[shock['id']]['profit'] == profit['after']
+        assert by_id[shock['id']]['profit'] == profit['after'], (by_id[shock['id']]['profit'], profit, reply['result']['solver_status'])
         expect(page.get_by_test_id('scenario-comparison').locator('tbody tr')).to_have_count(5)
         with download_excel(page, page.get_by_role('button', name='نزّل المقارنة Excel')) as book:
             rows = list(book['المقارنة'].values)
@@ -322,7 +324,17 @@ def run(width, screens=None, *, live=False):
         with server() as base:
             exercise(base, width, screens)
     else:
-        with (patch.object(TimesFMWorker, 'forecast', fake_timesfm),
+        solve = cp_model.CpSolver.solve
+
+        def solve_for_browser_fixture(solver, *args, **kwargs):
+            # Two independent runs must exhaust the same deterministic search budget
+            # even when Chromium and other worktrees are testing on this machine.
+            if solver.parameters.num_workers == 1:
+                solver.parameters.max_time_in_seconds = max(solver.parameters.max_time_in_seconds, 60)
+            return solve(solver, *args, **kwargs)
+
+        with (patch.object(cp_model.CpSolver, 'solve', solve_for_browser_fixture),
+              patch.object(TimesFMWorker, 'forecast', fake_timesfm),
               patch.object(codex_cli, 'find_codex', return_value=Path('/fixture/bin/codex')),
               patch.object(codex_cli, '_run', side_effect=fake_codex),
               server() as base):
