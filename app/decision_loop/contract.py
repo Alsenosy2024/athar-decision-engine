@@ -6,7 +6,7 @@ from math import ceil, isfinite
 
 from ortools import __version__ as ortools_version
 
-from app.optimization.common import DETERMINISTIC_TIME_RATIO, SEED, OptimizationInputError
+from app.optimization.common import DETERMINISTIC_TIME_RATIO, SOLVER_SEED, OptimizationInputError
 
 SCHEMA_VERSION = 1
 FORECAST_MAX_AGE = timedelta(hours=24)
@@ -139,7 +139,7 @@ def model_fingerprint(model):
 
 
 def solver_settings(time_limit):
-    return {'engine': 'cp-sat', 'version': ortools_version, 'seed': SEED, 'workers': 1,
+    return {'engine': 'cp-sat', 'version': ortools_version, 'seed': SOLVER_SEED, 'workers': 1,
             'wall_limit_s': time_limit, 'deterministic_limit': DETERMINISTIC_TIME_RATIO * time_limit}
 
 

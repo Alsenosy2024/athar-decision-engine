@@ -3,7 +3,10 @@ import json
 from fastapi import APIRouter, Depends, Request
 
 from app.db import audit, encode, request_conn, utc_now
-from app.decision_loop.contract import ContractError, solution_fingerprint
+from app.decision_loop.approval_gate import effective_inputs, read_record
+from app.decision_loop.contract import ContractError, contracting_dataset, solution_fingerprint
+from app.decision_loop.eligibility import approved_inputs, constraint_policy
+from app.decision_loop.solution_record import solution_record, solve_options, stored_record
 from app.decision_loop.storage import decision_contract, previous_plan, replay_inputs
 from app.llm.explain import optimization_explanation
 from app.llm.provider import get_provider
@@ -25,13 +28,17 @@ def optimize(cid: int, request: Request, body: OptimizeRequest | None = None,
 
 def run_optimization(connection, cid, body, settings, provider, *, dataset_id=None):
     company = get_company(connection, cid)
+    template = company['template']
+    legacy_replay = False
     try:
         if body.replay_run_id is not None:
             if body.model_fields_set - {'replay_run_id'} or dataset_id is not None:
                 raise ContractError('invalid_replay', 'إعادة التشغيل تستخدم المدخلات المثبتة من غير تعديلات.')
-            dataset_id, payload, model, contract, previous, expected = replay_inputs(
+            dataset, payload, model, contract, previous, original = replay_inputs(
                 connection, company, body.replay_run_id,
             )
+            dataset_id = dataset['dataset_id']
+            legacy_replay = original.get('legacy_contract_solver', 'solution_record' not in original)
             weights = contract['weights']
             time_limit = contract['solver']['wall_limit_s']
         else:
@@ -47,14 +54,17 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
                     body.forecast_id, time_limit, body.previous_run_id, previous,
                 )
 
-        solver_module = {'contracting': contracting, 'production': production}[company['template']]
+        solver_module = {'contracting': contracting, 'production': production}[template]
+        policy = constraint_policy(template, model)
+        options = {} if legacy_replay else solve_options(template, policy)
         result = solver_module.solve(
             payload, model['parameters'], weights, time_limit, decision_contract=contract, previous=previous,
+            **options,
         )
         if contract is not None:
             result['decision_contract'] = contract
             result['solution_fingerprint'] = solution_fingerprint(result)
-            if body.replay_run_id is not None and result['solution_fingerprint'] != expected:
+            if body.replay_run_id is not None and result['solution_fingerprint'] != original['solution_fingerprint']:
                 raise ContractError('replay_result_changed', 'نتيجة الإعادة اختلفت عن التشغيل المحفوظ.')
     except ContractError as error:
         if error.code in ('forecast_not_found', 'run_not_found'):
@@ -65,12 +75,20 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
     except OptimizationInputError as error:
         raise api_error(422, 'invalid_optimization_input', str(error)) from None
 
+    view_dataset = contracting_dataset(payload, contract) if template == 'contracting' else payload
+    result['solution_record'] = solution_record(
+        template, view_dataset, model | {'weights': weights}, policy, result,
+        dataset_id=dataset_id, inputs_approved=approved_inputs(json.loads(dataset['validation_json'])),
+        time_limit=time_limit, contract=contract,
+    )
     solver = result['solver']
-    grounded = optimization_explanation(company['template'], result, payload, model['parameters'])
+    grounded = optimization_explanation(template, result, payload, model['parameters'])
     result['explanation_ar'] = grounded if contract is not None else provider.explain(
         {'grounded_ar': grounded}, grounded,
     )
     stored = result | {'effective_weights': weights}
+    if legacy_replay:
+        stored['legacy_contract_solver'] = True
     run_id = connection.execute(
         '''INSERT INTO runs (company_id, dataset_id, model_id, kind, result_json, status, wall_s, created_at)
            VALUES (?, ?, ?, 'optimize', ?, ?, ?, ?)''',
@@ -88,7 +106,7 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
 def optimization_inputs(connection, company, body, default_dataset):
     dataset_id = body.dataset_id or default_dataset or company['active_dataset_id']
     dataset = connection.execute(
-        'SELECT payload_json, created_at FROM datasets WHERE id = ? AND company_id = ?',
+        'SELECT payload_json, created_at, validation_json FROM datasets WHERE id = ? AND company_id = ?',
         (dataset_id, company['id']),
     ).fetchone()
     if dataset is None:
@@ -103,14 +121,19 @@ def optimization_inputs(connection, company, body, default_dataset):
     return dataset_id, dataset, json.loads(dataset['payload_json']), model, weights
 
 
-def run_detail(row):
+def run_detail(row, connection):
     if row is None:
         raise api_error(404, 'run_not_found', 'تشغيل التحسين غير موجود.')
     run = dict(row)
     run['scenario'] = json.loads(run.pop('scenario_json') or 'null')
     run['result'] = json.loads(run.pop('result_json'))
+    if run['kind'] in ('optimize', 'whatif') and 'solution_record' not in run['result']:
+        source = read_record(connection, run['company_id'], run['id'])
+        dataset, model = effective_inputs(source)
+        run['result']['solution_record'] = stored_record(source, dataset, model, run['result'])
     if run['kind'] == 'optimize':
         run['result'].pop('effective_weights', None)
+        run['result'].pop('legacy_contract_solver', None)
     return run
 
 
@@ -124,9 +147,9 @@ def latest_run(cid: int, kind: RunKind = 'optimize', allow_missing: bool = False
     ).fetchone()
     if row is None and allow_missing:
         return None
-    return run_detail(row)
+    return run_detail(row, connection)
 
 
 @router.get('/runs/{rid}', response_model=RunDetail)
 def get_run(rid: int, connection=Depends(request_conn)):
-    return run_detail(connection.execute('SELECT * FROM runs WHERE id = ?', (rid,)).fetchone())
+    return run_detail(connection.execute('SELECT * FROM runs WHERE id = ?', (rid,)).fetchone(), connection)

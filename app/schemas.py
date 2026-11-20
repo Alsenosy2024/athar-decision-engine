@@ -229,6 +229,8 @@ class SolverSummary(BaseModel):
     search_status: str | None = None
     hint_source: Literal['previous_plan', 'heuristic'] | None = None
     first_qualified_s: float | None = None
+    search_objective: float | None = None
+    candidate_source: str | None = None
 
 
 class OptimizeResult(BaseModel):
@@ -239,6 +241,7 @@ class OptimizeResult(BaseModel):
     explanation_ar: str
     decision_contract: dict[str, JsonValue] | None = None
     solution_fingerprint: str | None = None
+    solution_record: dict[str, JsonValue] | None = None
 
 
 class RunDetail(BaseModel):

@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
+from app.decision_loop.eligibility import ineligible_arms
 from app.enterprise.impact_graph import Assumption, ImpactError, WhatIfRequest
 from app.enterprise.schema import NodeId, Number, StrictFields
 from app.intelligence.analysis import display
@@ -56,11 +57,12 @@ def outcome(result, objective):
     rows = {row['id']: row for row in result['nodes']}
     return {name: rows.get(key, {}).get('after') for name, key in (
         ('objective', objective), ('cash', 'cash'), ('risk', 'risk.credit'),
-    )}
+    )} | {'ineligible_arms': ineligible_arms(result)}
 
 
 def violations(values, goal):
     return [item for active, item in (
+        (bool(values.get('ineligible_arms')), 'sector_plan_ineligible'),
         (goal.cash_floor is not None and (values['cash'] is None or values['cash'] < goal.cash_floor), 'cash_floor'),
         (goal.risk_ceiling is not None and (values['risk'] is None or values['risk'] > goal.risk_ceiling), 'risk_ceiling'),
     ) if active]

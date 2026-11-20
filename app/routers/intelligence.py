@@ -13,6 +13,7 @@ from app.access import request_principal, require_role
 from app.company_data import workflow as company_import
 from app.config import STATIC_DIR
 from app.connectors.files import MAX_UPLOAD_BYTES, upload_bytes
+from app.decision_loop.eligibility import ineligible_arms
 from app.db import request_conn
 from app.enterprise import store
 from app.enterprise.result_context import result_context
@@ -402,7 +403,12 @@ def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connectio
                                        review, principal)
         if review['kind'] == 'decision':
             options = payload['recommendations']
-            if body.rank >= len(options) or options[body.rank]['violations']:
+            if body.rank >= len(options) or options[body.rank]['violations'] or (
+                current['graph'].arms and (
+                    not options[body.rank]['impact'].get('solver_details')
+                    or ineligible_arms(options[body.rank]['impact'])
+                )
+            ):
                 raise api_error(422, 'ai_recommendation_infeasible', 'اختار توصية بتحترم القيود قبل الحفظ.')
             return reviews.save_recommendation(connection, cid, current, review_id, body.rank, payload)
         if review['kind'] == 'forecast' and review['model_id'] is None:

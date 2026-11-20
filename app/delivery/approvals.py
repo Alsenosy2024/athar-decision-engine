@@ -2,6 +2,7 @@ import json
 
 from pydantic import TypeAdapter
 
+from app.decision_loop.approval_gate import eligibility_for_run, enforce_eligibility
 from app.db import audit, utc_now
 from app.llm.schema import Change
 from app.schemas import api_error
@@ -15,11 +16,12 @@ def get_plan(connection, pid, *, company_id=None):
     row = connection.execute('SELECT * FROM plans WHERE id = ?', (pid,)).fetchone()
     if row is None or (company_id is not None and row['company_id'] != company_id):
         raise api_error(404, 'plan_not_found', 'الخطة غير موجودة.')
-    return dict(row)
+    return dict(row) | {'eligibility': eligibility_for_run(connection, row['company_id'], row['run_id'], row['variant'])}
 
 
 def list_plans(connection, cid):
-    return [dict(row) for row in connection.execute(
+    return [dict(row) | {'eligibility': eligibility_for_run(connection, cid, row['run_id'], row['variant'])}
+            for row in connection.execute(
         'SELECT * FROM plans WHERE company_id = ? ORDER BY id DESC', (cid,),
     )]
 
@@ -48,6 +50,8 @@ def create_plan(connection, cid, run_id, variant):
         raise api_error(422, 'plan_unavailable', 'التشغيل لا يحتوي على خطة قابلة للاعتماد.')
 
     with connection:
+        connection.execute('BEGIN IMMEDIATE')
+        enforce_eligibility(connection, cid, run_id, variant)
         pid = connection.execute(
             """INSERT INTO plans (company_id, run_id, variant, status, created_at)
                VALUES (?, ?, ?, 'draft', ?)""", (cid, run_id, variant, utc_now()),
@@ -58,6 +62,12 @@ def create_plan(connection, cid, run_id, variant):
 
 def decide_plan(connection, pid, decision, comment, principal):
     with connection:
+        connection.execute('BEGIN IMMEDIATE')
+        draft = connection.execute('SELECT * FROM plans WHERE id = ?', (pid,)).fetchone()
+        if draft is None:
+            raise api_error(404, 'plan_not_found', 'الخطة غير موجودة.')
+        if draft['status'] == 'draft' and decision == 'approved':
+            enforce_eligibility(connection, draft['company_id'], draft['run_id'], draft['variant'])
         changed = connection.execute(
             """UPDATE plans SET status = ?, comment = ?, actor = ?, decided_at = ?, decided_by_user_id = ?
                WHERE id = ? AND status = 'draft'""", (decision, comment, principal.username, utc_now(), principal.id, pid),

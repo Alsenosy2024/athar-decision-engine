@@ -10,7 +10,7 @@ from app.decision_loop.contract import contracting_dataset
 from app.decision_loop.warm_start import FirstQualified, contracting_hint, hint_metrics
 from app.ingestion.loader import load_demo
 from app.optimization.budget import SolveBudget
-from app.optimization.common import OptimizationInputError, Weights, configured_solver
+from app.optimization.common import CONTRACTING_POLICY_TIME_RATIO, OptimizationInputError, Weights, configured_solver
 from app.optimization.kpis import cash_curve, contracting_kpis, resource_usage
 from app.templates_registry import load_templates
 
@@ -156,8 +156,10 @@ def evaluate(problem, starts):
     }}
 
 
-def build_model(problem, weights, hint, *, previous=None):
+def build_model(problem, weights, hint, *, previous=None, diagnosis=None, credit_hard=None):
     model = cp_model.CpModel()
+    if diagnosis:
+        diagnosis.attach(model)
     choices = {}
     starts = {}
     for project, chain in problem.chains.items():
@@ -166,8 +168,11 @@ def build_model(problem, weights, hint, *, previous=None):
         for activity in chain:
             options = {
                 week: model.new_bool_var(f'{activity.id}@{week}')
-                for week in range(earliest, latest + 1)
-                if all(cap >= activity.units for cap in problem.capacity[activity.resource][week:week + activity.duration])
+                for week in (range(problem.horizon - activity.duration + 1) if diagnosis
+                             else range(earliest, latest + 1))
+                if diagnosis or all(
+                    cap >= activity.units for cap in problem.capacity[activity.resource][week:week + activity.duration]
+                )
             }
             model.add_exactly_one(options.values())
             choices[activity.id] = options
@@ -180,8 +185,12 @@ def build_model(problem, weights, hint, *, previous=None):
     for project, chain in problem.chains.items():
         if not chain:
             continue
+        if diagnosis:
+            diagnosis.guard('precedence', model.add(starts[chain[0].id] >= problem.projects[project]['nta_week']))
         for predecessor, activity in zip(chain, chain[1:]):
-            model.add(starts[activity.id] >= starts[predecessor.id] + predecessor.duration)
+            constraint = model.add(starts[activity.id] >= starts[predecessor.id] + predecessor.duration)
+            if diagnosis:
+                diagnosis.guard('precedence', constraint)
         last = chain[-1]
         finish = starts[last.id] + last.duration
         late[project] = model.new_int_var(0, problem.horizon, f'late_{project}')
@@ -190,7 +199,12 @@ def build_model(problem, weights, hint, *, previous=None):
 
     resource_terms = {r: [[] for _ in capacity] for r, capacity in problem.capacity.items()}
     cash_terms = [[] for _ in range(problem.cash_periods)]
-    receipts = {activity: int(receipt) for activity, receipt in problem.receipts.items()}
+    # The optimization objective uses conservative integer receipts. Diagnosis
+    # checks the policy against the same exact cash convention as approval.
+    cash_scale = 10 ** max(
+        (max(0, -value.as_tuple().exponent) for value in problem.receipts.values()), default=0,
+    ) if diagnosis else 1
+    receipts = {activity: int(receipt * cash_scale) for activity, receipt in problem.receipts.items()}
     for a in problem.activities:
         for start, choice in choices[a.id].items():
             finish = start + a.duration
@@ -198,19 +212,27 @@ def build_model(problem, weights, hint, *, previous=None):
                 resource_terms[a.resource][week].append(a.units * choice)
             for week in range(start, problem.cash_periods):
                 paid = receipts[a.id] if week >= finish + problem.lag else 0
-                balance = paid - a.cost * min(week - start + 1, a.duration)
+                balance = paid - cash_scale * a.cost * min(week - start + 1, a.duration)
                 if balance:
                     cash_terms[week].append(balance * choice)
 
     for resource, terms in resource_terms.items():
         for week, load in enumerate(terms):
-            model.add(sum(load) <= problem.capacity[resource][week])
+            constraint = model.add(sum(load) <= problem.capacity[resource][week])
+            if diagnosis:
+                diagnosis.guard('resource_capacity', constraint)
+
+    if diagnosis:
+        if 'credit_limit' in diagnosis.literals:
+            for terms in cash_terms:
+                diagnosis.guard('credit_limit', model.add(sum(terms) >= -problem.credit * cash_scale))
+        return model, starts, None
 
     max_od = sum(a.duration * a.cost for a in problem.activities)
     hint_cash = None if hint is None else cash_curve(
         problem.activities, hint, receipts, problem.lag, problem.cash_periods)
     # A known credit-feasible plan lets us enforce the ceiling during the solve.
-    breach_limit = (0 if hint_cash is not None and min(hint_cash) >= -problem.credit
+    breach_limit = (0 if credit_hard is not False and hint_cash is not None and min(hint_cash) >= -problem.credit
                     else max(0, max_od - problem.credit))
     selected = previous if previous is not None else hint
     selected_cash = hint_cash if previous is None else (
@@ -277,7 +299,7 @@ def build_model(problem, weights, hint, *, previous=None):
 
 
 def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False,
-          decision_contract=None, previous=None, measure_first=False):
+          decision_contract=None, previous=None, measure_first=False, credit_hard=None):
     started = monotonic()
     time_limit = Settings().solver_time_limit if time_limit is None else time_limit
     if not isfinite(time_limit) or time_limit <= 0:
@@ -292,7 +314,9 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
         initial = baseline(problem, respect_credit=False)
     warm = contracting_hint(problem, previous, parameters) if previous else None
     try:
-        model, start_vars, hint_score = build_model(problem, weights, initial, previous=warm)
+        model, start_vars, hint_score = build_model(
+            problem, weights, initial, previous=warm, credit_hard=credit_hard,
+        )
     except (OverflowError, ValueError, TypeError):
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.') from None
     if model.validate():
@@ -312,6 +336,8 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
     fixed = deterministic or decision_contract is not None or previous is not None
     solver = configured_solver(remaining, deterministic=fixed,
                                deterministic_budget=time_limit if fixed else None)
+    if deterministic and credit_hard is not None and decision_contract is None:
+        solver.parameters.max_deterministic_time = CONTRACTING_POLICY_TIME_RATIO * time_limit
     search_status = solver.solve(model, first) if remaining else cp_model.UNKNOWN
     status = search_status
 
@@ -322,6 +348,7 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
         objective = solver.objective_value
         bound = solver.best_objective_bound
         chosen = extract(solver)
+    search_objective = objective
     if initial is not None and (status == cp_model.UNKNOWN or objective is not None and hint_score < objective):
         chosen = initial
         objective = hint_score
@@ -338,6 +365,9 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
                    'bound': bound, 'wall_s': solver.wall_time if remaining else 0.0,
                    'time_limit_s': time_limit, 'state': state,
                    'stop_reason': stop_reason, 'search_status': solver.status_name(search_status),
+                   'search_objective': search_objective,
+                   'candidate_source': 'heuristic' if chosen is initial and chosen is not None
+                   else 'solver' if chosen is not None else None,
                    **hint_metrics(previous, warm, measure_first, first)},
         'explanation_ar': '',
     }

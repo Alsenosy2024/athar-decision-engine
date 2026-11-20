@@ -167,6 +167,9 @@ def decide(connection, snapshot, decision_id, body, principal):
             raise api_error(409, 'decision_already_decided', 'المسودة دي اتراجعت بالفعل.')
         if body.decision == 'approved':
             checked_version(connection, snapshot['id'], plan['version'])
+            forecast = json.loads(plan['forecast_json'])
+            if forecast.get('ineligible_arms') or (snapshot['graph'].arms and 'ineligible_arms' not in forecast):
+                raise api_error(422, 'plan_ineligible', 'خطط القطاعات محتاجة تحقق قبل اعتماد القرار.')
         connection.execute(
             '''UPDATE enterprise_decisions SET status = ?, decided_at = ?, decided_by = ?, reviewer = ?, comment = ?
                WHERE id = ?''', (body.decision, utc_now(), principal.id, principal.username, body.comment, decision_id),

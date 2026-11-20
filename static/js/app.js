@@ -160,11 +160,13 @@ document.addEventListener('alpine:init', () => {
         forecast: null,
         plans: [],
         chatScenario: null,
+        sectorChatRun: null,
         enterpriseChatImpact: null,
         assistantMapModel: null,
         onboardingImpactModel: null,
         error: '',
         toast: '',
+        get canPlan() { return ['admin', 'planner'].includes(this.user?.role); },
         get canApprove() { return ['admin', 'approver'].includes(this.user?.role); },
         get company() { return this.companies.find(company => company.id === this.companyId); },
         get template() { return this.company?.template; },
@@ -212,7 +214,7 @@ document.addEventListener('alpine:init', () => {
             }
         },
         switchCompany(id) {
-            this.lastRun = this.forecast = this.chatScenario = null;
+            this.lastRun = this.forecast = this.chatScenario = this.sectorChatRun = null;
             this.enterpriseChatImpact = this.onboardingImpactModel = null;
             this.plans = [];
             this.toast = '';

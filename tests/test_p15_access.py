@@ -18,12 +18,16 @@ def new_account(admin, role, companies=(1,), username=None):
 
 
 @pytest.fixture
-def draft(db_path):
+def draft(client, db_path):
+    response = client.post('/api/companies/1/optimize', json={'time_limit': 2})
+    assert response.status_code == 200
+    solved = response.json()
+    assert solved['solution_record']['optimized']['eligible']
     with get_conn(db_path) as conn:
         conn.execute(
             """INSERT INTO runs (id, company_id, dataset_id, model_id, kind, result_json, status, wall_s, created_at)
-               VALUES (88, 1, 1, 1, 'optimize', ?, 'OPTIMAL', 0, 'test')""",
-            (encode({'optimized': {'plan': {'activities': []}, 'kpis': {'total': 12}}}),),
+               VALUES (88, 1, 1, 1, 'optimize', ?, ?, 0, 'test')""",
+            (encode({field: solved[field] for field in ('optimized', 'solver')}), solved['solver']['status']),
         )
         conn.execute(
             "INSERT INTO plans (id, company_id, run_id, variant, status, created_at) "

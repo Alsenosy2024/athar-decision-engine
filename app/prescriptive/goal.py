@@ -6,6 +6,7 @@ from typing import Annotated
 
 from pydantic import Field, model_validator
 
+from app.decision_loop.eligibility import ineligible_arms
 from app.enterprise.impact_graph import Assumption, ImpactError, WhatIfRequest
 from app.enterprise.scenarios import KPI_NODES, kpis
 from app.enterprise.schema import Label, NodeId, Number, StrictFields
@@ -111,11 +112,13 @@ def evaluate(model, base, actions):
         'actions': actions, 'kpis': metrics, 'assumptions': result['assumptions'],
         'impact': [node for node in result['nodes'] if node['affected']],
         'solver_status': result['solver_status'], 'outcome_context': result['outcome_context'],
+        'ineligible_arms': ineligible_arms(result),
     }
 
 
 def assess(candidate, target, cash_minimum):
-    return candidate['kpis']['profit'] >= target and candidate['kpis']['cash_low'] >= cash_minimum
+    return (not candidate['ineligible_arms']
+            and candidate['kpis']['profit'] >= target and candidate['kpis']['cash_low'] >= cash_minimum)
 
 
 def search(model, body):
@@ -173,6 +176,8 @@ def validate_draft(model, draft):
            for key, value in draft.actions.items()):
         raise ImpactError('الإجراءات لازم تغيّر القيم المرجعية داخل النطاق اللي حددته.')
     result = evaluate(model, base, draft.actions)
+    if result['ineligible_arms']:
+        raise ImpactError('فيه خطة قطاع غير مؤهلة للاعتماد. راجع سجل السولفر والقيود.')
     if not assess(result, target, draft.goal.cash_minimum):
         raise ImpactError('الإجراءات دي ما حققتش هدف الربح والسيولة في الحساب الحالي.')
     return {**result, 'baseline': metrics, 'profit_minimum': target,

@@ -21,14 +21,15 @@ class Weights:
         return tuple(round(weight * 10) for weight in (self.ld, self.financing, self.makespan))
 
 
-SEED = 7
+SOLVER_SEED = 7
 DETERMINISTIC_TIME_RATIO = 0.05
+CONTRACTING_POLICY_TIME_RATIO = 0.25
 
 
 def configured_solver(time_limit: float, *, deterministic: bool = False,
                       deterministic_budget: float | None = None) -> cp_model.CpSolver:
     solver = cp_model.CpSolver()
-    solver.parameters.random_seed = SEED
+    solver.parameters.random_seed = SOLVER_SEED
     solver.parameters.max_time_in_seconds = time_limit
     solver.parameters.num_workers = 1 if deterministic else 8
     if deterministic:

@@ -1,4 +1,5 @@
 """Immutable expected measurements and post-execution closure requirements."""
+from app.decision_loop.eligibility import ineligible_arms
 from app.enterprise.outcome_context import measurement_basis
 from app.enterprise.scenarios import KPI_NODES, kpi_specs
 
@@ -40,7 +41,7 @@ def recommendation_forecast(snapshot, review_id, payload, option):
     forecast = {
         'kpis': {kpi: option['objective']}, 'baseline': {kpi: payload['reference']},
         'assumptions': impact['assumptions'], 'solver_status': impact['solver_status'],
-        'weeks': weeks, 'review_id': review_id, 'outcome_context': impact.get('outcome_context'),
+        'weeks': weeks, 'review_id': review_id, 'ineligible_arms': ineligible_arms(impact), 'outcome_context': impact.get('outcome_context'),
     }
     forecast['outcome_contract'] = from_forecast(
         snapshot['graph'], forecast, weeks, {kpi}, source='lab_search_controls', objective=objective,

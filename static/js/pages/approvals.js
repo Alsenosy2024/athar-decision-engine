@@ -16,7 +16,8 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('approvalsPage', () => workspacePage('approvals', () => ({
         plans: [], audit: [], selected: null, comment: '', decision: 'approved',
     }), {
-        planStatus, variantLabel,
+        planStatus, variantLabel, eligibilityText,
+        get selectedPlan() { return this.plans.find(plan => plan.id === this.selected); },
         get formats() {
             const formats = [['xlsx', 'Excel'], ['csv', 'CSV'], ['json', 'JSON']];
             return this.template === 'contracting' ? [...formats, ['p6.csv', 'P6 CSV'], ['p6.xml', 'P6 XML']] : formats;
@@ -35,10 +36,11 @@ document.addEventListener('alpine:init', () => {
         review(id) {
             this.selected = id;
             this.comment = '';
-            this.decision = 'approved';
+            this.decision = this.selectedPlan?.eligibility?.eligible ? 'approved' : 'rejected';
             this.$nextTick(() => this.$refs.decision.focus());
         },
         saveDecision() {
+            if (this.decision === 'approved' && !this.selectedPlan?.eligibility?.eligible) return;
             this.perform('decision', async (base, live) => {
                 const updated = await api('/plans/' + this.selected + '/decide',
                     post({ comment: this.comment.trim(), decision: this.decision }));

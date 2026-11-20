@@ -1,0 +1,7 @@
+.solution-record summary { cursor: pointer; }
+.solution-record .risk-grid dd { overflow-wrap: anywhere; }
+.solution-record .change-summary { margin-block-start: var(--space-3); }
+.solution-record-actions { min-inline-size: 0; }
+@media (max-width: 520px) {
+    .solution-record .risk-grid { grid-template-columns: minmax(0, 1fr); }
+}

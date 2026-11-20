@@ -11,7 +11,7 @@ from app.decision_loop.warm_start import PreviousPlan
 
 def optimization_snapshot(connection, cid, run_id):
     row = connection.execute(
-        """SELECT r.*, d.payload_json, m.model_json
+        """SELECT r.*, d.payload_json, d.validation_json, m.model_json, m.version
            FROM runs r
            JOIN datasets d ON d.id = r.dataset_id AND d.company_id = r.company_id
            JOIN company_models m ON m.id = r.model_id AND m.company_id = r.company_id
@@ -59,7 +59,7 @@ def replay_inputs(connection, company, run_id):
     if not contract or contract['version'] != SCHEMA_VERSION:
         raise ContractError('replay_unavailable', 'التشغيل محفوظ من غير إصدار مدعوم لعقد القرار.')
     payload = json.loads(row['payload_json'])
-    model = {'id': row['model_id'], **json.loads(row['model_json'])}
+    model = json.loads(row['model_json']) | {'id': row['model_id'], 'version': row['version']}
     previous = previous_plan(connection, company['id'], contract['previous_run_id'])
     previous_hash = fingerprint(asdict(previous)) if previous is not None else None
     time_limit = contract['solver']['wall_limit_s']
@@ -71,4 +71,4 @@ def replay_inputs(connection, company, run_id):
             or contract['previous_plan_fingerprint'] != previous_hash
             or contract['solver'] != solver_settings(time_limit)):
         raise ContractError('replay_inputs_changed', 'مدخلات التشغيل أو إصدار السولفر اتغيروا.')
-    return row['dataset_id'], payload, model, contract, previous, original['solution_fingerprint']
+    return row, payload, model, contract, previous, original

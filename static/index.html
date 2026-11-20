@@ -7,6 +7,7 @@
     <title>أثر | Athar</title>
     <link rel="stylesheet" href="/static/css/app.css">
     <link rel="stylesheet" href="/static/css/access.css">
+    <link rel="stylesheet" href="/static/css/solution-record.css">
     <link rel="stylesheet" href="/static/css/athar-assistant.css">
     <link rel="stylesheet" href="/static/css/onboarding.css">
     <link rel="stylesheet" href="/static/css/prescriptive.css">
@@ -29,6 +30,7 @@
     <script defer src="/static/js/pages/prescriptive.js"></script>
     <script defer src="/static/js/pages/dashboard.js"></script>
     <script defer src="/static/js/pages/forecast.js"></script>
+    <script defer src="/static/js/pages/solution-record.js"></script>
     <script defer src="/static/js/pages/optimize.js"></script>
     <script defer src="/static/js/pages/whatif.js"></script>
     <script defer src="/static/js/pages/chat.js"></script>
@@ -917,14 +919,42 @@
                     <p class="notice error page-feedback" role="status" x-show="run?.optimized?.kpis?.credit_ok === false">
                         الخطة المحسّنة بتتجاوز حد الائتمان. راجع قيمة التجاوز قبل اعتمادها.
                     </p>
+                    <details class="card solution-record" data-testid="solution-record" x-data="solutionRecordPanel(() => run?.solution_record)" x-show="record" open>
+                        <summary><strong>سجل الحل</strong>
+                            <span class="status" :class="{error: !verdict?.eligible}" x-text="eligibilityLabel(verdict)"></span>
+                        </summary>
+                        <p class="spaced" x-show="!verdict?.eligible" x-text="eligibilityText(verdict)"></p>
+                        <p class="spaced" x-show="record?.baseline.has_candidate && !record?.baseline.eligible"
+                            x-text="'الخطة الإرشادية غير مؤهلة · ' + eligibilityText(record?.baseline)"></p>
+                        <dl class="risk-grid">
+                            <div><dt>بحث السولفر</dt><dd x-text="searchStatusLabel(record?.solver.search_status || record?.solver.status)"></dd></div>
+                            <div><dt>حد الهدف (مقياس السولفر)</dt><dd><bdi x-text="formatValue(record?.solver.bound)"></bdi></dd></div>
+                            <div><dt>الفجوة النسبية</dt><dd><bdi x-text="gap"></bdi></dd></div>
+                        </dl>
+                        <ul class="change-summary" x-show="checks.length">
+                            <template x-for="[key, check] in checks" :key="key">
+                                <li>
+                                    <strong x-text="check.label_ar"></strong>
+                                    <span x-text="check.kind === 'hard' ? ' · إلزامي' : ' · مرن'"></span>
+                                    <span x-show="check.binding_count" x-text="' · عند الحد في ' + formatValue(check.binding_count) + ' حالة'"></span>
+                                    <span x-show="check.overrun" x-text="' · تجاوز ' + formatValue(check.overrun) + ' ' + check.unit"></span>
+                                </li>
+                            </template>
+                        </ul>
+                        <a class="button chip spaced" href="#/model"
+                           x-show="$store.app.canPlan && verdict?.hard_overruns?.length">راجع القيود في إعدادات النموذج</a>
+                    </details>
                     <div class="snapshot">
-                        <div class="snapshot-info"><h2 x-text="resultLabel"></h2>
-                            <p x-show="run?.solver.state === 'partial'" role="status">البحث وصل لحدّه. دي أفضل خطة متاحة.</p>
+                        <div class="snapshot-info"><h2 x-text="contract ? resultLabel : run?.solution_record?.optimized?.has_candidate ? 'الخطة اتحسبت' : solverLabel(run?.solver.status)"></h2>
+                            <p x-show="run?.solver.state === 'partial'" role="status">البحث وصل لحدّه. دي خطة مرشحة للمراجعة.</p>
                             <p x-text="'التشغيل ' + number(runId) + ' · ' + number(run?.solver.wall_s) + ' ثانية'"></p>
                             <p data-testid="hint-source" x-show="run?.solver?.hint_source"
                                 x-text="run?.solver?.hint_source === 'previous_plan' ? 'تلميح الحل من الخطة السابقة' : 'تلميح الحل من الخطة المرجعية'"></p></div>
-                        <button class="button secondary" data-testid="draft-optimized" @click="draft()" :disabled="!!busy || !run?.optimized?.plan || !!contract"
+                        <div class="actions solution-record-actions">
+                        <a class="button secondary" href="#/chat" @click="askAboutRun(runId)" x-show="$store.app.canPlan">اسأل أثر عن الحل</a>
+                        <button class="button secondary" data-testid="draft-optimized" @click="draft()" :disabled="!!busy || !run?.solution_record?.optimized?.eligible || !!contract"
                             x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>
+                        </div>
                     </div>
                     <div class="split-grid">
                         <article class="card" x-show="rows.length"><h2>المقارنة المالية</h2><div class="chart compact"><canvas data-testid="chart-compare" x-ref="compare" role="img" aria-label="مقارنة التكاليف والعجز النقدي للخطة المرجعية والمحسّنة"></canvas></div></article>
@@ -1024,12 +1054,40 @@
                             <div x-show="risk && !pinnedDemand"><div class="chart mini"><canvas data-testid="chart-mc" x-ref="mc" role="img" aria-label="التوزيع التكراري للتأخير"></canvas></div></div>
                         </article>
                     </div>
+                    <details class="card solution-record" data-testid="solution-record" x-data="solutionRecordPanel(() => result?.solution_record)" x-show="record" open>
+                        <summary><strong>سجل الحل</strong>
+                            <span class="status" :class="{error: !verdict?.eligible}" x-text="eligibilityLabel(verdict)"></span>
+                        </summary>
+                        <p class="spaced" x-show="!verdict?.eligible" x-text="eligibilityText(verdict)"></p>
+                        <p class="spaced" x-show="record?.baseline.has_candidate && !record?.baseline.eligible"
+                            x-text="'الخطة الإرشادية غير مؤهلة · ' + eligibilityText(record?.baseline)"></p>
+                        <dl class="risk-grid">
+                            <div><dt>بحث السولفر</dt><dd x-text="searchStatusLabel(record?.solver.search_status || record?.solver.status)"></dd></div>
+                            <div><dt>حد الهدف (مقياس السولفر)</dt><dd><bdi x-text="formatValue(record?.solver.bound)"></bdi></dd></div>
+                            <div><dt>الفجوة النسبية</dt><dd><bdi x-text="gap"></bdi></dd></div>
+                        </dl>
+                        <ul class="change-summary" x-show="checks.length">
+                            <template x-for="[key, check] in checks" :key="key">
+                                <li>
+                                    <strong x-text="check.label_ar"></strong>
+                                    <span x-text="check.kind === 'hard' ? ' · إلزامي' : ' · مرن'"></span>
+                                    <span x-show="check.binding_count" x-text="' · عند الحد في ' + formatValue(check.binding_count) + ' حالة'"></span>
+                                    <span x-show="check.overrun" x-text="' · تجاوز ' + formatValue(check.overrun) + ' ' + check.unit"></span>
+                                </li>
+                            </template>
+                        </ul>
+                        <a class="button chip spaced" href="#/model"
+                           x-show="$store.app.canPlan && verdict?.hard_overruns?.length">راجع القيود في إعدادات النموذج</a>
+                    </details>
                     <article class="card" x-show="result">
                         <div class="card-heading"><div><h2>نتيجة السيناريو</h2>
-                            <p x-text="'السيناريو ' + number(result?.run_id) + ' · التشغيل الأساسي ' + number(resultBase) + ' · ' + solverLabel(result?.scenario.solver.status)"></p>
+                            <p x-text="'السيناريو ' + number(result?.run_id) + ' · التشغيل الأساسي ' + number(resultBase) + ' · ' + searchStatusLabel(result?.scenario.solver.search_status || result?.scenario.solver.status)"></p>
                             <p x-show="result?.approval_policy">السيناريو للمراجعة التجريبية فقط.</p></div>
-                            <button class="button secondary" data-testid="draft-scenario" @click="draft()" :disabled="!!busy || !result?.scenario?.plan || !!result?.approval_policy"
+                            <div class="actions solution-record-actions">
+                            <a class="button secondary" href="#/chat" @click="askAboutRun(result.run_id)" x-show="$store.app.canPlan">اسأل أثر عن الحل</a>
+                            <button class="button secondary" data-testid="draft-scenario" @click="draft()" :disabled="!!busy || !result?.solution_record?.optimized?.eligible || !!result?.approval_policy"
                                 x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>
+                            </div>
                         </div>
                         <ul class="change-summary"><template x-for="(text, index) in result?.changes_ar || []" :key="index"><li x-text="text"></li></template></ul>
                         <p class="spaced" x-text="result?.explanation_ar"></p>
@@ -1082,15 +1140,27 @@
                             <article class="bubble" :class="item.role">
                                 <h3 x-text="item.role === 'user' ? 'أنت' : assistant.name"></h3><p dir="auto" x-text="item.content"></p>
                                 <small x-show="item.context" x-text="enterpriseResultContext(item.context)"></small>
+                                <details x-show="item.evidence?.length" data-testid="chat-evidence">
+                                    <summary>دليل الأرقام</summary>
+                                    <ul class="change-summary">
+                                        <template x-for="(entry, index) in item.evidence || []" :key="index">
+                                            <li><a :href="entry.source_url" target="_blank" rel="noopener" x-text="evidenceLabel(entry)"></a></li>
+                                        </template>
+                                    </ul>
+                                </details>
                             </article>
                         </template>
                     </div>
                     <div class="actions presets"><template x-for="question in suggestions" :key="question">
                         <button type="button" class="button chip" @click="input = question; $refs.chatInput.focus()" :disabled="!!busy" x-text="question"></button>
                     </template></div>
-                    <label x-show="scope === 'enterprise'"><input type="checkbox" x-model="remote" :disabled="!!busy">
-                        السماح بـCodex لفهم الفرضية</label>
-                    <small x-show="scope === 'enterprise' && remote">سؤال الفرضية والمدخلات المتاحة ممكن يتبعتوا لـCodex.</small>
+                    <label><input type="checkbox" x-model="remote" :disabled="!!busy">
+                        <span x-text="scope === 'enterprise' ? 'السماح بـCodex لفهم الفرضية' : 'السماح بالنموذج اللغوي لفهم السؤال'"></span></label>
+                    <small x-show="remote">السؤال والمدخلات المتاحة ممكن يتبعتوا لمزوّد النموذج.</small>
+                    <p class="spaced" x-show="scope === 'sector' && pinnedRun">
+                        <span x-text="'سجل التشغيل ' + number(pinnedRun)"></span>
+                        <button type="button" class="button chip" @click="pinnedRun = null">استخدم أحدث تشغيل</button>
+                    </p>
                     <form class="compose" @submit.prevent="send()">
                         <label class="visually-hidden" for="chat-input">رسالتك</label>
                         <input type="text" id="chat-input" x-ref="chatInput" data-testid="chat-input" maxlength="2000" required
@@ -1119,12 +1189,17 @@
                         </table>
                     </div>
                 </article>
-                <article class="card spaced" x-show="reply?.scenario?.changes?.length">
+                <article class="card spaced" x-show="reply?.constraint_proposal">
+                    <h2>مسودة مراجعة حد الائتمان</h2>
+                    <p>ذروة السحب على المكشوف لازم تكون عند حد الائتمان أو أقل.</p>
+                    <p x-show="reply?.constraint_proposal?.proposed_kind"
+                       x-text="reply?.constraint_proposal?.proposed_kind === 'hard' ? 'التصنيف المقترح إلزامي' : 'التصنيف المقترح مرن'"></p>
+                    <a class="button secondary spaced" href="#/model">افتح إعدادات نموذج الشركة</a>
+                </article>
+                <article class="card spaced" x-show="reply?.action === 'whatif'">
                     <div class="card-heading">
-                        <div><h2>السيناريو المستخلص</h2><p x-text="reply?.scenario.echo_ar || 'راجع التغييرات قبل التشغيل.'"></p></div>
+                        <h2>السيناريو المحسوب</h2>
                         <a class="button secondary" href="#/whatif" x-show="reply?.action === 'whatif'">عرض نتيجة السيناريو</a>
-                        <button class="button primary" @click="confirm()" :disabled="!!busy" x-show="reply && reply.action !== 'whatif'"
-                            x-text="busy === 'confirm' ? 'جارٍ التشغيل…' : 'شغّل'"></button>
                     </div>
                     <div class="actions" x-show="reply?.action === 'whatif'"><span class="status" x-text="'تم التشغيل · ' + number(reply?.run_id)"></span></div>
                 </article>
@@ -1149,12 +1224,13 @@
                                 <th scope="col">المراجع والتعليق</th><th scope="col">الإجراء</th></tr></thead>
                                 <tbody><template x-for="plan in plans" :key="plan.id">
                                     <tr><th scope="row" x-text="'خطة ' + number(plan.id)"></th><td x-text="variantLabel(plan.variant)"></td>
-                                        <td><span class="status" :class="{neutral: plan.status === 'draft', error: plan.status === 'rejected'}" x-text="planStatus(plan.status)"></span></td>
+                                        <td><span class="status" :class="{neutral: plan.status === 'draft', error: plan.status === 'rejected'}" x-text="planStatus(plan.status)"></span>
+                                            <small x-show="plan.status !== 'rejected' && !plan.eligibility?.eligible" x-text="eligibilityText(plan.eligibility)"></small></td>
                                         <td><p dir="auto" x-text="plan.actor || '—'"></p><p class="secondary-text" dir="auto" x-text="plan.comment"></p></td>
                                         <td><div class="actions">
                                             <button class="button secondary" x-show="plan.status === 'draft' && $store.app.canApprove" :disabled="!!busy" @click="review(plan.id)">راجع المسودة</button>
                                             <template x-for="[format, label] in formats" :key="format">
-                                                <button class="button chip" x-show="plan.status === 'approved'" :disabled="!!busy" @click="download(plan.id, format)"
+                                                <button class="button chip" x-show="plan.status === 'approved' && plan.eligibility?.eligible" :disabled="!!busy" @click="download(plan.id, format)"
                                                     x-text="label" :aria-label="'نزّل ' + label + ' للخطة ' + number(plan.id)"></button>
                                             </template>
                                             <span x-show="plan.status === 'rejected'">—</span>
@@ -1166,11 +1242,12 @@
                     </article>
                     <article class="card" x-show="selected">
                         <h2 x-text="'مراجعة الخطة ' + number(selected)"></h2>
+                        <p class="notice error" x-show="selectedPlan && !selectedPlan.eligibility?.eligible" x-text="eligibilityText(selectedPlan?.eligibility)"></p>
                         <form @submit.prevent="saveDecision()" class="stack">
                             <div class="field-group">
                                 <p class="field">المراجع <bdi x-text="$store.app.user?.username"></bdi></p>
                                 <label class="field">القرار<select x-ref="decision" x-model="decision" :disabled="!!busy">
-                                    <option value="approved">اعتماد الخطة</option><option value="rejected">رفض الخطة</option>
+                                    <option value="approved" :disabled="!selectedPlan?.eligibility?.eligible">اعتماد الخطة</option><option value="rejected">رفض الخطة</option>
                                 </select></label>
                                 <label class="field field-wide">تعليق<textarea rows="2" maxlength="2000" x-model="comment" :disabled="!!busy"></textarea></label>
                             </div>

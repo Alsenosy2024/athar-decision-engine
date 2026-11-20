@@ -4,6 +4,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.decision_loop.approval_gate import enforce_eligibility
 from app.db import audit, request_conn
 from app.delivery import approvals
 from app.delivery.export import FORMATS, render_export
@@ -52,6 +53,7 @@ def export_plan(pid: int, fmt: str, connection=Depends(request_conn)):
     if fmt.startswith('p6.') and template != 'contracting':
         raise api_error(404, 'p6_not_supported', 'تصدير بريمافيرا متاح لقالب المقاولات فقط.')
     approvals.require_approved(plan)
+    enforce_eligibility(connection, plan['company_id'], plan['run_id'], plan['variant'])
     output, kpis, dataset, parameters = approvals.plan_snapshot(connection, plan, template)
     content = render_export(fmt, plan, template, output, kpis, dataset, parameters)
     with connection:

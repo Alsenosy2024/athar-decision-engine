@@ -2,6 +2,7 @@
 import json
 from dataclasses import dataclass
 
+from app.decision_loop.approval_gate import enforce_eligibility
 from app.schemas import api_error
 
 
@@ -13,6 +14,7 @@ class ClientPlan:
     schedule: dict
     status: str
     identity: dict
+    constraints: dict
 
 
 def resolve_client_plans(connection, graph, company_id):
@@ -34,13 +36,15 @@ def resolve_client_plans(connection, graph, company_id):
         if row is None:
             raise api_error(422, 'invalid_client_plan',
                             'اختار خطة إنتاج معتمدة من بيانات مرفوعة لنفس الشركة.')
+        eligibility = enforce_eligibility(connection, company_id, row['run_id'], 'optimized')
         model, result = json.loads(row['model_json']), json.loads(row['result_json'])
         identity = {'company_id': company_id, 'dataset_id': row['dataset_id'],
                     'plan_id': row['plan_id'], 'run_id': row['run_id'],
                     'operating_model_id': row['model_id'], 'operating_model_version': row['version']}
         sources[arm.sector] = ClientPlan(json.loads(row['payload_json']), model['parameters'],
                                          result.get('effective_weights', model['weights']),
-                                         result['optimized']['plan'], row['status'], identity)
+                                         result['optimized']['plan'], row['status'], identity,
+                                         {key: rule['kind'] for key, rule in eligibility['constraints'].items()})
     return sources
 
 def ledger_edges(graph, links, drivers):

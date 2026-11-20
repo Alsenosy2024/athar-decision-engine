@@ -4,8 +4,11 @@ from typing import Literal
 
 import numpy as np
 from fastapi import APIRouter, Depends, Request
-from pydantic import Field
+from pydantic import Field, JsonValue
 
+from app.decision_loop.contract import contracting_dataset
+from app.decision_loop.eligibility import approved_inputs, constraint_policy
+from app.decision_loop.solution_record import changed_input, solution_record, solve_options
 from app.db import audit, encode, request_conn, utc_now
 from app.llm.explain import scenario_explanation
 from app.llm.provider import get_provider
@@ -39,11 +42,12 @@ class WhatIfResult(StrictBody):
     explanation_ar: str
     approval_policy: Literal['shadow_only'] | None = None
     source_input_fingerprint: str | None = None
+    solution_record: dict[str, JsonValue] | None = None
 
 
 def base_optimization(connection, cid, run_id):
     base = connection.execute(
-        '''SELECT runs.*, datasets.payload_json, company_models.model_json
+        '''SELECT runs.*, datasets.payload_json, datasets.validation_json, company_models.model_json, company_models.version
            FROM runs
            JOIN datasets ON datasets.id = runs.dataset_id AND datasets.company_id = runs.company_id
            JOIN company_models ON company_models.id = runs.model_id AND company_models.company_id = runs.company_id
@@ -72,20 +76,36 @@ def run_whatif(connection, company, body, settings, provider):
         raise api_error(422, 'plan_unavailable', 'تشغيل التحسين الأساسي مفيهوش خطة للمقارنة.')
     model = json.loads(base['model_json'])
     model['weights'] = original.get('effective_weights', model['weights'])
+    original_data = json.loads(base['payload_json'])
     payload, changed_model, changes_ar = apply_changes(
-        json.loads(base['payload_json']), model, body.changes, template_id=template,
+        original_data, model, body.changes, template_id=template,
     )
     parameters = changed_model['parameters']
+    policy = constraint_policy(template, changed_model)
+    time_limit = (contract['solver']['wall_limit_s'] if contract else
+                  original.get('solution_record', {}).get('snapshot', {}).get('time_limit_s')
+                  or settings.solver_time_limit)
     solver_module = {'contracting': contracting, 'production': production}[template]
     try:
-        limit = contract['solver']['wall_limit_s'] if contract else settings.solver_time_limit
-        solved = solver_module.solve(payload, parameters, changed_model['weights'], limit, decision_contract=contract)
+        solved = solver_module.solve(
+            payload, parameters, changed_model['weights'], time_limit,
+            decision_contract=contract, **solve_options(template, policy),
+        )
     except OptimizationInputError as error:
         raise api_error(422, 'invalid_optimization_input', str(error)) from None
     solver = solved['solver']
     scenario = solved['optimized'] | {'solver': solver}
     grounded = scenario_explanation(template, base_kpis, scenario['kpis'], changes_ar, payload, parameters)
+    view_dataset = contracting_dataset(payload, contract) if template == 'contracting' else payload
+    record = solution_record(
+        template, view_dataset, changed_model | {'id': base['model_id'], 'version': base['version']}, policy, solved,
+        dataset_id=base['dataset_id'], inputs_approved=approved_inputs(json.loads(base['validation_json'])),
+        time_limit=time_limit, contract=contract,
+    )
+    record['base_run_id'] = base['id']
+    record['changed_input'] = changed_input(template, original_data, model, payload, changed_model, body.changes)
     result = {
+        'solution_record': record,
         'base': {'kpis': base_kpis}, 'scenario': scenario,
         'diff': kpi_diff(base_kpis, scenario['kpis']), 'changes_ar': changes_ar,
         'explanation_ar': grounded if contract else provider.explain({'grounded_ar': grounded}, grounded),

@@ -1,22 +1,29 @@
 document.addEventListener('alpine:init', () => {
     Alpine.data('chatPage', () => workspacePage('chat', () => ({
         messages: [], input: '', reply: null, provider: '',
-        scope: 'enterprise', models: [], modelId: '', remote: false,
+        scope: 'enterprise', models: [], modelId: '', remote: false, pinnedRun: null,
     }), {
         assistant: ATHAR_ASSISTANT,
         get sectorAvailable() { return !this.$store.app.isOnboardingCompany && ['admin', 'planner'].includes(this.$store.app.user?.role); },
         enterpriseResultContext,
         get providerLabel() {
+            if (this.scope === 'sector' && !this.remote) return 'قواعد محلية';
             return { codex: 'Codex', rules: 'قواعد محلية', 'rules(fallback)': 'قواعد محلية · رجوع تلقائي',
                 openai_compat: 'OpenAI-compatible' }[this.reply?.provider || this.provider] || '';
         },
         get suggestions() {
             if (this.scope === 'enterprise') return ['الكاش كام دلوقتي؟', 'ليه الربح نزل؟', 'لو الطلب قل 20% إيه الأثر؟'];
-            return ['كام إجمالي التكلفة؟', 'ليه الخطة دي أحسن؟',
+            return ['كام إجمالي التكلفة؟', 'إيه القيود الخانقة؟', 'إيه تعارض القيود؟',
                 'لو الحد الائتماني قل 10% إيه اللي هيحصل؟',
                 this.template === 'production' ? 'لو الطلب زاد 20%؟' : 'إيه الغرامات؟'];
         },
         async load(base, live) {
+            const handoff = this.$store.app.sectorChatRun;
+            if (handoff?.company === this.$store.app.companyId) {
+                this.scope = 'sector';
+                this.pinnedRun = handoff.id;
+                this.$store.app.sectorChatRun = null;
+            }
             const [history, health, models] = await Promise.all([
                 this.scope === 'sector' ? api(base + '/chat/history') : [],
                 this.scope === 'sector' ? api('/health') : { provider: 'rules' },
@@ -32,6 +39,7 @@ document.addEventListener('alpine:init', () => {
         },
         switchScope() {
             this.input = '';
+            this.pinnedRun = null;
             this.messages = [];
             this.reply = null;
             this.perform('load', this.load);
@@ -59,9 +67,9 @@ document.addEventListener('alpine:init', () => {
                         model_id: this.modelId ? Number(this.modelId) : null,
                         version: this.models.find(model => String(model.id) === this.modelId)?.version ?? null,
                     }, { remote: this.remote, focus_node: this.reply?.follow_up_metric ?? null })
-                    : await api(base + '/chat', post({ message }));
+                    : await api(base + '/chat', post({ message, run_id: this.pinnedRun, remote: this.remote }));
                 if (!live()) return;
-                this.messages = [...this.messages, { role: 'user', content: message }, { role: 'assistant', content: reply.reply_ar, context: reply.context }];
+                this.messages = [...this.messages, { role: 'user', content: message }, { role: 'assistant', content: reply.reply_ar, context: reply.context, evidence: reply.evidence }];
                 this.reply = reply;
                 this.input = '';
                 this.$nextTick(() => {
@@ -72,21 +80,14 @@ document.addEventListener('alpine:init', () => {
         openImpact() {
             this.$store.app.enterpriseChatImpact = this.reply;
         },
-        confirm() {
-            this.perform('confirm', async (base, live) => {
-                const changes = this.reply.scenario.changes;
-                const run = await latestRun(base);
-                if (!live()) return;
-                if (!run?.result.optimized?.plan) {
-                    this.$store.app.chatScenario = { changes };
-                    location.hash = '/whatif';
-                    return;
-                }
-                const result = await api(base + '/whatif', post({ base_run_id: run.id, changes }));
-                if (!live()) return;
-                this.reply = { ...this.reply, action: 'whatif', run_id: result.run_id };
-                this.message = 'تم تشغيل السيناريو رقم ' + number(result.run_id) + '.';
-            });
+        evidenceLabel(entry) {
+            const label = metricDefinitions[entry.metric] || ({
+                run_id: 'معرّف التشغيل', approved_plan_id: 'معرّف الخطة المعتمدة', credit_limit: 'حد الائتمان',
+                binding_count: 'عدد الحالات عند الحد', overrun: 'التجاوز', total_delta: 'فرق التكلفة',
+                total_cost_delta: 'فرق التكلفة', delayed_projects: 'المشاريع المتأخرة', late: 'التأخير',
+                demand: 'الكمية المطلوبة', cold_capacity: 'سعة التخزين المبرد', late_days: 'التأخير', shipment_day: 'يوم الشحن',
+            })[entry.metric] || 'قيمة المؤشر';
+            return [label, entry.display, entry.unit].filter(Boolean).join(' · ');
         },
     }));
 });

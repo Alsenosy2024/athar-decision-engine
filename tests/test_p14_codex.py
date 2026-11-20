@@ -302,20 +302,23 @@ def test_first_sector_scenario_keeps_codex_out_of_the_write_transaction(codex_se
     mocked_cli({'template': 'contracting', 'intent': 'what_if', 'confidence': 0.9,
                 'changes': [{'type': 'credit_limit_pct', 'value': -10}]})
 
+    actual_optimize = service.run_optimization
+    actual_whatif = service.run_whatif
+
     def baseline(connection, cid, body, settings, provider):
         assert provider.name == 'rules'
-        return {'run_id': 12}
+        return actual_optimize(connection, cid, body, settings, provider)
 
     def whatif(connection, company, body, settings, provider):
         assert provider.name == 'rules'
-        assert body.base_run_id == 12 and body.changes[0].value == -10
-        return {'run_id': 13, 'explanation_ar': 'التكلفة 315 ألف ريال.',
-                'scenario': {'kpis': {'total': 315}}, 'changes_ar': ['خفض الائتمان 10%']}
+        assert body.changes[0].value == -10
+        return actual_whatif(connection, company, body, settings, provider)
 
     monkeypatch.setattr(service, 'run_optimization', baseline)
     monkeypatch.setattr(service, 'run_whatif', whatif)
     with TestClient(create_app(codex_settings)) as client:
         sign_in(client)
         result = client.post('/api/companies/1/chat', json={'message': 'خفّض الائتمان 10%'}).json()
-    assert result['provider'] == 'codex' and result['action'] == 'whatif' and result['run_id'] == 13
-    assert result['reply_ar'] == 'السيناريو رقم 13. التكلفة 315 ألف ريال.'
+    assert result['provider'] == 'codex' and result['action'] == 'whatif' and result['run_id']
+    assert 'الحد الائتماني اتغير' in result['reply_ar']
+    assert {entry['metric'] for entry in result['evidence']} >= {'credit_limit', 'total_delta'}

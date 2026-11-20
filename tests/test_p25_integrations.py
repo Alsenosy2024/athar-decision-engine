@@ -245,14 +245,11 @@ def test_approval_and_alert_outbox_signed_retries_and_dedup(client, db_path, rec
         connection.rollback()  # The approval event shares the audit transaction.
     with get_conn(db_path) as connection:
         assert connection.execute('SELECT COUNT(*) FROM integration_webhook_outbox').fetchone()[0] == 0
-        plan_id = connection.execute(
-            """INSERT INTO runs (company_id, dataset_id, model_id, kind, result_json, status, wall_s, created_at)
-               VALUES (1, 1, 1, 'optimize', '{}', 'OPTIMAL', 0, ?) RETURNING id""", (utc_now(),),
-        ).fetchone()[0]
-        plan_id = connection.execute(
-            """INSERT INTO plans(company_id, run_id, variant, status, created_at)
-               VALUES (1, ?, 'optimized', 'draft', ?) RETURNING id""", (plan_id, utc_now()),
-        ).fetchone()[0]
+    solved = client.post('/api/companies/1/optimize', json={'time_limit': 2})
+    assert solved.status_code == 200, solved.text
+    plan = client.post('/api/companies/1/plans', json={'run_id': solved.json()['run_id'], 'variant': 'optimized'})
+    assert plan.status_code == 200, plan.text
+    plan_id = plan.json()['id']
 
     approve = {'decision': 'approved', 'comment': 'تعليق خاص'}
     assert client.post(f'{base}/decisions/{approved}/decide', json=approve).status_code == 200

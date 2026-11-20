@@ -132,44 +132,58 @@ def baseline(problem):
     return plan if production_kpis(problem, plan)['feasible'] else None
 
 
-def build_model(problem, weights, hint, *, warm=None, targets=None):
+def build_model(problem, weights, hint, *, warm=None, targets=None, diagnosis=None):
     model = cp_model.CpModel()
+    if diagnosis:
+        diagnosis.attach(model)
     quantities, used, setups, switches = {}, {}, {}, {}
     inventory, ship, skipped, overdraft, breach = {}, {}, {}, {}, {}
     sku_codes = {sku: code for code, sku in enumerate(problem.skus, start=1)}
     initial_setup = model.new_constant(0)  # No last-run SKU at the start of the horizon.
+    demand = {key: sum(order['qty'] for order in problem.orders.values() if order['sku_id'] == key)
+              for key in problem.skus} if diagnosis else {}
 
     for line, specs in problem.lines.items():
         previous_setup = initial_setup
         for day in problem.days:
             today = {}
             for (rated_line, sku), rate in problem.rates.items():
-                if rated_line != line or day in problem.down[line]:
+                if rated_line != line or (not diagnosis and day in problem.down[line]):
                     continue
                 key = (line, day, sku)
                 used[key] = today[sku] = model.new_bool_var(f'run[{line},{day},{sku}]')
-                quantities[key] = model.new_int_var(0, rate, f'qty[{line},{day},{sku}]')
-                model.add(quantities[key] <= rate * used[key])
+                upper = max(rate, demand[sku]) if diagnosis else rate
+                quantities[key] = model.new_int_var(0, upper, f'qty[{line},{day},{sku}]')
+                model.add(quantities[key] <= upper * used[key])
                 model.add(quantities[key] >= used[key])
             if not today:
                 continue
-            model.add_at_most_one(today.values())
+            if diagnosis:
+                diagnosis.guard('line_capacity', model.add(sum(today.values()) <= 1))
+                if day in problem.down[line]:
+                    diagnosis.guard('line_capacity', model.add(sum(today.values()) == 0))
+            else:
+                model.add_at_most_one(today.values())
             setup = setups[line, day] = model.new_int_var(0, len(sku_codes), f'setup[{line},{day}]')
             change = switches[line, day] = model.new_bool_var(f'change[{line},{day}]')
             model.add(setup == previous_setup).only_enforce_if([~active for active in today.values()])
             model.add(change <= sum(today.values()))
             for sku, active in today.items():
                 code = sku_codes[sku]
-                model.add(setup == code).only_enforce_if(active)
+                setup_constraint = model.add(setup == code).only_enforce_if(active)
+                if diagnosis:
+                    diagnosis.guard('line_capacity', setup_constraint)
                 model.add_linear_expression_in_domain(
                     previous_setup, cp_model.Domain.from_values([0, code]),
                 ).only_enforce_if(active, ~change)
                 model.add(previous_setup != 0).only_enforce_if(active, change)
                 model.add(previous_setup != code).only_enforce_if(active, change)
-                model.add(
+                rate_constraint = model.add(
                     quantities[line, day, sku]
                     <= problem.rates[line, sku] - specs['changeover_loss_units'] * change
                 ).only_enforce_if(active)
+                if diagnosis:
+                    diagnosis.guard('line_capacity', rate_constraint)
             previous_setup = setup
 
     for order in problem.orders:
@@ -186,24 +200,37 @@ def build_model(problem, weights, hint, *, warm=None, targets=None):
     spend_bound = 0
     for day in problem.days:
         for sku, specs in problem.skus.items():
-            storage_bound = problem.storage // specs['volume'] if specs['volume'] else (
-                specs['initial_inventory'] + (day + 1) * sum(
-                    problem.rates.get((line, sku), 0) for line in problem.lines
+            capacity = sum(problem.rates.get((line, sku), 0) for line in problem.lines)
+            if diagnosis:
+                storage_bound = specs['initial_inventory'] + (day + 1) * max(
+                    capacity, len(problem.lines) * demand[sku],
                 )
-            )
-            inventory[sku, day] = model.new_int_var(0, storage_bound, f'stock[{sku},{day}]')
+            elif specs['volume']:
+                storage_bound = problem.storage // specs['volume']
+            else:
+                storage_bound = specs['initial_inventory'] + (day + 1) * capacity
+            lower = -demand[sku] if diagnosis else 0
+            inventory[sku, day] = model.new_int_var(lower, storage_bound, f'stock[{sku},{day}]')
+            if diagnosis:
+                diagnosis.guard('inventory_balance', model.add(inventory[sku, day] >= 0))
             prior = inventory[sku, day - 1] if day else specs['initial_inventory']
             model.add(inventory[sku, day] == prior + produced[sku, day] - sum(
                 order['qty'] * ship[order_id, day] for order_id, order in problem.orders.items()
                 if order['sku_id'] == sku
             ))
-        model.add(sum(specs['volume'] * inventory[sku, day]
-                      for sku, specs in problem.skus.items()) <= problem.storage)
+        constraint = model.add(sum(specs['volume'] * inventory[sku, day]
+                                   for sku, specs in problem.skus.items()) <= problem.storage)
+        if diagnosis:
+            diagnosis.guard('cold_capacity', constraint)
 
         cash -= sum(specs['unit_cost'] * produced[sku, day] for sku, specs in problem.skus.items())
         if day >= problem.lag:
             cash += sum(order['qty'] * problem.skus[order['sku_id']]['unit_price']
                         * ship[order_id, day - problem.lag] for order_id, order in problem.orders.items())
+        if diagnosis:
+            if 'credit_limit' in diagnosis.literals:
+                diagnosis.guard('credit_limit', model.add(cash >= -problem.credit))
+            continue
         spend_bound += sum(max(
             (problem.rates[line, sku] * problem.skus[sku]['unit_cost'] for sku in problem.skus
              if (line, day, sku) in quantities), default=0,
@@ -213,6 +240,9 @@ def build_model(problem, weights, hint, *, warm=None, targets=None):
         breach[day] = model.new_int_var(0, max(0, od_limit - problem.credit), f'breach[{day}]')
         model.add_max_equality(overdraft[day], [0, -cash])
         model.add_max_equality(breach[day], [0, overdraft[day] - problem.credit])
+
+    if diagnosis:
+        return model, quantities, ship, None
 
     # Scale SAR by 70,000, so one halala is integral and the demo's
     # weekly rate of 0.004 / 7 is exact. Round weighted coefficients once.
@@ -348,6 +378,7 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
         chosen = extract(solver)
         objective = solver.objective_value
         bound = solver.best_objective_bound
+    search_objective = objective
     if initial is not None and (
         status == cp_model.UNKNOWN or (objective is not None and hint_score < objective)
     ):
@@ -376,6 +407,9 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
                    'bound': bound, 'wall_s': solver.wall_time if remaining else 0.0,
                    'time_limit_s': time_limit, 'state': state,
                    'stop_reason': stop_reason, 'search_status': solver.status_name(search_status),
+                   'search_objective': search_objective,
+                   'candidate_source': 'heuristic' if chosen is initial and chosen is not None
+                   else 'solver' if chosen is not None else None,
                    **hint_metrics(previous, warm, measure_first, first)},
         'explanation_ar': '',
     }

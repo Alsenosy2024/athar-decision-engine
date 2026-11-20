@@ -6,6 +6,7 @@ from datetime import date
 
 import numpy as np
 
+from app.decision_loop.eligibility import assess, constraint_policy
 from app.enterprise.demo import SAR_PER_THOUSAND
 from app.enterprise.impact_graph import ImpactError
 from app.forecasting.service import run_forecast
@@ -93,7 +94,9 @@ class Arms:
             defaults = source.parameters | {'line_down': {key: days for key, days in
                                                            source.parameters.get('line_down', {}).items() if days}}
             if (data, parameters) == (source.dataset, defaults):
-                return Plan(data, parameters, source.schedule, source.status, {'state': 'approved_plan'})
+                return Plan(data, parameters, source.schedule, source.status,
+                            {'state': 'approved_plan', 'approval_eligibility': {'eligible': True}})
+        policy = constraint_policy(sector, {'constraints': source.constraints} if source else {})
         options = {'weights': source.weights} if source else {}
         result = SOLVERS[sector].solve(data, parameters, time_limit=self.time_limit, deterministic=True, **options)
         plan = result['optimized']['plan']
@@ -103,6 +106,9 @@ class Arms:
             raise ImpactError(f"مفيش خطة قابلة للتنفيذ لقطاع {'الإنتاج' if sector == 'production' else 'المقاولات'}.")
         self.optimizers_run[phase].append(sector)
         solver = {key: value for key, value in result['solver'].items() if key != 'wall_s'}
+        solver['approval_eligibility'] = assess(
+            sector, data, parameters, policy, plan, solver, inputs_approved=True,
+        )
         return Plan(data, parameters, plan, solver['status'], solver)
 
     def forecast(self, sector):

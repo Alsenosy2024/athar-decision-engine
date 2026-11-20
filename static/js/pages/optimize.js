@@ -41,7 +41,9 @@ document.addEventListener('alpine:init', () => {
                     rows.map(row => row.before), rows.map(row => row.after), ['الخطة المرجعية', 'الخطة المحسّنة'], rows[0].unit);
             });
         },
+        askAboutRun(id) { this.$store.app.sectorChatRun = { id, company: this.$store.app.companyId }; },
         draft() {
+            if (this.contract || !this.run?.solution_record?.optimized?.eligible) return;
             this.perform('draft', (base, live) => this.sendToReview(base, this.runId, 'optimized', live));
         },
     }));

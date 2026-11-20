@@ -28,7 +28,7 @@ document.addEventListener('alpine:init', () => {
         baseRun: null, definition: null, dataset: {}, changes: [], result: null, risk: null,
         resultBase: null,
     }), {
-        changeTypes,
+        changeTypes, searchStatusLabel,
         get pinnedDemand() { return this.template === 'production' && !!this.baseRun?.result?.decision_contract; },
         get ready() { return !!this.baseRun?.result.optimized?.plan; },
         get presets() {
@@ -93,7 +93,9 @@ document.addEventListener('alpine:init', () => {
                 if (live() && !this.pinnedDemand) histogramChart(this.$refs.mc, result);
             });
         },
+        askAboutRun(id) { this.$store.app.sectorChatRun = { id, company: this.$store.app.companyId }; },
         draft() {
+            if (this.result?.approval_policy || !this.result?.solution_record?.optimized?.eligible) return;
             this.perform('draft', (base, live) => this.sendToReview(base, this.result.run_id, 'scenario', live));
         },
     }));

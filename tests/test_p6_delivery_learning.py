@@ -299,7 +299,7 @@ def test_approved_scenario_uses_historical_model_and_scenario_inputs(client):
 def test_chat_total_selects_approved_or_optimized_and_labels_scenario(client):
     base = optimize(client, 1)
     scenario = result(client.post('/api/companies/1/whatif', json={
-        'base_run_id': base['run_id'], 'changes': [{'type': 'credit_limit_pct', 'value': -20}],
+        'base_run_id': base['run_id'], 'changes': [{'type': 'credit_limit_pct', 'value': 20}],
     }))
 
     def ask(message):
