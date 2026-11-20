@@ -277,3 +277,11 @@
 @media (prefers-reduced-motion: reduce) {
     .lm-panel, .lm-map-panel, .lm-ribbon article, .lm-department { animation: none; transition: none; }
 }
+
+
+.lm-cash-ledger { min-width: 0; }
+.lm-cash-ledger summary { cursor: pointer; font-weight: 900; }
+.lm-cash-ledger > .lm-stack { margin-top: 12px; }
+.lm-cash-ledger label { width: fit-content; }
+.lm-cash-scroll { max-height: 24rem; }
+.lm-cash-scroll thead { position: sticky; inset-block-start: 0; z-index: 1; }

@@ -65,8 +65,13 @@ def test_weekly_cash_period_matches_calculation_and_comparison(client):
     selection = {'model_id': model['model_id'], 'version': model['version']}
     results = [ok(client.post(WHATIF, json={
         **selection, 'weeks': weeks, 'assumptions': ASSUMPTIONS,
-    })) for weeks in (1, 52, 104)]
-    assert results[0] == results[1] == results[2]
+    })) for weeks in (1, 13, 52, 104)]
+    for weeks, projected in zip((1, 13, 52, 104), results):
+        assert projected['context']['calculation_weeks'] == weeks
+        rows = by_key(projected['nodes'])
+        assert rows['pnl.result']['after'] == 1090 * weeks
+        assert rows['cash']['after'] == 200 + 1090 * weeks
+        assert len(projected['charts']['cash']['after']) == weeks
     result = results[0]
     assert result['context']['weekly_snapshot'] and result['context']['calculation_weeks'] == 1
     assert result['context']['data_from'] == result['context']['data_to'] == '2026-11-09'
@@ -79,16 +84,16 @@ def test_weekly_cash_period_matches_calculation_and_comparison(client):
         **selection, 'name': name, 'assumptions': ASSUMPTIONS,
     }), 201)['id'] for name in ('الخطة الأولى', 'الخطة الثانية')]
     compared = ok(client.post(SCENARIOS + '/compare', json={'scenario_ids': scenarios, 'weeks': 104, 'n': 3}))
-    assert compared['settings']['weeks'] == compared['context']['calculation_weeks'] == 1
-    assert compared['scenarios'][0]['kpis']['cash_low'] == 1290
+    assert compared['settings']['weeks'] == compared['context']['calculation_weeks'] == 104
+    assert compared['scenarios'][0]['kpis']['cash_low'] == 113560
 
 
 def test_units_and_period_labels_match_map_and_result(client):
     model = weekly_company(client)
     payload = ok(client.get(MAP, params={'company_id': model['company_id']}))
     labels = by_key(payload['kpis'])
-    assert labels['cash_low']['label'] == 'رصيد السيولة التقديري بنهاية الأسبوع'
-    assert labels['profit']['label'] == 'الربح الأسبوعي بعد التمويل'
+    assert labels['cash_low']['label'] == 'رصيد السيولة التقديري في نهاية الأفق'
+    assert labels['profit']['label'] == 'الربح التراكمي بعد التمويل'
     assert labels['cash_low']['unit'] == labels['profit']['unit'] == 'ر.س'
     assert labels['credit_breach']['unit'] == '%'
     assert labels['delays']['unit'] == 'أسبوع'

@@ -7,7 +7,8 @@ from pydantic import Field, model_validator
 from app.enterprise.impact_graph import Assumption, ImpactError, WhatIfRequest
 from app.enterprise.schema import NodeId, Number, StrictFields
 from app.intelligence.analysis import display
-from app.optimization.common import OptimizationInputError
+from app.optimization.budget import SearchExpired, SolveBudget
+from app.optimization.common import OptimizationInputError, OptimizationTimeout
 
 
 class Control(StrictFields):
@@ -78,7 +79,7 @@ def controllable(model):
             and model.causal.nodes[item['id']].type != 'risk_kpi']
 
 
-def critique(model, goal, controls, values, result, base):
+def critique(model, goal, controls, values, result, base, budget):
     primary = outcome(result, goal.objective)
     direction = 1 if goal.direction == 'maximize' else -1
     stresses = []
@@ -86,6 +87,8 @@ def critique(model, goal, controls, values, result, base):
     # result most. These are adversarial checks, separate from sampled risk.
     for index, control in enumerate(controls):
         for bound in (control.low, control.high):
+            if not budget.remaining():
+                break
             stressed = list(values)
             stressed[index] = bound
             if stressed == values:
@@ -93,6 +96,8 @@ def critique(model, goal, controls, values, result, base):
             try:
                 check = model.scenario(whatif(goal, controls, stressed, stress=True), base=base)
                 tested = outcome(check, goal.objective)
+            except (SearchExpired, OptimizationTimeout):
+                break
             except (ImpactError, OptimizationInputError):
                 stresses.append({'node_id': control.node_id, 'tested_value': bound, 'invalid': True})
                 continue
@@ -104,7 +109,9 @@ def critique(model, goal, controls, values, result, base):
     weakest = max(stresses, key=lambda item: (
         item['invalid'], len(item.get('violations', [])), item.get('objective_loss', 0),
     ), default=None)
-    if weakest is None:
+    if weakest is None and not budget.remaining():
+        text = 'مهلة البحث خلصت قبل اختبار حدود إضافية.'
+    elif weakest is None:
         text = 'الحدود المتاحة مفيهاش بديل إضافي لاختبار الفرضية.'
     else:
         nodes = model.causal.nodes
@@ -126,6 +133,12 @@ def critique(model, goal, controls, values, result, base):
 
 
 def recommend(model, goal):
+    budget = SolveBudget(model.arms.time_limit)
+    with budget.share():
+        return search(model, goal, budget)
+
+
+def search(model, goal, budget):
     import optuna
 
     drivers = {item['id']: item for item in controllable(model)}
@@ -159,13 +172,20 @@ def recommend(model, goal):
     for point in (low, high, midpoint):
         study.enqueue_trial(point)
     evaluated = []
+    attempted = 0
     for _ in range(goal.trials):
+        if not budget.remaining():
+            break
+        attempted += 1
         trial = study.ask()
         values = [trial.suggest_float(item.node_id, item.low, item.high) for item in controls]
         body = whatif(goal, controls, values)
         try:
             result = model.scenario(body, base=base)
             score = outcome(result, goal.objective)
+        except (SearchExpired, OptimizationTimeout):
+            study.tell(trial, state=optuna.trial.TrialState.FAIL)
+            break
         except (ImpactError, OptimizationInputError):
             study.tell(trial, state=optuna.trial.TrialState.FAIL)
             continue
@@ -195,12 +215,16 @@ def recommend(model, goal):
             **score, 'target_met': meets_target(score['objective'], target, goal.direction), 'violations': bad,
             'model_basis': 'cp_sat_and_propagation' if model.graph.arms else 'propagation',
             'assumptions': [item.model_dump(mode='json') for item in body.assumptions],
-            'critique': critique(model, goal, controls, values, result, base),
+            'critique': critique(model, goal, controls, values, result, base, budget),
             'impact': result,
         })
         if len(recommendations) == 3:
             break
-    return {'method': 'optuna_tpe', 'objective': goal.objective, 'reference': reference, 'target': target,
+    timed_out = not budget.remaining()
+    state = 'partial' if timed_out and recommendations else 'no_result' if timed_out else 'complete'
+    return {'search_status': {'state': state, 'stop_reason': 'time_limit' if timed_out else 'trial_limit',
+                              'limit_s': budget.limit, 'attempted_trials': attempted},
+            'method': 'optuna_tpe', 'objective': goal.objective, 'reference': reference, 'target': target,
             'target_pct': goal.target_pct, 'cash_floor': goal.cash_floor, 'risk_ceiling': goal.risk_ceiling,
             'trials': goal.trials, 'evaluated_trials': len(evaluated), 'recommendations': recommendations}
 

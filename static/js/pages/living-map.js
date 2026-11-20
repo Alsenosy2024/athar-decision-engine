@@ -69,14 +69,22 @@ document.addEventListener('alpine:init', () => {
             number, mapValue, assistant: ATHAR_ASSISTANT, enterpriseResultContext,
             get scopeId() { return this.demoMode ? null : this.$store.app.companyId; },
             get demoMode() { return this.$store.app.mapDemo; },
-            get weeklySnapshot() { return !!this.map?.context?.weekly_snapshot; },
+            get onboardingProjection() { return this.map?.readiness != null && !this.map?.has_engines; },
+            ledgerPhase: 'after',
+            get ledgerRows() { return this.result ? this.result.cash_ledger?.[this.ledgerPhase] : this.baselineLedger; },
+            get solverPartial() {
+                return Object.values(this.result?.solver_details?.scenario || {}).some(row => row?.state === 'partial');
+            },
             get cashLabel() { return this.map?.kpis.find(row => row.id === 'cash_low')?.label; },
             get resultContext() { return enterpriseResultContext(this.result?.context || this.map?.context); },
             get canSave() { return this.editable && (!this.demoMode || this.$store.app.user?.role === 'admin'); },
             toggleDemo() { this.$store.app.mapDemo = !this.demoMode; },
             metricPeriod(metric) {
                 if (metric.headline == null) return '';
-                if (this.weeklySnapshot) return metric.id === 'cash_low' ? 'نهاية الأسبوع' : 'أسبوع واحد';
+                if (this.onboardingProjection) {
+                    const horizon = this.result?.context?.calculation_weeks ?? this.baselineWeeks ?? 1;
+                    return (metric.id === 'cash_low' ? 'نهاية الأفق' : 'تراكمي') + ' · ' + number(horizon) + ' أسبوع';
+                }
                 if (metric.id === 'cash_low' && this.map?.has_engines) return 'أدنى رصيد في دفتر السيولة اليومي';
                 const weeks = this.result?.context?.calculation_weeks;
                 return weeks ? 'أفق الفرضية ' + number(weeks) + ' أسبوع' : '';
@@ -159,8 +167,9 @@ document.addEventListener('alpine:init', () => {
                 const when = timeline?.times.get(id)?.week ?? 0;
                 const reached = this.week > when;
                 const value = reached ? row.after : row.before;
-                const source = reached && row.affected ? row.scenario_source || 'estimated' : node.source;
-                return { ...node, value, source: value == null ? 'missing' : source,
+                const source = reached && row.affected ? row.scenario_source || 'estimated'
+                    : node.source === 'missing' ? 'estimated' : node.source;
+                return { ...node, name_ar: row.name_ar, value, source: value == null ? 'missing' : source,
                     delta: row.delta, delta_pct: row.delta_pct, affected: reached && row.affected };
             },
             deptTone(dept) {
@@ -272,7 +281,9 @@ document.addEventListener('alpine:init', () => {
                         selectedModel: map.model.id == null ? '' : String(map.model.id),
                         focus: '', edits: [], question: '', provider: '', lastMetric: null, answerContext: null,
                         driverId: '', result: null, submitted: [], baselineKpis: null,
-                        weeks: map.context?.weekly_snapshot ? 1 : this.weeklySnapshot ? 52 : this.weeks,
+                        ledgerPhase: 'after',
+                        weeks: this.map?.model?.id === map.model.id ? this.weeks
+                            : map.readiness == null ? 52 : 1,
                         week: 0, saved: scoped, scenarioName: '', comparison: null, compareIds: [],
                         goalDriver: '', goalLow: '', goalHigh: '', goalProfit: '', goalCash: '', recommendations: null });
                     if (!map.is_demo) this.$store.app.assistantMapModel = map.model?.id == null ? null : map.model;

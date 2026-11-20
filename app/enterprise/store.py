@@ -1,5 +1,6 @@
-from app.access import active_principal, company_visible, require_company
+from app.access import active_principal, company_visible, require_company, require_role
 from app.db import audit, encode, utc_now
+from app.enterprise.client_plans import resolve_client_plans
 from app.enterprise.schema import EngineLink, Graph, ModelInput, ModelUpdate
 from app.ingestion.loader import load_demo
 from app.schemas import api_error
@@ -13,7 +14,7 @@ WHERE {where}
 LATEST = 'v.version = (SELECT MAX(version) FROM enterprise_model_versions WHERE model_id = m.id)'
 
 
-# Resolve only declared demo inputs, with no engine invocation during graph writes.
+# Resolve declared inputs without invoking the solver during graph writes.
 ENTITY_TABLES = {
     ('production', 'series'): 'skus',
     ('contracting', 'series'): 'activities',
@@ -24,7 +25,8 @@ ENTITY_TABLES = {
 
 
 def validate_link_entities(graph: Graph):
-    datasets = {arm.sector: load_demo(arm.sector) for arm in graph.arms}
+    datasets = {arm.sector: (graph._client_sources[arm.sector].dataset
+                            if arm.input_source == 'client_plan' else load_demo(arm.sector)) for arm in graph.arms}
     for node in graph.nodes:
         link = node.definition
         if not isinstance(link, EngineLink) or link.entity_id is None:
@@ -33,7 +35,7 @@ def validate_link_entities(graph: Graph):
         table = ENTITY_TABLES[link.sector, output]
         if not any(row['id'] == link.entity_id for row in datasets[link.sector][table]):
             raise api_error(422, 'unknown_enterprise_engine_entity',
-                            f'العنصر المرتبط بالمحرك مش موجود في بيانات الديمو ({node.id}).')
+                            f'العنصر المرتبط بالمحرك مش موجود في بيانات الخطة ({node.id}).')
 
 
 def list_models(connection):
@@ -52,6 +54,7 @@ def read(connection, model_id, version=None):
         raise api_error(404, 'enterprise_model_not_found', 'النموذج المؤسسي أو الإصدار مش موجود.')
     result = dict(row)
     result['graph'] = Graph.model_validate_json(result.pop('graph_json'))
+    result['graph']._client_sources = resolve_client_plans(connection, result['graph'], result['company_id'])
     return result
 
 
@@ -77,8 +80,9 @@ def create(connection, body: ModelInput, company_id=None):
             'SELECT 1 FROM companies WHERE id = ?', (company_id,)).fetchone():
         raise api_error(404, 'company_not_found', 'الشركة مش موجودة.')
     ensure_builder_scope(body.graph)
-    validate_link_entities(body.graph)
     with connection:
+        bind_sources(connection, body.graph, company_id)
+        validate_link_entities(body.graph)
         model_id = connection.execute(
             "INSERT INTO enterprise_models (template, company_id) VALUES ('enterprise', ?)", (company_id,),
         ).lastrowid
@@ -94,6 +98,7 @@ def update(connection, model_id, body: ModelUpdate):
         if body.expected_version != previous['version']:
             raise api_error(409, 'enterprise_version_conflict', 'النموذج اتعدّل. حمّل الإصدار الحالي وحاول تاني.')
         ensure_builder_scope(previous['graph'], body.graph)
+        bind_sources(connection, body.graph, previous['company_id'], previous['graph'])
         validate_link_entities(body.graph)
         version = previous['version'] + 1
         write_version(connection, model_id, version, body)
@@ -118,3 +123,12 @@ def archive(connection, model_id):
 def ensure_builder_scope(*graphs):
     if any(graph.onboarding is not None for graph in graphs):
         raise api_error(422, 'onboarding_managed_model', 'عدّل النموذج ده من صفحة تجهيز الشركة.')
+
+
+def bind_sources(connection, graph, company_id, previous=None):
+    pinned = {arm.approved_plan_id for arm in graph.arms if arm.input_source == 'client_plan'}
+    old = {arm.approved_plan_id for arm in previous.arms if arm.input_source == 'client_plan'} if previous else set()
+    principal = active_principal.get()
+    if pinned != old and principal is not None:
+        require_role(principal)
+    graph._client_sources = resolve_client_plans(connection, graph, company_id)

@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from ortools.sat.python import cp_model
 
 
+class OptimizationTimeout(RuntimeError):
+    """Search timed out without a usable operating plan."""
+
+
 class OptimizationInputError(ValueError):
     """A dataset or model configuration that cannot be passed to CP-SAT."""
 
@@ -20,12 +24,9 @@ class Weights:
 def configured_solver(time_limit: float, *, deterministic: bool = False) -> cp_model.CpSolver:
     solver = cp_model.CpSolver()
     solver.parameters.random_seed = 7
+    solver.parameters.max_time_in_seconds = time_limit
+    solver.parameters.num_workers = 1 if deterministic else 8
     if deterministic:
-        # Repeated enterprise calculations must finish at the same search step,
-        # even when the worker is delayed by other requests.
-        solver.parameters.num_workers = 1
-        solver.parameters.max_deterministic_time = 0.8 * time_limit
-    else:
-        solver.parameters.max_time_in_seconds = time_limit
-        solver.parameters.num_workers = 8
+        # Prefer a reproducible search quota. The wall cap also applies under load.
+        solver.parameters.max_deterministic_time = 0.05 * time_limit
     return solver

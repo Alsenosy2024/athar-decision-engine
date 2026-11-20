@@ -83,6 +83,8 @@
                         حد السيولة <bdi x-text="number(recommendation?.cash_minimum)"></bdi> ريال.</p>
                     <p>اتقيّم <bdi x-text="number(recommendation?.evaluated)"></bdi> بديل،
                         وتعذّر حساب <bdi x-text="number(recommendation?.invalid)"></bdi>.</p>
+                    <p x-show="recommendation?.search_status?.stop_reason === 'time_limit'" role="status">
+                        مهلة البحث خلصت. النتيجة حسب البدائل اللي اتقيّمت.</p>
                     <p x-show="recommendation?.baseline_meets_goal">خط الأساس بيحقق الهدف من غير تعديل.</p>
                     <p x-show="!recommendation?.recommendations.length && !recommendation?.baseline_meets_goal">
                         القيم اللي اتجرّبت في النطاق ما حققتش الهدفين مع بعض.</p>

@@ -9,11 +9,11 @@ from pydantic import Field
 
 from app.db import request_conn
 from app.enterprise.impact_graph import WhatIfRequest
-from app.enterprise.result_context import result_context
+from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.scenarios import kpis
 from app.integrations import contracts, credentials
 from app.integrations.snapshots import project_map, snapshot_for
-from app.routers.enterprise import impact_errors, impact_model
+from app.routers.enterprise import impact_errors, impact_model, requested_weeks
 from app.routers.living_map import MapSelection
 from app.schemas import api_error
 
@@ -27,7 +27,7 @@ router = APIRouter(prefix=PREFIX, tags=['Athar v1'], responses={
 company_route = '/companies/{company_id}'
 CompanyId = Annotated[int, Path(ge=1, lt=2**63)]
 Selection = Annotated[int | None, Query(ge=1, lt=2**63)]
-Weeks = Annotated[int, Query(ge=1, le=104)]
+Weeks = Annotated[int | None, Query(ge=1, le=104)]
 key_header = APIKeyHeader(name='X-Athar-API-Key', scheme_name='AtharApiKey', auto_error=False,
                           description='Server-side key issued by an Athar administrator for one company.')
 
@@ -46,25 +46,28 @@ def require_key(scope: credentials.Scope):
 map_key = require_key('map:read')
 
 
-@router.get(company_route + '/map', response_model=contracts.MapResult, dependencies=[Depends(map_key)])
+@router.get(company_route + '/map', response_model=contracts.MapResult, response_model_exclude_unset=True, dependencies=[Depends(map_key)])
 def get_map(company_id: CompanyId, model_id: Selection = None, version: Selection = None,
             connection=Depends(request_conn)):
     """Return the saved map, including baseline indicators, departments and roads. Requires map:read."""
     return project_map(connection, company_id, snapshot_for(connection, company_id, model_id, version))
 
 
-@router.get(company_route + '/kpis', response_model=contracts.KpiResult,
+@router.get(company_route + '/kpis', response_model=contracts.KpiResult, response_model_exclude_unset=True,
             dependencies=[Depends(require_key('kpis:read'))])
 def get_kpis(company_id: CompanyId, request: Request, model_id: Selection = None,
-             version: Selection = None, weeks: Weeks = 52, connection=Depends(request_conn)):
-    """Calculate baseline KPIs. Onboarding models use a one-week horizon. Requires kpis:read."""
+             version: Selection = None, weeks: Weeks = None, connection=Depends(request_conn)):
+    """Calculate baseline KPIs and available cash movements for the requested horizon. Requires kpis:read."""
     snapshot = snapshot_for(connection, company_id, model_id, version)
+    weeks = effective_weeks(snapshot['graph'], weeks)
     with impact_errors():
         baseline, _ = impact_model(snapshot, request, weeks).baseline()
         metrics = kpis(baseline.metrics(), baseline.fill_rate)
     context = result_context(connection, snapshot, weeks)
     return {'company_id': company_id, 'model_id': snapshot['id'], 'version': snapshot['version'],
-            'weeks': context['calculation_weeks'], 'context': context, 'kpis': metrics}
+            'weeks': context['calculation_weeks'], 'context': context, 'kpis': metrics,
+            **({'cash_ledger': {'period': 'week', 'currency': 'SAR', 'rows': baseline.ledger}}
+               if baseline.ledger is not None else {})}
 
 
 class PublicWhatIf(WhatIfRequest):
@@ -77,12 +80,13 @@ class PublicWhatIf(WhatIfRequest):
 def whatif(company_id: CompanyId, body: PublicWhatIf, request: Request, connection=Depends(request_conn)):
     """Evaluate a transient scenario with the enterprise impact engine. Requires whatif:run."""
     snapshot = snapshot_for(connection, company_id, body.model_id, body.version)
+    weeks = requested_weeks(snapshot, body)
     with impact_errors():
-        result = impact_model(snapshot, request, body.weeks).scenario(body)
+        result = impact_model(snapshot, request, weeks).scenario(body)
     if 'onboarding' in result:
         result['onboarding'] = jsonable_encoder(result['onboarding'])
     return {'company_id': company_id, 'model_id': snapshot['id'], 'version': snapshot['version'],
-            'name': snapshot['name'], 'context': result_context(connection, snapshot, body.weeks), **result}
+            'name': snapshot['name'], 'context': result_context(connection, snapshot, weeks), **result}
 
 
 class EmbedRequest(MapSelection):

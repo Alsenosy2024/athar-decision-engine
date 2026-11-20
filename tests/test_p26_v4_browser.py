@@ -135,6 +135,7 @@ def ask(page, stage, model_id):
     draft = post_from(page, '/enterprise/chat', page.get_by_test_id('map-ask'))
     assert draft['provider'] == 'codex' and draft['scenario']['assumptions'] == ASSUMPTIONS
     assert draft['result'] is None
+    page.get_by_label('أفق الحساب').select_option('1')
     expect(stage).to_have_attribute('data-ripple', 'idle')
     expect(page.get_by_test_id('map-assumption-value')).to_have_value('-20')
     result = post_from(page, '/enterprise/whatif', page.get_by_test_id('map-run'))
@@ -212,6 +213,7 @@ def approve(page, model_id):
 
 def export_comparison(page, comparison):
     click_workspace_link(page, 'مقارنة السيناريوهات')
+    page.get_by_test_id('scenario-weeks').select_option(str(comparison['settings']['weeks']))
     for row in comparison['scenarios']:
         page.get_by_role('checkbox', name=row['name']).check()
     post_from(page, '/enterprise/scenarios/compare', page.get_by_test_id('compare-scenarios'))

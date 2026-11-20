@@ -219,6 +219,10 @@ class SolverSummary(BaseModel):
     objective: float | None
     bound: float | None
     wall_s: float
+    time_limit_s: float | None = None
+    state: Literal['complete', 'partial', 'no_result'] | None = None
+    stop_reason: Literal['search_limit', 'finished'] | None = None
+    search_status: str | None = None
 
 
 class OptimizeResult(BaseModel):

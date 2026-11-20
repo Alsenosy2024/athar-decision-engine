@@ -2,7 +2,7 @@ from datetime import date
 from enum import StrEnum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, model_validator
 
 from app.onboarding.records import OnboardingData
 
@@ -83,7 +83,11 @@ class Engine(StrEnum):
 # Each entry maps a published output path to its entity selector (if any).
 ENGINE_OUTPUTS = {
     Engine.FORECAST: {'series.p10': 'key', 'series.p50': 'key', 'series.p90': 'key'},
-    Engine.PRODUCTION: {'plan.schedule': 'line', 'plan.inventory': 'sku', 'kpis.peak_storage_pct': None},
+    Engine.PRODUCTION: {
+        'plan.schedule': 'line', 'plan.inventory': 'sku', 'kpis.peak_storage_pct': None,
+        'ledger.revenue': None, 'ledger.direct_cost': None, 'ledger.expenses': None,
+        'ledger.profit': None, 'ledger.cash': None,
+    },
     Engine.CONTRACTING: {'plan.activities': 'project', 'kpis.late_weeks_total': None},
 }
 
@@ -138,10 +142,23 @@ class Edge(StrictFields):
 class Arm(StrictFields):
     sector: Sector
     # The demo uses the same packaged inputs and default models as V1's seed.
-    input_source: Literal['v1_demo']
+    input_source: Literal['v1_demo', 'client_plan']
+    approved_plan_id: int | None = Field(default=None, strict=True, ge=1, lt=2**63,
+                                         exclude_if=lambda plan_id: plan_id is None)
+
+    @model_validator(mode='after')
+    def check_source(self):
+        if self.input_source == 'client_plan':
+            if self.sector != 'production' or self.approved_plan_id is None:
+                raise ValueError('Client plans require an approved production plan ID')
+        elif self.approved_plan_id is not None:
+            raise ValueError('Demo arms cannot specify a client plan')
+        return self
 
 
 class Graph(StrictFields):
+    _client_sources: dict = PrivateAttr(default_factory=dict)
+
     nodes: list[Node] = Field(min_length=1)
     edges: list[Edge] = Field(default_factory=list)
     arms: list[Arm] = Field(default_factory=list, max_length=2)
@@ -160,6 +177,13 @@ class Graph(StrictFields):
         sectors = {arm.sector for arm in self.arms}
         if len(sectors) != len(self.arms):
             raise ValueError('Business arms must be unique')
+        client_sectors = {arm.sector for arm in self.arms if arm.input_source == 'client_plan'}
+        if client_sectors and (len(self.arms) != 1 or self.onboarding is not None):
+            raise ValueError('The client production ledger requires its own operating graph')
+        if any(isinstance(node.definition, EngineLink) and node.definition.output.startswith('ledger.')
+               and (node.definition.sector not in client_sectors or node.unit != Unit.SAR)
+               for node in self.nodes):
+            raise ValueError('Ledger outputs require a client production arm and SAR units')
         if any(isinstance(node.definition, EngineLink) and node.definition.sector not in sectors
                for node in self.nodes):
             raise ValueError('Engine links must refer to a declared business arm')

@@ -8,7 +8,7 @@ from app.access import require_company
 from app.db import request_conn
 from app.enterprise import store
 from app.enterprise.living_map import map_payload
-from app.enterprise.result_context import result_context
+from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.scenarios import kpis
 from app.enterprise.schema import StrictFields
 from app.intelligence import decision
@@ -62,22 +62,30 @@ class MapSelection(StrictFields):
 
 
 class MapBaseline(MapSelection):
-    weeks: int = Field(default=52, ge=1, le=104, strict=True)
+    weeks: int | None = Field(default=None, ge=1, le=104, strict=True)
+    include_ledger: bool = False
 
 
 @router.post('/baseline')
 def baseline(body: MapBaseline, request: Request, connection=Depends(request_conn)):
     snapshot = body.snapshot(connection)
+    weeks = effective_weeks(snapshot['graph'], body.weeks)
     with impact_errors():
-        computed, _ = impact_model(snapshot, request, body.weeks).baseline()
-        return kpis(computed.metrics(), computed.fill_rate)
+        computed, _ = impact_model(snapshot, request, weeks).baseline()
+        metrics = kpis(computed.metrics(), computed.fill_rate)
+        if body.include_ledger:
+            return {'kpis': metrics, 'weeks': weeks,
+                    'cash_ledger': {'period': 'week', 'currency': 'SAR', 'rows': computed.ledger}
+                    if computed.ledger is not None else None}
+        return metrics
 
 
 @router.get('/baseline')
 def read_baseline(request: Request, model_id: Selection = None, version: Selection = None,
-                  weeks: Annotated[int, Query(ge=1, le=104)] = 52,
-                  connection=Depends(request_conn)):
-    return baseline(MapBaseline(model_id=model_id, version=version, weeks=weeks), request, connection)
+                  weeks: Annotated[int | None, Query(ge=1, le=104)] = None,
+                  include_ledger: bool = False, connection=Depends(request_conn)):
+    return baseline(MapBaseline(model_id=model_id, version=version, weeks=weeks, include_ledger=include_ledger),
+                    request, connection)
 
 
 class MapGoal(MapSelection):

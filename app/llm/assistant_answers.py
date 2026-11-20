@@ -15,7 +15,7 @@ from app.onboarding.projection import latest_records
 PROFIT_INPUTS = ('pnl.revenue', 'pnl.direct_cost', 'pnl.expenses', 'financing')
 COSTS = PROFIT_INPUTS[1:]
 CALCULATIONS = {
-    'cash': 'النقد الافتتاحي + ذمم العملاء − ذمم الموردين + نتيجة الأسبوع',
+    'cash': 'الرصيد الافتتاحي + التحصيل − مدفوعات الموردين والتشغيل والتمويل',
     'pnl.result': 'الإيراد − التكاليف المباشرة − مصاريف التشغيل − التمويل',
     'pnl.revenue': 'الوحدات المباعة × سعر الوحدة',
     'pnl.direct_cost': 'الوحدات المباعة × تكلفة الوحدة',
@@ -24,12 +24,12 @@ CALCULATIONS = {
 SERIES_PERIOD = {'weekly': 'الأسبوع الذي يبدأ', 'daily': 'يوم', 'monthly': 'الشهر الذي يبدأ'}
 
 
-def period_and_source(snapshot, *, cash_dates=None):
+def period_and_source(snapshot, *, cash_dates=None, weeks=1):
     graph = snapshot['graph']
     if graph.onboarding:
         records = latest_records(graph.onboarding.records)
         dates = sorted({record.date for record in records.values() if record.date})
-        period = 'أسبوع تقديري واحد'
+        period = 'أسبوع تقديري واحد' if weeks == 1 else f'أفق مالي تقديري {weeks} أسبوع'
         if dates:
             span = str(dates[0]) if len(dates) == 1 else f'{dates[0]} إلى {dates[-1]}'
             period += f' · تواريخ أحدث المدخلات {span}'
@@ -121,12 +121,20 @@ def read_metrics(connection, snapshot, model, text, keys, explain):
         if evaluation.cash_start is not None and values.get('cash') is not None:
             start = evaluation.cash_start - timedelta(days=1)
             dates = (start.isoformat(), (start + timedelta(days=len(evaluation.values['cash']) - 1)).isoformat())
-        period, source = period_and_source(snapshot, cash_dates=dates)
+        period, source = period_and_source(snapshot, cash_dates=dates, weeks=model.weeks)
         if key != 'cost.total':
             node = nodes[key]
             name, unit = node.name_ar, node.unit
             if key == 'cash' and dates:
                 name = 'أقل رصيد سيولة في دفتر النموذج'
+            elif model.graph.onboarding and model.weeks > 1:
+                name = {
+                    'cash': 'رصيد الكاش المتوقع في نهاية الأفق',
+                    'pnl.result': 'الربح التراكمي بعد التمويل',
+                    'pnl.revenue': 'الإيراد التراكمي',
+                    'pnl.direct_cost': 'التكلفة المباشرة التراكمية',
+                    'sales.volume': 'إجمالي الوحدات المباعة خلال الأفق',
+                }.get(key, name)
             formula = CALCULATIONS.get(key) if model.graph.onboarding and key in OUTPUTS else getattr(
                 node.definition, 'expression', None)
         else:

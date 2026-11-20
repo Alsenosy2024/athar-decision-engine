@@ -4,7 +4,7 @@ from pydantic import Field, model_validator
 from app.access import require_company, require_role
 from app.db import request_conn
 from app.enterprise import store
-from app.enterprise.result_context import result_context
+from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.impact_graph import WhatIfRequest
 from app.llm import assistant_language as language
 from app.llm.assistant_answers import citation, period_and_source, read_metrics, requested_keys, sector_answer
@@ -61,7 +61,7 @@ def select_snapshot(connection, body, principal):
 
 def scenario_reply(snapshot, result, weeks, metrics):
     chart = result['charts']['cash'] or {}
-    period, source = period_and_source(snapshot, cash_dates=chart.get('dates'))
+    period, source = period_and_source(snapshot, cash_dates=chart.get('dates'), weeks=weeks)
     if not snapshot['graph'].onboarding and not chart.get('dates'):
         period += f' · أفق المحاكاة {weeks} أسبوع'
     labels = {row['id']: row for row in result['nodes']}
@@ -74,7 +74,7 @@ def scenario_reply(snapshot, result, weeks, metrics):
 
 
 def draft_reply(snapshot, model, assumptions):
-    period, source = period_and_source(snapshot)
+    period, source = period_and_source(snapshot, weeks=model.weeks)
     drivers = {row['id']: row for row in model.drivers()}
     centers, _, _, _ = model.assumption_values(assumptions)
     changes = '، '.join(
@@ -115,7 +115,7 @@ def enterprise_chat(body: EnterpriseChatRequest, request: Request, connection=De
         if reply is None:
             reply = 'الشركة دي محتاجة بيانات للمؤشر ده. اربط نموذج من تجهيز الشركة أو حمّل بيانات التخطيط المتاحة.'
     else:
-        requested_weeks = body.weeks or WhatIfRequest.model_fields['weeks'].default
+        requested_weeks = effective_weeks(snapshot['graph'], body.weeks)
         with impact_errors():
             model = impact_model(snapshot, request, requested_weeks)
             weeks = model.weeks

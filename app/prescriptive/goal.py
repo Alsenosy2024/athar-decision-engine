@@ -10,7 +10,8 @@ from app.enterprise.impact_graph import Assumption, ImpactError, WhatIfRequest
 from app.enterprise.scenarios import KPI_NODES, kpis
 from app.enterprise.schema import Label, NodeId, Number, StrictFields
 from app.llm.rules_ar import NUMBER, normalize, number_words
-from app.optimization.common import OptimizationInputError
+from app.optimization.budget import SearchExpired, SolveBudget
+from app.optimization.common import OptimizationInputError, OptimizationTimeout
 
 Value = Annotated[float, Field(strict=True, ge=-1e12, le=1e12, allow_inf_nan=False)]
 WEEKS = 52
@@ -104,7 +105,7 @@ def prepare(model, body):
 
 def evaluate(model, base, actions):
     assumptions = [Assumption(node_id=key, value=value) for key, value in actions.items()]
-    result = model.scenario(WhatIfRequest(assumptions=assumptions, weeks=WEEKS, n=1), base=base)
+    result = model.scenario(WhatIfRequest(assumptions=assumptions, weeks=model.weeks, n=1), base=base)
     metrics = kpis({node['id']: node['after'] for node in result['nodes']}, result['fill_rate'])
     return {
         'actions': actions, 'kpis': metrics, 'assumptions': result['assumptions'],
@@ -118,6 +119,12 @@ def assess(candidate, target, cash_minimum):
 
 
 def search(model, body):
+    budget = SolveBudget(model.arms.time_limit)
+    with budget.share():
+        return search_grid(model, body, budget)
+
+
+def search_grid(model, body, budget):
     base, metrics, references, target = prepare(model, body)
     controls = body.controls
     points = []
@@ -131,12 +138,16 @@ def search(model, body):
 
     candidates, evaluated, invalid = [], 0, 0
     for values in product(*points):
+        if not budget.remaining():
+            break
         actions = {control.node_id: value for control, value in zip(controls, values)
                    if value != references[control.node_id]}
         if not actions:
             continue
         try:
             row = evaluate(model, base, actions)
+        except (SearchExpired, OptimizationTimeout):
+            break
         except (ImpactError, OptimizationInputError, FloatingPointError, OverflowError):
             invalid += 1
             continue
@@ -147,7 +158,10 @@ def search(model, body):
             candidates.append(row)
 
     candidates.sort(key=lambda row: (row['effort'], -row['kpis']['profit'], -row['kpis']['cash_low']))
-    return {'baseline': metrics, 'profit_minimum': target, 'cash_minimum': body.cash_minimum,
+    timed_out = not budget.remaining()
+    return {'search_status': {'state': 'partial' if timed_out and evaluated else 'no_result' if timed_out else 'complete',
+                              'stop_reason': 'time_limit' if timed_out else 'grid_complete', 'limit_s': budget.limit},
+            'baseline': metrics, 'profit_minimum': target, 'cash_minimum': body.cash_minimum,
             'baseline_meets_goal': metrics['profit'] >= target and metrics['cash_low'] >= body.cash_minimum,
             'evaluated': evaluated, 'invalid': invalid, 'recommendations': candidates[:5]}
 
@@ -162,4 +176,4 @@ def validate_draft(model, draft):
     if not assess(result, target, draft.goal.cash_minimum):
         raise ImpactError('الإجراءات دي ما حققتش هدف الربح والسيولة في الحساب الحالي.')
     return {**result, 'baseline': metrics, 'profit_minimum': target,
-            'cash_minimum': draft.goal.cash_minimum, 'weeks': WEEKS}
+            'cash_minimum': draft.goal.cash_minimum, 'weeks': model.weeks}

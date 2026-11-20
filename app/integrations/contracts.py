@@ -83,6 +83,7 @@ class ResultContext(BaseModel):
     data_to: date | None
     weekly_snapshot: bool
     calculation_weeks: int | None
+    operating_sources: dict[str, dict[str, int]] | None = None
 
 
 class MapResult(BaseModel):
@@ -112,6 +113,7 @@ class KpiResult(SelectionResult):
     context: ResultContext
     weeks: int
     kpis: Kpis
+    cash_ledger: dict[str, JsonValue] | None = None
 
 
 class ImpactEdge(Edge):
@@ -184,6 +186,8 @@ class WhatIfResult(SelectionResult):
     simulation: Simulation
     optimizers_run: dict[str, list[str]]
     solver_status: dict[str, str]
+    solver_details: dict[str, JsonValue] | None = None
+    cash_ledger: dict[str, JsonValue] | None = None
     onboarding: dict[str, JsonValue] | None = None
 
 

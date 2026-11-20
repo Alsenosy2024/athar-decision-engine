@@ -2,11 +2,13 @@
 from app.enterprise.schema import Series
 
 DEMO_VERSION = 1
-WEEKLY_CASH_LABEL = 'رصيد السيولة التقديري بنهاية الأسبوع'
+ENDING_CASH_LABEL = 'رصيد السيولة التقديري في نهاية الأفق'
 
 
-def calculation_weeks(graph, requested):
-    return 1 if graph.onboarding else requested
+def effective_weeks(graph, requested=None):
+    if requested is not None:
+        return requested
+    return 1 if graph.onboarding else 52
 
 
 def result_context(connection, snapshot, weeks=None):
@@ -24,10 +26,13 @@ def result_context(connection, snapshot, weeks=None):
         'model_version': DEMO_VERSION if demo else snapshot['version'],
         'source': 'بيانات ديمو روافد التجريبية' if demo else
                   'سجل تجهيز الشركة' if graph.onboarding else
+                  'خطة إنتاج معتمدة من بيانات الشركة' if graph._client_sources else
                   'نموذج محفوظ بمحركات تستخدم بيانات تجريبية' if graph.arms else
                   'بيانات النموذج المؤسسي المحفوظ',
         'data_from': min(dates) if dates else None,
         'data_to': max(dates) if dates else None,
-        'weekly_snapshot': bool(graph.onboarding),
-        'calculation_weeks': calculation_weeks(graph, weeks) if weeks is not None else None,
+        'weekly_snapshot': bool(graph.onboarding and weeks == 1),
+        'calculation_weeks': weeks,
+        **({'operating_sources': {sector: source.identity for sector, source in graph._client_sources.items()}}
+           if graph._client_sources else {}),
     }

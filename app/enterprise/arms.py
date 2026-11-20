@@ -11,6 +11,7 @@ from app.enterprise.impact_graph import ImpactError
 from app.forecasting.service import run_forecast
 from app.ingestion.loader import load_demo
 from app.optimization import contracting, production
+from app.optimization.common import OptimizationTimeout
 from app.simulation.montecarlo import contracting_trial_schedule, production_trial_plan
 from app.templates_registry import load_templates
 
@@ -23,12 +24,21 @@ class Plan:
     parameters: dict
     plan: dict
     status: str
+    solver: dict | None = None
 
 
 class Arms:
-    def __init__(self, sectors, *, time_limit, forecast_engine, foundation):
-        self.datasets = {sector: load_demo(sector) for sector in sectors}
-        self.defaults = {sector: load_templates()[sector].model_defaults()['parameters'] for sector in self.datasets}
+    def __init__(self, arms, sources, *, time_limit, forecast_engine, foundation):
+        self.sources = sources
+        self.datasets, self.defaults = {}, {}
+        for arm in arms:
+            sector = arm.sector
+            source = sources.get(sector)
+            if arm.input_source == 'client_plan' and source is None:
+                raise ImpactError('حمّل لقطة الخطة المعتمدة قبل حساب الأثر.')
+            self.datasets[sector] = source.dataset if source else load_demo(sector)
+            self.defaults[sector] = (source.parameters if source else
+                                     load_templates()[sector].model_defaults()['parameters'])
         self.time_limit = time_limit
         self.forecast_engine = forecast_engine
         self.foundation = foundation
@@ -40,17 +50,22 @@ class Arms:
         params = self.defaults[sector].copy()
         if sector == 'production':
             params['credit_limit'] = int(get('credit', params['credit_limit']))
-            params['opening_cash'] = int(get('cash', params['opening_cash']))
+            params['opening_cash'] = int(get('cash.opening' if sector in self.sources else 'cash',
+                                             params['opening_cash']))
             params['cold_capacity'] = int(get('storage', params['cold_capacity']))
             initial_capacity = sum(sku['initial_inventory'] * sku['volume'] for sku in data['skus'])
             if params['cold_capacity'] < initial_capacity:
                 raise ImpactError('سعة التبريد أقل من حجم المخزون الافتتاحي.')
             extra_days = max(0, round(get('supplier', 5) - 5))
-            params['line_down'] = {
-                line['id']: list(range(min(params['horizon_days'],
-                                           max(extra_days, round(get('downtime.' + line['id'], 0))))))
-                for line in data['lines']
-            }
+            planned_down = params.get('line_down', {})
+            line_down = {}
+            for line in data['lines']:
+                key = line['id']
+                downtime = max(extra_days, round(get('downtime.' + key, 0)))
+                days = set(planned_down.get(key, ())) | set(range(min(params['horizon_days'], downtime)))
+                if days or sector not in self.sources:
+                    line_down[key] = sorted(days)
+            params['line_down'] = line_down
             for sku in data['skus']:
                 key = sku['id']
                 sku['unit_price'] = round(get('price.' + key, sku['unit_price']))
@@ -73,12 +88,22 @@ class Arms:
     def plan(self, sector, data, parameters, phase, previous=None):
         if previous and (data, parameters) == (previous.dataset, previous.parameters):
             return previous
-        result = SOLVERS[sector].solve(data, parameters, time_limit=self.time_limit, deterministic=True)
+        source = self.sources.get(sector)
+        if source is not None:
+            defaults = source.parameters | {'line_down': {key: days for key, days in
+                                                           source.parameters.get('line_down', {}).items() if days}}
+            if (data, parameters) == (source.dataset, defaults):
+                return Plan(data, parameters, source.schedule, source.status, {'state': 'approved_plan'})
+        options = {'weights': source.weights} if source else {}
+        result = SOLVERS[sector].solve(data, parameters, time_limit=self.time_limit, deterministic=True, **options)
         plan = result['optimized']['plan']
+        if not plan and result['solver'].get('state') == 'no_result':
+            raise OptimizationTimeout('مهلة البحث خلصت قبل الوصول لخطة تشغيل قابلة للتنفيذ.')
         if not plan:
             raise ImpactError(f"مفيش خطة قابلة للتنفيذ لقطاع {'الإنتاج' if sector == 'production' else 'المقاولات'}.")
         self.optimizers_run[phase].append(sector)
-        return Plan(data, parameters, plan, result['solver']['status'])
+        solver = {key: value for key, value in result['solver'].items() if key != 'wall_s'}
+        return Plan(data, parameters, plan, solver['status'], solver)
 
     def forecast(self, sector):
         if sector not in self.forecasts:
@@ -88,7 +113,7 @@ class Arms:
         return self.forecasts[sector]
 
 
-def production_ledger(inputs, planned, offset, payable_lag, ledger, *, trial=False):
+def production_ledger(inputs, planned, offset, payable_lag, ledger, *, trial=False, horizon_days=None):
     data, params = inputs
     problem = production.prepare(data, params)
     if trial and (data, params) != (planned.dataset, planned.parameters):
@@ -114,6 +139,7 @@ def production_ledger(inputs, planned, offset, payable_lag, ledger, *, trial=Fal
         day = row['day']
         line_output[row['line']][day] += row['qty']
         spend = row['qty'] * problem.skus[row['sku']]['unit_cost']
+        ledger.post('produced_units', offset + day, row['qty'])
         ledger.post('purchases', offset + day, spend)
         ledger.post('payments', offset + day + payable_lag, spend)
     for row in result['changeover_days']:
@@ -126,16 +152,18 @@ def production_ledger(inputs, planned, offset, payable_lag, ledger, *, trial=Fal
         order = problem.orders[row['order']]
         sku = problem.skus[order['sku_id']]
         amount = order['qty'] * sku['unit_price']
+        ledger.post('shipped_units', offset + day, order['qty'])
         ledger.post('revenue.production', offset + day, amount)
         ledger.post('receipts.production', offset + day + problem.lag, amount)
         ledger.post('direct_cost', offset + day, order['qty'] * sku['unit_cost'])
         expense(day, row['late_days'] * order['penalty_per_day'])
+    window = problem.horizon if horizon_days is None else min(problem.horizon, horizon_days)
     ordered_units = sum(order['qty'] for order in problem.orders.values())
-    shipped_units = sum(problem.orders[row['order']]['qty'] for row in result['shipments'])
+    shipped_units = sum(problem.orders[row['order']]['qty'] for row in result['shipments'] if row['day'] < window)
     return {
-        'lines': {key: np.cumsum(value) for key, value in line_output.items()},
-        'inventory': result['inventory'],
-        'storage': np.array(result['storage_curve']) / max(1, problem.storage) * 100,
+        'lines': {key: np.cumsum(value[:window]) for key, value in line_output.items()},
+        'inventory': {key: stock[:window] for key, stock in result['inventory'].items()},
+        'storage': np.array(result['storage_curve'][:window]) / max(1, problem.storage) * 100,
         'booked': sum(row['qty'] * problem.skus[row['sku_id']]['unit_price'] for row in problem.orders.values()),
         'fill_rate': 100 * shipped_units / ordered_units if ordered_units else None,
     }

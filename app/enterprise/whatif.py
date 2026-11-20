@@ -5,15 +5,18 @@ from math import isfinite
 
 import numpy as np
 
-from app.enterprise.result_context import WEEKLY_CASH_LABEL, calculation_weeks
+from app.enterprise.result_context import ENDING_CASH_LABEL
 from app.enterprise.arms import Arms, contracting_ledger, production_ledger, start_date
+from app.enterprise.client_plans import ledger_edges
 from app.enterprise.demo import demo_template
 from app.enterprise.finance import Ledger
 from app.enterprise.impact_graph import CausalGraph, ImpactError, reference
 from app.enterprise.schema import Engine, EngineLink
 from app.forecasting.methods import quantiles
 from app.onboarding import projection
+from app.onboarding.cash_flow import FLOW_LABELS
 from app.onboarding.presets import INPUTS as ONBOARDING_INPUTS
+from app.optimization.budget import check_search_time
 from app.simulation.montecarlo import driver_trials
 
 FINANCE = {
@@ -54,7 +57,8 @@ def standard_graph(graph):
     legacy_ids = {key for key in expected if not key.startswith('downtime.')
                   and key not in ('pnl.expenses', 'supplier.payment_lag')}
     sectors = {arm.sector for arm in graph.arms}
-    compatible = sectors == {'production', 'contracting'} and all(
+    compatible = (sectors == {'production', 'contracting'}
+                  and all(arm.input_source == 'v1_demo' for arm in graph.arms)) and all(
         key in nodes and nodes[key].type == expected[key].type
         and nodes[key].definition == expected[key].definition
         for key in legacy_ids - {'pnl.result'}
@@ -96,17 +100,28 @@ class Evaluation:
     iterations: int
     cash_start: date | None = None
     fill_rate: float | None = None
+    ledger: list | None = None
+    weekly_flows: bool = False
+
+    def metric(self, key):
+        values = self.values[key]
+        if self.weekly_flows and values is not None:
+            if key in FLOW_LABELS:
+                return float(np.sum(values))
+            if key == 'cash':
+                return float(values[-1])
+        return metric(key, values)
 
     def metrics(self):
-        return {key: metric(key, values) for key, values in self.values.items()}
+        return {key: self.metric(key) for key in self.values}
 
 
 class ImpactModel:
     def __init__(self, graph, *, weeks, time_limit=15, forecast_engine='stat', foundation=None):
-        self.weeks = calculation_weeks(graph, weeks)
+        self.weeks = weeks
         self.graph = graph
         self.template = standard_graph(graph) if graph.arms else None
-        self.arms = Arms((arm.sector for arm in graph.arms), time_limit=time_limit,
+        self.arms = Arms(graph.arms, graph._client_sources, time_limit=time_limit,
                          forecast_engine=forecast_engine, foundation=foundation)
         links = {node.id: node.definition for node in graph.nodes if isinstance(node.definition, EngineLink)}
         keys = {node.id for node in graph.nodes}
@@ -116,8 +131,12 @@ class ImpactModel:
             bound |= FINANCE | {'sales.production', 'risk.delay', 'risk.storage'}
             drivers = {key for key in keys if any(is_driver(key, sector) for sector in self.arms.datasets)}
             bound -= drivers - {'cash'}
+        if self.arms.sources:
+            drivers = {key for key in keys - bound if is_driver(key, 'production') or key == 'cash.opening'}
         built_in = (projection.projection_edges(graph) if graph.onboarding
                     else edge_methods(graph, self.template, bound))
+        if self.arms.sources:
+            built_in.update(ledger_edges(graph, links, drivers))
         self.causal = CausalGraph(graph, built_in_edges=built_in,
                                   bound=bound & keys, drivers=drivers)
         self.links = links
@@ -160,6 +179,8 @@ class ImpactModel:
                 base = reference(self.causal.nodes[key])
                 return values[0] / base if base else 1.0
             values = upstream.get(key)
+            if self.arms.sources and values is not None and values[0] == reference(self.causal.nodes[key]):
+                return default
             return float(values[0]) if values is not None else default
 
         for key, values in upstream.items():
@@ -180,29 +201,33 @@ class ImpactModel:
 
     def computed(self, get, inputs, plans, *, trial=False):
         if not inputs:
-            return {}, 0, None, None
+            return {}, 0, None, None, None
         starts = {sector: start_date(sector, params) for sector, (_, params) in inputs.items()}
         origin = min(starts.values())
         offsets = {sector: (start - origin).days for sector, start in starts.items()}
         payable_lag = round(get('supplier.payment_lag', 0))
-        ledger = Ledger(days=1)
+        ledger = Ledger(days=self.weeks * 7)
+        ledger_rows = None
         projections = {}
         iterations = 0
         for sector, plan in plans.items():
-            offset, (_, params) = offsets[sector], inputs[sector]
+            offset = offsets[sector]
             if sector == 'production':
-                projections[sector] = production_ledger(inputs[sector], plan, offset, payable_lag, ledger, trial=trial)
-                ledger.days = max(ledger.days, offset + params['horizon_days'] + max(params['payment_lag_days'], payable_lag))
+                projections[sector] = production_ledger(
+                    inputs[sector], plan, offset, payable_lag, ledger, trial=trial,
+                    horizon_days=ledger.days if self.arms.sources else None)
             else:
                 projections[sector] = contracting_ledger(inputs[sector], plan, offset, ledger, trial=trial)
-                ledger.days = max(ledger.days, offset + (params['horizon_weeks'] + params['payment_lag_weeks']) * 7 + 1)
 
         values = {}
         if self.template:
-            ledger.days = max(ledger.days, 1 + max((max(book, default=0) for book in ledger.books.values()), default=0))
-            values, iterations = ledger.close(get('cash', 0), get('credit', 0),
-                                              inputs['contracting'][1]['weekly_interest'])
+            values, iterations, ledger_rows = ledger.close(
+                get('cash', 0), get('credit', 0), inputs['contracting'][1]['weekly_interest'], origin=origin)
             values['sales.production'] = [projections['production']['booked']]
+        elif self.arms.sources and plans:
+            _, params = inputs['production']
+            accounts, iterations, ledger_rows = ledger.close(
+                params['opening_cash'], params['credit_limit'], params['weekly_interest'], origin=origin)
 
         for key, link in self.links.items():
             entity = link.entity_id
@@ -211,6 +236,13 @@ class ImpactModel:
                     continue  # The driver is the reference weekly demand; forecasts stay separate.
                 series = self.arms.forecast(link.sector)[entity][link.output.split('.')[1]]
                 value = np.array(series)
+            elif link.output.startswith('ledger.'):
+                ledger_key = {
+                    'ledger.cash': 'cash', 'ledger.revenue': 'pnl.revenue',
+                    'ledger.direct_cost': 'pnl.direct_cost', 'ledger.expenses': 'pnl.expenses',
+                    'ledger.profit': 'pnl.result',
+                }[link.output]
+                value = accounts[ledger_key]
             else:
                 data = projections[link.sector]
                 value = {
@@ -222,14 +254,15 @@ class ImpactModel:
                 }[link.output]()
             values[key] = value
         return {key: np.asarray(value, dtype=float) for key, value in values.items()
-                if key in self.causal.nodes}, iterations, origin, projections.get('production', {}).get('fill_rate')
+                if key in self.causal.nodes}, iterations, origin, projections.get('production', {}).get('fill_rate'), ledger_rows
 
     def evaluate(self, changes, inputs, plans, baseline=None, *, trial=False):
         get, arm_inputs, upstream, upstream_effects = inputs
         if self.graph.onboarding:
-            values, effects = projection.evaluate(self.causal, self.weeks, changes)
-            return Evaluation(values, effects, 0)
-        computed, iterations, cash_start, fill_rate = self.computed(get, arm_inputs, plans, trial=trial)
+            values, effects, ledger = projection.evaluate(
+                self.causal, self.weeks, changes, self.graph.onboarding.cash_terms)
+            return Evaluation(values, effects, 0, ledger=ledger, weekly_flows=True)
+        computed, iterations, cash_start, fill_rate, ledger = self.computed(get, arm_inputs, plans, trial=trial)
         anchors = {
             key: metric(key, baseline.values.get(key) if baseline else value)
             for key, value in computed.items()
@@ -238,7 +271,7 @@ class ImpactModel:
         raw = upstream | {key: np.full(self.weeks, metric(key, value)) for key, value in computed.items()}
         values, effects = self.causal.propagate(self.weeks, changes, computed=raw, anchors=anchors)
         values.update(computed)
-        return Evaluation(values, effects | upstream_effects, iterations, cash_start, fill_rate)
+        return Evaluation(values, effects | upstream_effects, iterations, cash_start, fill_rate, ledger)
 
     def assumption_values(self, assumptions):
         centers, spreads, reference_values = {}, {}, {}
@@ -283,10 +316,11 @@ class ImpactModel:
         max_iterations = max(baseline.iterations, central.iterations)
         if any(spreads.values()):
             for sample in driver_trials(centers, spreads, request.n, request.seed):
+                check_search_time()
                 evaluation = self.evaluate(sample, self.input_values(sample), central_plans, baseline, trial=True)
                 max_iterations = max(max_iterations, evaluation.iterations)
                 for key in samples:
-                    samples[key].append(metric(key, evaluation.values[key]))
+                    samples[key].append(evaluation.metric(key))
                 if evaluation.fill_rate is not None:
                     fill_rates.append(evaluation.fill_rate)
                 active_edges.update(self.carried_edges(baseline, evaluation, sample, reference_values))
@@ -304,13 +338,19 @@ class ImpactModel:
         sources = projection.provenance(self.graph) if self.graph.onboarding else {}
         for node in self.graph.nodes:
             key = node.id
+            name = node.name_ar
+            if self.graph.onboarding:
+                if key == 'cash':
+                    name = ENDING_CASH_LABEL
+                elif self.weeks > 1:
+                    name = FLOW_LABELS.get(key, name)
             left, right = before[key], after[key]
             delta = right - left if left is not None and right is not None else None
             pct = 100 * delta / abs(left) if left and delta is not None else None
             if any(value is not None and not isfinite(value) for value in (left, right, delta, pct)):
                 raise ImpactError('الأثر أكبر من النطاق الرقمي المدعوم.')
             rows.append({
-                'id': key, 'name_ar': WEEKLY_CASH_LABEL if self.graph.onboarding and key == 'cash' else node.name_ar,
+                'id': key, 'name_ar': name,
                 'type': node.type, 'unit': node.unit,
                 'before': left, 'after': right, 'delta': delta, 'delta_pct': pct,
                 'quantiles': bands.get(key), 'path': paths.get(key, []),
@@ -326,12 +366,18 @@ class ImpactModel:
                                                uncertainty=spreads[key]) for key, value in centers.items()],
             'paths': [edge for incoming in paths.values() for edge in incoming],
             'charts': self.charts(baseline, central),
+            **({'cash_ledger': {'period': 'week', 'currency': 'SAR',
+                               'before': baseline.ledger, 'after': central.ledger}}
+               if baseline.ledger is not None else {}),
             'fill_rate': central.fill_rate,
             'fill_rate_baseline': baseline.fill_rate,
             'fill_rate_quantiles': quantiles(fill_rates) if fill_rates else None,
             'simulation': {'n': request.n, 'seed': request.seed, 'max_financing_iterations': max_iterations},
             'optimizers_run': self.arms.optimizers_run,
             'solver_status': {sector: plan.status for sector, plan in central_plans.items()},
+            **({'solver_details': {phase: {sector: plan.solver for sector, plan in plans.items()}
+                                   for phase, plans in (('baseline', base_plans), ('scenario', central_plans))}}
+               if central_plans else {}),
             **({'onboarding': projection.readiness(self.graph)} if sources else {}),
         }
 
@@ -372,16 +418,16 @@ class ImpactModel:
     def charts(self, baseline, central):
         fields = [key for key in ('pnl.revenue', 'pnl.direct_cost', 'pnl.expenses', 'financing', 'pnl.result')
                   if key in baseline.values and baseline.values[key] is not None]
-        charts = {'pnl': [{'id': key, 'before': metric(key, baseline.values[key]),
-                           'after': metric(key, central.values[key])} for key in fields],
+        charts = {'pnl': [{'id': key, 'before': baseline.metric(key),
+                           'after': central.metric(key)} for key in fields],
                   'cash': None}
-        if self.template:
+        if baseline.ledger and baseline.cash_start is not None and 'cash' in baseline.values:
             before, after = (evaluation.values['cash'].tolist() for evaluation in (baseline, central))
             dates = [(baseline.cash_start + timedelta(days=index - 1)).isoformat()
                      for index in range(max(len(before), len(after)))]
             charts['cash'] = {'dates': dates, 'before': before, 'after': after}
         elif self.graph.onboarding and baseline.values['cash'] is not None:
             charts['cash'] = {'period_ar': 'نهاية الأسبوع',
-                              'before': [float(baseline.values['cash'][-1])],
-                              'after': [float(central.values['cash'][-1])]}
+                              'before': baseline.values['cash'].tolist(),
+                              'after': central.values['cash'].tolist()}
         return charts

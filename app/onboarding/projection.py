@@ -3,6 +3,8 @@ from collections import defaultdict
 
 import numpy as np
 
+from app.onboarding.cash_flow import forecast_ledger
+from app.onboarding.records import CashTerms
 from app.onboarding.presets import INPUTS, ITEMS, OUTPUTS, SECTIONS, field, section_specs
 from app.enterprise.impact_graph import CausalGraph, reference
 from app.enterprise.schema import Observation, Scalar, Series
@@ -51,16 +53,21 @@ def project_output(key, values, weeks):
         return deps[0] * deps[1]
     if key == 'pnl.result':
         return deps[0] - deps[1] - deps[2] - deps[3]
-    if key == 'cash':
-        # One-week snapshot. Beginning AR/AP are expected to settle that week.
-        return deps[0] + deps[1] - deps[2] + deps[3]
     return np.maximum(-deps[0] - deps[1], np.zeros(weeks))
 
 
-def evaluate(causal, weeks, changes):
-    values, effects = {}, {}
+def evaluate(causal, weeks, changes, terms=None):
+    values, effects, ledger = {}, {}, None
     for key in causal.order:
-        if key in OUTPUTS:
+        if key == 'cash':
+            stock = values.get('inventory')
+            if 'inventory' not in values and causal.nodes.get('inventory') is not None:
+                opening_stock = changes.get('inventory', reference(causal.nodes['inventory']))
+                if opening_stock is not None:
+                    stock = np.full(weeks, opening_stock)
+            ledger = forecast_ledger(values | {'inventory': stock}, terms or CashTerms(), weeks)
+            value = None if ledger is None else np.array([row['closing_cash'] for row in ledger])
+        elif key in OUTPUTS:
             value = project_output(key, values, weeks)
         else:
             base = reference(causal.nodes[key])
@@ -80,8 +87,19 @@ def evaluate(causal, weeks, changes):
                 value = np.minimum(value, values['demand'])
                 if values['capacity'] is not None:
                     value = np.minimum(value, values['capacity'])
+        if key == 'cash' and ledger is not None:
+            prior_adjustment = 0
+            for row, closing in zip(ledger, value):
+                adjustment = float(closing) - row['closing_cash']
+                movement = adjustment - prior_adjustment
+                row['opening_cash'] += prior_adjustment
+                row['closing_cash'] = float(closing)
+                row['cash_in'] += max(0, movement)
+                row['cash_out'] += max(0, -movement)
+                row['cash_adjustment'] = movement
+                prior_adjustment = adjustment
         values[key] = value
-    return values, effects
+    return values, effects, ledger
 
 
 def materialize(graph):
@@ -89,7 +107,8 @@ def materialize(graph):
     nodes = [node.model_copy(update={'baseline': inputs.get(node.id, Scalar(value=None))})
              for node in graph.nodes]
     graph = graph.model_copy(update={'nodes': nodes})
-    values, _ = evaluate(CausalGraph(graph, built_in_edges=projection_edges(graph)), 1, {})
+    values, _, _ = evaluate(CausalGraph(graph, built_in_edges=projection_edges(graph)), 1, {},
+                            graph.onboarding.cash_terms)
     return graph.model_copy(update={'nodes': [
         node.model_copy(update={'baseline': Scalar(value=float(values[node.id][0]))})
         if node.id in OUTPUTS and values[node.id] is not None else node for node in nodes

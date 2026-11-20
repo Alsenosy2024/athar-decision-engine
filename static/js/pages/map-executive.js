@@ -5,7 +5,7 @@ function mapExecutiveControls() {
     let baselineTimer, baselineController;
 
     return {
-        baselineLoading: false, baselineError: '',
+        baselineLoading: false, baselineError: '', baselineLedger: null, baselineWeeks: null,
         animateValue, percentileLabel, executiveRisk,
         resetExecutiveBaseline() {
             baselineRequest++;
@@ -13,13 +13,13 @@ function mapExecutiveControls() {
             baselineController?.abort();
             this.baselineLoading = false;
             this.baselineError = '';
-            this.baselineKpis = null;
+            this.baselineKpis = this.baselineLedger = this.baselineWeeks = null;
         },
         refreshExecutiveBaseline({ defer = false } = {}) {
             this.resetExecutiveBaseline();
-            if (!this.map?.has_engines || this.map.analysis_error || this.map.process_only) return;
+            if (!(this.map?.has_engines || this.onboardingProjection) || this.map.analysis_error || this.map.process_only) return;
             const requestId = baselineRequest;
-            const query = new URLSearchParams({ ...this.selection, weeks: this.weeks });
+            const query = new URLSearchParams({ ...this.selection, weeks: this.weeks, include_ledger: 'true' });
             this.baselineLoading = true;
             const calculate = async () => {
                 baselineController = new AbortController();
@@ -27,7 +27,11 @@ function mapExecutiveControls() {
                     const values = await api('/enterprise/map/baseline?' + query, {
                         cache: 'no-store', signal: baselineController.signal,
                     });
-                    if (requestId === baselineRequest) this.baselineKpis = values;
+                    if (requestId === baselineRequest) {
+                        this.baselineKpis = values.kpis;
+                        this.baselineLedger = values.cash_ledger?.rows ?? null;
+                        this.baselineWeeks = values.weeks;
+                    }
                 } catch (error) {
                     if (requestId === baselineRequest) this.baselineError = error.message;
                 } finally {

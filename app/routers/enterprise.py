@@ -9,12 +9,12 @@ from app.access import require_role
 from app.db import audit, request_conn
 from app.delivery.export import scenario_excel, tornado_excel
 from app.enterprise import scenarios, store
-from app.enterprise.result_context import result_context
+from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.demo import demo_template
 from app.enterprise.impact_graph import ImpactError, WhatIfRequest
 from app.enterprise.schema import ModelInput, ModelSnapshot, ModelSummary, ModelUpdate, Template
 from app.enterprise.whatif import ImpactModel
-from app.optimization.common import OptimizationInputError
+from app.optimization.common import OptimizationInputError, OptimizationTimeout
 from app.schemas import api_error
 
 router = APIRouter(prefix='/enterprise', tags=['enterprise'])
@@ -98,14 +98,20 @@ def whatif_drivers(model_id: int | None = Query(default=None, ge=1),
     snapshot = whatif_snapshot(connection, model_id, version)
     try:
         model = ImpactModel(snapshot['graph'], weeks=1)
-        return {'drivers': model.drivers(), 'version': snapshot['version']}
+        return {'drivers': model.drivers(), 'version': snapshot['version'],
+                **({'default_weeks': 1} if model.graph.onboarding else {})}
     except ImpactError as error:
         raise api_error(422, 'invalid_enterprise_graph', str(error)) from None
 
 
+def requested_weeks(snapshot, body):
+    weeks = body.weeks if 'weeks' in body.model_fields_set else None
+    return effective_weeks(snapshot['graph'], weeks)
+
+
 def impact_model(snapshot, request, weeks):
     state = request.app.state
-    return ImpactModel(snapshot['graph'], weeks=weeks, time_limit=state.settings.solver_time_limit,
+    return ImpactModel(snapshot['graph'], weeks=weeks, time_limit=min(state.settings.solver_time_limit, state.settings.interactive_solver_time_limit),
                        forecast_engine=state.settings.forecast_engine, foundation=state.forecast_worker)
 
 
@@ -114,6 +120,8 @@ def impact_errors():
     try:
         with np.errstate(over='raise', invalid='raise', divide='raise'):
             yield
+    except OptimizationTimeout as error:
+        raise api_error(503, 'solver_time_limit_no_result', str(error)) from None
     except (ImpactError, OptimizationInputError) as error:
         raise api_error(422, 'invalid_enterprise_scenario', str(error)) from None
     except (OverflowError, FloatingPointError):
@@ -123,10 +131,11 @@ def impact_errors():
 @router.post('/whatif')
 def whatif(body: WhatIfRequest, request: Request, connection=Depends(request_conn)):
     snapshot = whatif_snapshot(connection, body.model_id, body.version)
+    weeks = requested_weeks(snapshot, body)
     with impact_errors():
-        result = impact_model(snapshot, request, body.weeks).scenario(body)
+        result = impact_model(snapshot, request, weeks).scenario(body)
     return {'model_id': snapshot['id'], 'version': snapshot['version'], 'name': snapshot['name'],
-            'context': result_context(connection, snapshot, body.weeks), **result}
+            'context': result_context(connection, snapshot, weeks), **result}
 
 
 @router.get('/scenarios')
@@ -152,17 +161,19 @@ def comparison(body, request, connection):
         raise api_error(422, 'enterprise_scenario_scope', 'اختار سيناريوهات من نفس النموذج ونفس الإصدار.')
     model_id, version, _ = scopes.pop()
     snapshot = whatif_snapshot(connection, model_id, version)
+    weeks = requested_weeks(snapshot, body)
     with impact_errors():
-        result = scenarios.compare(impact_model(snapshot, request, body.weeks), saved, body)
-    result['context'] = result_context(connection, snapshot, body.weeks)
+        result = scenarios.compare(impact_model(snapshot, request, weeks), saved, body)
+    result['context'] = result_context(connection, snapshot, weeks)
     return result, snapshot
 
 
 def sensitivity(body, request, connection):
     snapshot = whatif_snapshot(connection, body.model_id, body.version)
+    weeks = requested_weeks(snapshot, body)
     with impact_errors():
-        result = scenarios.tornado(impact_model(snapshot, request, body.weeks), body)
-    result['context'] = result_context(connection, snapshot, body.weeks)
+        result = scenarios.tornado(impact_model(snapshot, request, weeks), body)
+    result['context'] = result_context(connection, snapshot, weeks)
     return result, snapshot
 
 

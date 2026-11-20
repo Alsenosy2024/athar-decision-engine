@@ -12,7 +12,7 @@ from app.db import request_conn
 from app.enterprise.schema import Number, StrictFields
 from app.onboarding import ingest, storage
 from app.onboarding.presets import SECTIONS, SECTORS, graph_for, section_specs
-from app.onboarding.records import Sector
+from app.onboarding.records import CashTerms, Sector
 from app.routers.connectors import saved_connector
 from app.routers.enterprise import excel_response
 from app.schemas import CompanyName, api_error
@@ -154,3 +154,13 @@ def rules(company_id: CompanyID, body: Rules, request: Request, connection=Depen
 @router.post(BASE + '/commit')
 def commit(company_id: CompanyID, body: Commit, request: Request, connection=Depends(request_conn)):
     return storage.commit(connection, company_id, request.state.principal.id, body.token)
+
+
+class CashTermsUpdate(Version):
+    terms: CashTerms
+
+
+@router.put(BASE + '/cash-terms')
+def cash_terms(company_id: CompanyID, body: CashTermsUpdate, request: Request, connection=Depends(request_conn)):
+    require_role(request.state.principal)
+    return storage.update_cash_terms(connection, company_id, body.expected_version, body.terms)

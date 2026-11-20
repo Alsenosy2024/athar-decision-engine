@@ -526,6 +526,12 @@
                             </template>
                         </fieldset>
                         <div class="actions" x-show="drivers.length">
+                            <label>مدة الإسقاط المالي
+                                <select x-model.number="weeks" :disabled="!!busy">
+                                    <option value="1">أسبوع</option><option value="13">13 أسبوع</option>
+                                    <option value="52">52 أسبوع</option><option value="104">104 أسبوع</option>
+                                </select>
+                            </label>
                             <button class="button primary" type="submit" :disabled="!!busy" data-testid="impact-run"
                                     x-text="busy === 'run' ? 'جارٍ حساب الأثر…' : 'احسب الأثر'"></button>
                             <button class="button secondary" type="button" @click="add()"
@@ -549,7 +555,7 @@
                         <div class="stack" data-testid="impact-result">
                             <p x-text="enterpriseResultContext(result.context)"></p>
                             <p class="notice" x-show="result.onboarding">
-                                توقعات أسبوعية تقديرية. راجع جاهزية البيانات في <a href="#/onboarding">تجهيز الشركة</a>.
+                                الحساب بيبدأ من أحدث مدخلات أسبوعية متاحة. راجع جاهزية البيانات في <a href="#/onboarding">تجهيز الشركة</a>.
                             </p>
                             <p role="status" x-text="number(result.simulation.n) + ' محاكاة · ' + number(ranked.length) + ' عنصر متأثر'"></p>
                             <article class="card">
@@ -601,7 +607,7 @@
                             </article>
                             <div class="impact-charts" x-show="result.charts.pnl.length || result.charts.cash">
                                 <article class="card" x-show="result.charts.pnl.length">
-                                    <h2>الأرباح والخسائر</h2>
+                                    <h2>الأرباح والخسائر التراكمية</h2>
                                     <div class="chart"><canvas x-ref="pnl" data-testid="chart-impact-pnl" role="img" aria-label="الأرباح والخسائر قبل وبعد الفرضية"></canvas></div>
                                 </article>
                                 <article class="card" x-show="result.charts.cash">
@@ -660,6 +666,12 @@
                                 <template x-for="[key, label] in Object.entries(scopes)" :key="key">
                                     <option :value="key" x-text="label"></option>
                                 </template>
+                            </select>
+                        </label>
+                        <label class="enterprise-select">أفق المقارنة والحساسية
+                            <select x-model.number="weeks" :disabled="!!busy" data-testid="scenario-weeks">
+                                <option value="1">أسبوع</option><option value="13">13 أسبوع</option>
+                                <option value="52">52 أسبوع</option><option value="104">104 أسبوع</option>
                             </select>
                         </label>
                     </div>
@@ -880,6 +892,7 @@
                     </p>
                     <div class="snapshot">
                         <div class="snapshot-info"><h2 x-text="solverLabel(run?.solver.status)"></h2>
+                            <p x-show="run?.solver.state === 'partial'" role="status">البحث وصل لحدّه. دي أفضل خطة متاحة.</p>
                             <p x-text="'التشغيل ' + number(runId) + ' · ' + number(run?.solver.wall_s) + ' ثانية'"></p></div>
                         <button class="button secondary" data-testid="draft-optimized" @click="draft()" :disabled="!!busy || !run?.optimized?.plan"
                             x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>

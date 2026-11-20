@@ -78,7 +78,7 @@ def snapshot(connection, company_id):
 def describe(model):
     data = model['graph'].onboarding
     return {'company_id': model['company_id'], 'model_id': model['id'], 'version': model['version'],
-            'name': model['name'], 'sector': data.sector, 'records': data.records,
+            'name': model['name'], 'sector': data.sector, 'records': data.records, 'cash_terms': data.cash_terms,
             'edges': [edge for edge in model['graph'].edges if edge.rule],
             'nodes': model['graph'].nodes, 'readiness': readiness(model['graph'])}
 
@@ -152,4 +152,21 @@ def commit(connection, company_id, user_id, token):
         audit(connection, company_id, 'onboarding.commit', 'enterprise_model', model['id'],
               {'version': version, 'records': len(payload['records']), 'rules': len(payload['rules'])})
         connection.execute('DELETE FROM onboarding_previews WHERE token=?', (token,))
+        return describe(snapshot(connection, company_id))
+
+
+def update_cash_terms(connection, company_id, expected_version, terms):
+    with connection:
+        connection.execute('BEGIN IMMEDIATE')
+        model = snapshot(connection, company_id)
+        check_version(model, expected_version)
+        graph = model['graph']
+        if graph.onboarding.cash_terms == terms:
+            return describe(model)
+        updated = graph.model_copy(update={'onboarding': graph.onboarding.model_copy(update={'cash_terms': terms})})
+        version = model['version'] + 1
+        store.write_version(connection, model['id'], version,
+                            ModelInput(name=model['name'], graph=materialize(updated)))
+        audit(connection, company_id, 'onboarding.cash_terms', 'enterprise_model', model['id'],
+              {'version': version, 'terms': terms.model_dump(mode='json')})
         return describe(snapshot(connection, company_id))

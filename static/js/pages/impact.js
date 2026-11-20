@@ -2,7 +2,7 @@ document.addEventListener('alpine:init', () => {
     let nextId = 0;
     const assumption = () => ({ id: ++nextId, node_id: '', operation: 'pct', value: '', uncertainty: '' });
     Alpine.data('impactPage', () => ({
-        models: [], modelId: '', drivers: [], assumptions: [], result: null, version: null,
+        models: [], weeks: 52, modelId: '', drivers: [], assumptions: [], result: null, version: null,
         selection: '', busy: '', error: '', scenarioName: '', saving: false, savedName: '',
         units: enterpriseUnits,
         number, signed, enterpriseResultContext,
@@ -53,6 +53,7 @@ document.addEventListener('alpine:init', () => {
                 await this.loadDrivers(chat?.version);
                 if (chat) {
                     this.assumptions = chat.scenario.assumptions.map(row => ({ ...row, id: ++nextId }));
+                    this.weeks = chat.result.context.calculation_weeks || 52;
                     await this.showResult(chat.result);
                 }
             } catch (error) { this.error = error.message; }
@@ -70,6 +71,7 @@ document.addEventListener('alpine:init', () => {
             if (version != null) query.set('version', version);
             const data = await api('/enterprise/whatif/drivers?' + query);
             this.drivers = data.drivers;
+            this.weeks = data.default_weeks ?? 52;
             this.version = data.version;
             this.assumptions[0].node_id = this.drivers.find(row => row.id === 'credit')?.id || this.drivers[0]?.id || '';
         },
@@ -112,7 +114,7 @@ document.addEventListener('alpine:init', () => {
             this.busy = 'run';
             this.error = '';
             try {
-                await this.showResult(await api('/enterprise/whatif', post(this.scenarioPayload())));
+                await this.showResult(await api('/enterprise/whatif', post({ ...this.scenarioPayload(), weeks: this.weeks })));
             } catch (error) { this.error = error.message; }
             finally { this.busy = ''; }
         },
@@ -154,10 +156,10 @@ document.addEventListener('alpine:init', () => {
             }
             if (cash?.period_ar) {
                 drawChart(this.$refs.cash, c => ({
-                    type: 'bar',
-                    data: { labels: [cash.period_ar], datasets: [
-                        { label: legends[0], data: cash.before, backgroundColor: c.reference },
-                        { label: legends[1], data: cash.after, backgroundColor: c.main },
+                    type: cash.before.length === 1 ? 'bar' : 'line',
+                    data: { labels: cash.before.map((_, index) => number(index + 1)), datasets: [
+                        { label: legends[0], data: cash.before, backgroundColor: c.reference, borderColor: c.reference },
+                        { label: legends[1], data: cash.after, backgroundColor: c.main, borderColor: c.main },
                     ] },
                     options: { scales: { y: { title: axisTitle('ر.س') } } },
                 }));

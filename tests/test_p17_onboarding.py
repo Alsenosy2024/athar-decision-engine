@@ -92,7 +92,7 @@ def test_section_inputs_excel_and_partial_whatif(client):
     review = workbook(client, path, {'catalog': [('price', 20), ('offering.box', 'صندوق')]}, 3, 'catalog')
     model = commit(client, path, review)
     result = ok(client.post('/api/enterprise/whatif', json={
-        'model_id': model['model_id'], 'n': 15, 'seed': 42,
+        'model_id': model['model_id'], 'weeks': 1, 'n': 15, 'seed': 42,
         'assumptions': [{'node_id': 'demand', 'operation': 'pct', 'value': 10}],
     }))
     rows = by_key(result['nodes'])
@@ -138,7 +138,7 @@ def test_full_workbook_upsert_finance_and_sensitivity(client):
     assert nodes['cash']['baseline']['value'] == 1690
     assert model['readiness']['sources']['ar'] == 'actual'
     assert model['readiness']['sources']['cash'] == 'estimated'
-    body = {'model_id': model['model_id'], 'n': 20, 'seed': 42,
+    body = {'model_id': model['model_id'], 'weeks': 1, 'n': 20, 'seed': 42,
             'assumptions': [{'node_id': 'price', 'operation': 'add', 'value': 5, 'uncertainty': 1}]}
     result = ok(client.post('/api/enterprise/whatif', json=body))
     assert result == ok(client.post('/api/enterprise/whatif', json=body))
@@ -149,7 +149,7 @@ def test_full_workbook_upsert_finance_and_sensitivity(client):
     assert rows['cash']['quantiles']['p10'] < rows['cash']['quantiles']['p90']
     assert result['charts']['cash']['after'] == [2240]
     sweep = ok(client.post('/api/enterprise/scenarios/tornado', json={
-        'model_id': model['model_id'], 'kpi': 'cash_low', 'driver_ids': ['price'],
+        'model_id': model['model_id'], 'weeks': 1, 'kpi': 'cash_low', 'driver_ids': ['price'],
     }))
     assert sweep['baseline'] == 1690
     assert sweep['rows'][0]['high']['value'] > sweep['rows'][0]['low']['value']

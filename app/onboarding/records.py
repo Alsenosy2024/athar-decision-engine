@@ -19,7 +19,15 @@ class Record(BaseModel):
     source: Source = 'actual'
 
 
+class CashTerms(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    collection_lag_weeks: int = Field(default=0, strict=True, ge=0, le=104)
+    payment_lag_weeks: int = Field(default=0, strict=True, ge=0, le=104)
+    inventory_target: Annotated[Value, Field(ge=0)] | None = None
+
+
 class OnboardingData(BaseModel):
     model_config = ConfigDict(extra='forbid')
     sector: Sector
     records: list[Record] = Field(default_factory=list, max_length=20000)
+    cash_terms: CashTerms | None = Field(default=None, exclude_if=lambda terms: terms is None)

@@ -53,7 +53,7 @@ def test_ddl(client, db_path):
             'enterprise_edge_calibrations', 'enterprise_kpi_thresholds', 'enterprise_decisions',
             'enterprise_decision_actuals',
             'ai_reviews', 'ai_review_p6', 'ai_estimated_points',
-            'company_process_mining',
+            'company_process_mining', 'operating_source_snapshots',
             'department_assignments', 'department_previews', 'department_submissions',
         }
         assert connection.execute('PRAGMA foreign_keys').fetchone()[0] == 1

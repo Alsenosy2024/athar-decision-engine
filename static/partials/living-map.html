@@ -130,8 +130,7 @@
                 </select>
                 <button type="button" class="lm-action" @click="addDriver()" :disabled="!driverId || !!busy || edits.length >= 50">ضيف</button>
               </div>
-              <p x-show="weeklySnapshot" data-testid="map-weekly-period">أفق الحساب · أسبوع واحد</p>
-              <label class="lm-horizon" x-show="!weeklySnapshot">أفق الحساب
+              <label class="lm-horizon">أفق الحساب
                 <select x-model.number="weeks" @change="$nextTick(() => refreshExecutiveBaseline())" :disabled="!!busy">
                   <option value="1">أسبوع</option><option value="4">4 أسابيع</option>
                   <option value="13">13 أسبوع</option><option value="26">26 أسبوع</option>
@@ -257,6 +256,7 @@
         <template x-if="result">
           <div class="lm-stack">
             <p class="lm-result-caption" x-text="resultContext" data-testid="map-result-context"></p>
+            <p class="lm-result-caption" x-show="solverPartial" role="status">البحث وصل لحدّه. الأرقام مبنية على أفضل خطة متاحة.</p>
             <p class="lm-result-caption">المؤشرات بتلخّص أفق الحساب. شريط الزمن بيعرض وصول الأثر.</p>
             <p class="lm-result-caption" x-show="fixedScenario">سيناريو محدد · هامش عدم اليقين صفر، فلكل مؤشر نتيجة واحدة.</p>
             <p class="lm-result-caption" x-show="!fixedScenario">المئينات بترتّب نتائج المحاكاة من الأقل (P10) للوسيط (P50) للأعلى (P90). التفاؤل حسب اتجاه المؤشر.</p>
@@ -331,7 +331,9 @@
             <div class="lm-stack" data-testid="map-recommendations">
               <p x-show="recommendations.evaluated_trials" x-text="'اتحسبت ' + number(recommendations.evaluated_trials) + ' تجربة. الترتيب حسب استيفاء القيود، ثم أعلى ربح، ثم أقل مخاطرة وتغيير.'"></p>
               <p x-text="enterpriseResultContext(recommendations.context)"></p>
-              <p x-show="!recommendations.recommendations.length">مفيش بديل قابل للحساب جوه النطاق ده.</p>
+              <p x-show="recommendations.search_status?.stop_reason === 'time_limit'" role="status"
+                 x-text="recommendations.recommendations.length ? 'مهلة البحث خلصت. دي أفضل البدائل اللي اتقيّمت.' : 'مهلة البحث خلصت قبل ما يتقيّم بديل.'"></p>
+              <p x-show="!recommendations.recommendations.length && recommendations.search_status?.stop_reason !== 'time_limit'">مفيش بديل قابل للحساب جوه النطاق ده.</p>
               <template x-for="(item, index) in recommendations.recommendations" :key="index">
                 <article class="lm-recommendation">
                   <template x-for="row in item.assumptions" :key="row.node_id">
@@ -388,6 +390,39 @@
         </details>
       </aside>
     </div>
+
+    <template x-if="ledgerRows?.length">
+      <details class="lm-panel lm-cash-ledger" data-testid="cash-ledger">
+        <summary>دفتر حركة الكاش الأسبوعي</summary>
+        <div class="lm-stack">
+          <label x-show="result">الحالة
+            <select x-model="ledgerPhase">
+              <option value="after">بعد الفرضية</option><option value="before">قبل الفرضية</option>
+            </select>
+          </label>
+          <div class="table-scroll lm-cash-scroll" tabindex="0" aria-label="حركة الكاش الأسبوعية">
+            <table class="numeric-table">
+              <thead><tr><th scope="col">الأسبوع</th><th scope="col">افتتاحي</th>
+                <th scope="col">داخل</th><th scope="col">خارج</th><th scope="col">ختامي</th>
+                <th scope="col">ربح الفترة</th><th scope="col">الربح التراكمي</th></tr></thead>
+              <tbody>
+                <template x-for="row in ledgerRows" :key="row.week">
+                  <tr><th scope="row" x-text="number(row.week)" :title="row.end_date || ''"></th>
+                    <td><bdi x-text="number(row.opening_cash)"></bdi></td>
+                    <td><bdi x-text="number(row.cash_in)"></bdi></td>
+                    <td><bdi x-text="number(row.cash_out)"></bdi></td>
+                    <td><bdi x-text="number(row.closing_cash)"></bdi></td>
+                    <td><bdi x-text="number(row.profit)"></bdi></td>
+                    <td><bdi x-text="number(row.cumulative_profit)"></bdi></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <small>القيم بالريال السعودي.</small>
+        </div>
+      </details>
+    </template>
 
     <section class="lm-briefing" x-show="!map.process_only" aria-labelledby="lm-briefing-title" data-testid="map-briefing">
       <div class="lm-briefing-copy" aria-live="polite">

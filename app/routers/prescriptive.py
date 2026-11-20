@@ -8,6 +8,7 @@ from pydantic import Field, ValidationError
 from app.db import audit, encode, request_conn
 from app.enterprise import store
 from app.enterprise.impact_graph import ImpactError
+from app.enterprise.result_context import effective_weeks
 from app.enterprise.scenarios import KPIS
 from app.enterprise.schema import StrictFields
 from app.enterprise.whatif import ImpactModel
@@ -29,8 +30,10 @@ class GoalText(StrictFields):
 
 
 def engine(snapshot, request):
-    return ImpactModel(snapshot['graph'], weeks=goal.WEEKS,
-                       time_limit=request.app.state.settings.solver_time_limit, forecast_engine='stat')
+    settings = request.app.state.settings
+    return ImpactModel(snapshot['graph'], weeks=effective_weeks(snapshot['graph']),
+                       time_limit=min(settings.solver_time_limit, settings.interactive_solver_time_limit),
+                       forecast_engine='stat')
 
 
 def thresholds(connection, model_id):

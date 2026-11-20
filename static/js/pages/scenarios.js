@@ -9,7 +9,7 @@ document.addEventListener('alpine:init', () => {
     const chartNumber = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 2 });
     Alpine.data('scenariosPage', () => ({
         models: [], saved: [], drivers: [], scope: '', scenarioIds: [], driverIds: [],
-        variation: 10, kpi: 'profit', comparison: null, tornado: null,
+        weeks: 52, variation: 10, kpi: 'profit', comparison: null, tornado: null,
         busy: '', error: '',
         kpis, number, signed, enterpriseResultContext,
         get scopes() {
@@ -66,19 +66,21 @@ document.addEventListener('alpine:init', () => {
             this.drivers = [];
             this.comparison = this.tornado = null;
             const query = new URLSearchParams(this.snapshot).toString();
-            this.drivers = (await api('/enterprise/whatif/drivers' + (query ? '?' + query : ''))).drivers;
+            const data = await api('/enterprise/whatif/drivers' + (query ? '?' + query : ''));
+            this.drivers = data.drivers;
+            this.weeks = data.default_weeks ?? 52;
         },
         compare() {
             return this.perform('compare', async () => {
                 this.comparison = null;
-                const inputs = { scenario_ids: this.scenarioIds.map(Number) };
+                const inputs = { scenario_ids: this.scenarioIds.map(Number), weeks: this.weeks };
                 this.comparison = await api(base + '/compare?include_excel=true', post(inputs));
             });
         },
         analyze() {
             return this.perform('tornado', async () => {
                 this.tornado = null;
-                const inputs = { ...this.snapshot, kpi: this.kpi, percent: this.variation, driver_ids: [...this.driverIds] };
+                const inputs = { ...this.snapshot, weeks: this.weeks, kpi: this.kpi, percent: this.variation, driver_ids: [...this.driverIds] };
                 this.tornado = await api(base + '/tornado?include_excel=true', post(inputs));
             });
         },

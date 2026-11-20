@@ -10,6 +10,7 @@ from app.access import protected, request_principal, require_role, seed_admin
 from app.config import STATIC_DIR, Settings
 from app.db import get_conn, initialize
 from app.department_owners import workflow as department_workflow
+from app.enterprise.operating_source import source_runtime
 from app.forecasting.foundation import TimesFMWorker
 from app.ingestion.validators import validate_demo
 from app.integrations.runtime import integration_runtime
@@ -64,7 +65,7 @@ def create_app(settings: Settings | None = None):
         seed(settings.db_path)
         seed_admin(settings.db_path)
         try:
-            async with integration_runtime(application, settings):
+            async with integration_runtime(application, settings), source_runtime(settings.db_path):
                 yield
         finally:
             if forecast_worker is not None:

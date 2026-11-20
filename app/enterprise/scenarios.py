@@ -8,7 +8,7 @@ from pydantic import Field, StringConstraints, model_validator
 from app.access import active_principal, company_visible, require_company
 from app.db import audit, encode, utc_now
 from app.enterprise.impact_graph import Assumption, ImpactError, ScenarioAssumptions, WhatIfRequest
-from app.enterprise.result_context import WEEKLY_CASH_LABEL
+from app.enterprise.result_context import ENDING_CASH_LABEL
 from app.enterprise.schema import NodeId, Number, StrictFields
 from app.optimization.common import OptimizationInputError
 from app.schemas import api_error
@@ -30,8 +30,8 @@ def kpi_specs(graph):
     if not graph.onboarding:
         return KPIS
     return KPIS | {
-        'cash_low': {**KPIS['cash_low'], 'label': WEEKLY_CASH_LABEL},
-        'profit': {**KPIS['profit'], 'label': 'الربح الأسبوعي بعد التمويل'},
+        'cash_low': {**KPIS['cash_low'], 'label': ENDING_CASH_LABEL},
+        'profit': {**KPIS['profit'], 'label': 'الربح التراكمي بعد التمويل'},
     }
 
 

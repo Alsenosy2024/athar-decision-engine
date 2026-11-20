@@ -6,6 +6,7 @@ from ortools.sat.python import cp_model
 
 from app.config import Settings
 from app.ingestion.loader import load_demo
+from app.optimization.budget import SolveBudget
 from app.optimization.common import OptimizationInputError, Weights, configured_solver
 from app.optimization.kpis import cash_curve, contracting_kpis, resource_usage
 from app.templates_registry import load_templates
@@ -262,12 +263,13 @@ def build_model(problem, weights, hint):
 
 
 def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False):
-    defaults = load_templates()['contracting'].model_defaults()
-    problem = prepare(dataset, defaults['parameters'] | (parameters or {}))
-    weights = Weights(**(defaults['weights'] | (weights or {})))
     time_limit = Settings().solver_time_limit if time_limit is None else time_limit
     if not isfinite(time_limit) or time_limit <= 0:
         raise OptimizationInputError('وقت التحسين لازم يكون أكبر من صفر.')
+    budget = SolveBudget(time_limit)
+    defaults = load_templates()['contracting'].model_defaults()
+    problem = prepare(dataset, defaults['parameters'] | (parameters or {}))
+    weights = Weights(**(defaults['weights'] | (weights or {})))
     initial = baseline(problem)
     if initial is None:
         initial = baseline(problem, respect_credit=False)
@@ -278,8 +280,11 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
     if model.validate():
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.')
 
-    solver = configured_solver(time_limit, deterministic=deterministic)
-    status = solver.solve(model)
+    remaining = budget.remaining()
+    solver = configured_solver(remaining, deterministic=deterministic)
+    search_status = solver.solve(model) if remaining else cp_model.UNKNOWN
+    status = search_status
+
     objective = None
     bound = None
     chosen = None
@@ -292,12 +297,17 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
         objective = hint_score
         status = cp_model.FEASIBLE
 
+    state = ('complete' if search_status in (cp_model.OPTIMAL, cp_model.INFEASIBLE)
+             else 'partial' if chosen is not None else 'no_result')
+    stop_reason = 'search_limit' if search_status in (cp_model.FEASIBLE, cp_model.UNKNOWN) else 'finished'
     empty = {'kpis': {}, 'plan': {}}
     return {
         'baseline': empty if initial is None else evaluate(problem, initial),
         'optimized': empty if chosen is None else evaluate(problem, chosen),
         'solver': {'status': solver.status_name(status), 'objective': objective,
-                   'bound': bound, 'wall_s': solver.wall_time},
+                   'bound': bound, 'wall_s': solver.wall_time if remaining else 0.0,
+                   'time_limit_s': time_limit, 'state': state,
+                   'stop_reason': stop_reason, 'search_status': solver.status_name(search_status)},
         'explanation_ar': '',
     }
 
