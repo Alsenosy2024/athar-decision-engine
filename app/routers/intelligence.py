@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import Field, ValidationError
 
 from app.access import request_principal, require_role
+from app.company_data import workflow as company_import
 from app.config import STATIC_DIR
 from app.connectors.files import MAX_UPLOAD_BYTES, upload_bytes
 from app.db import request_conn
@@ -17,8 +18,9 @@ from app.enterprise import store
 from app.enterprise.result_context import result_context
 from app.enterprise.impact_graph import Assumption, ImpactError, WhatIfRequest
 from app.enterprise.schema import Graph, ModelInput, Node, NodeId, StrictFields
-from app.intelligence import analysis, calibration, decision, documents, extraction, forecasting, reviews
+from app.intelligence import analysis, calibration, counterfactual, decision, documents, extraction, forecasting, reviews
 from app.llm.enterprise import parse_rules
+from app.optimization import joint_allocation
 from app.routers.companies import get_company
 from app.routers.enterprise import impact_errors, impact_model
 from app.schemas import api_error
@@ -46,6 +48,11 @@ class ModelSelection(StrictFields):
 
 class Refresh(ModelSelection):
     remote: bool = True
+    anomaly_method: Literal['rolling_mad', 'seasonal'] = 'rolling_mad'
+
+
+class CalibrationSelection(ModelSelection):
+    scalable: bool = False
 
 
 class Question(ModelSelection):
@@ -129,8 +136,8 @@ def catalog(cid: Id, request: Request, model_id: Annotated[int | None, Query(ge=
         graph = snapshot['graph']
         max_controls = 2 if graph.arms else 5
         nodes = [{'id': node.id, 'name_ar': node.name_ar, 'unit': node.unit} for node in graph.nodes]
-        series = [node.id for node in analysis.history(graph).values()]
-        observed, _ = reviews.observed_history(connection, snapshot['id'], graph)
+        observed, _ = reviews.observed_history(connection, snapshot['id'], graph, empty_as_missing=True)
+        series = list(analysis.history(observed))
         signals = analysis.insight_facts(analysis.anomalies(observed))[:3]
         with impact_errors():
             drivers = decision.controllable(impact_model(snapshot, request, 52))
@@ -148,6 +155,9 @@ def entry(cid: Id, request: Request, files: Annotated[list[UploadFile] | None, F
           model_id: Annotated[int | None, Form(ge=1, lt=2**63)] = None,
           remote: Annotated[bool, Form()] = True,
           fx_rates: Annotated[str, Form(max_length=1000)] = '{}',
+          company_mapping: Annotated[str, Form(max_length=64000)] = '{}',
+          sheet: Annotated[str | None, Form(max_length=120)] = None,
+          expected_version: Annotated[int | None, Form(ge=1)] = None,
           connection=Depends(request_conn)):
     company = get_company(connection, cid, allow_enterprise=True)
     snapshot = company_snapshot(connection, cid, model_id) if model_id else None
@@ -161,6 +171,12 @@ def entry(cid: Id, request: Request, files: Annotated[list[UploadFile] | None, F
         if total > MAX_UPLOAD_BYTES:
             raise api_error(413, 'import_file_too_large', 'الحد الأقصى لمجموع الملفات 10 ميجابايت.')
         contents.append((file.filename or '', raw))
+    if company_import.is_raw(company):
+        current = company_import.snapshot(connection, cid, model_id)
+        if expected_version is not None and expected_version != current['version']:
+            raise api_error(409, 'ai_stale_review', 'إصدار النموذج اتغيّر. اعمل معاينة جديدة.')
+        return company_import.propose(connection, cid, request.state.principal, current, contents,
+                                      company_mapping, sheet)
     try:
         rates = json.loads(fx_rates)
         if not isinstance(rates, dict) or any(
@@ -183,7 +199,7 @@ def entry(cid: Id, request: Request, files: Annotated[list[UploadFile] | None, F
     data.update(schedules=schedules, fx_rates=rates)
     if data['model']:
         proposed = ModelInput.model_validate(data['model'])
-        observed, excluded = reviews.observed_history(connection, model_id, proposed.graph, data['diff'])
+        observed, excluded = reviews.observed_history(connection, model_id, proposed.graph, data['diff'], empty_as_missing=True)
         data['analysis'] = analysis.refresh(settings, observed) | {'estimated_excluded': excluded}
     return reviews.propose(connection, cid, request.state.principal, 'entry', snapshot, data, xml_files=xml_files)
 
@@ -191,11 +207,11 @@ def entry(cid: Id, request: Request, files: Annotated[list[UploadFile] | None, F
 @router.post('/refresh', status_code=201)
 def refresh(cid: Id, body: Refresh, request: Request, connection=Depends(request_conn)):
     snapshot = company_snapshot(connection, cid, body.model_id)
-    graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'])
+    graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'], empty_as_missing=True)
     settings = request.app.state.settings
     if not body.remote:
         settings = replace(settings, llm_provider='rules')
-    data = analysis.refresh(settings, graph) | {'estimated_excluded': excluded}
+    data = analysis.refresh(settings, graph, anomaly_method=body.anomaly_method) | {'estimated_excluded': excluded}
     return reviews.propose(connection, cid, request.state.principal, 'refresh', snapshot, data)
 
 
@@ -204,11 +220,16 @@ def forecast(cid: Id, body: Forecast, request: Request, connection=Depends(reque
     company = get_company(connection, cid, allow_enterprise=True)
     snapshot = company_snapshot(connection, cid, body.model_id) if body.model_id else None
     if snapshot:
-        graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'])
+        graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'], empty_as_missing=True)
         nodes = analysis.history(graph)
+    elif company_import.is_raw(company):
+        snapshot = company_import.snapshot(connection, cid)
+        nodes, excluded = analysis.history(snapshot['graph']), {}
     else:
         nodes, excluded = operational_series(connection, company), {}
     node = nodes.get(body.node_id)
+    if node is None and body.node_id in excluded:
+        raise api_error(422, 'ai_forecast_no_observed_history', 'كل نقاط المؤشر تقديرية. التوقع محتاج سجل فعلي.')
     if node is None:
         raise api_error(422, 'ai_forecast_requires_history', 'اختار مؤشر فيه سجل زمني.')
     state = request.app.state
@@ -219,18 +240,36 @@ def forecast(cid: Id, body: Forecast, request: Request, connection=Depends(reque
         anchor = date(2000, 1, 3)
         for point in result['points']:
             point['week'] = (date.fromisoformat(point.pop('date')) - anchor).days // 7
+        holdout_start = result['model_calibration'].pop('holdout_start')
+        result['model_calibration']['holdout_start_week'] = (
+            (date.fromisoformat(holdout_start) - anchor).days // 7 if holdout_start else None)
         result['dataset_id'] = company['active_dataset_id']
     return reviews.propose(connection, cid, request.state.principal, 'forecast', snapshot, result)
 
 
 @router.post('/calibrate', status_code=201)
-def calibrate(cid: Id, body: ModelSelection, request: Request, connection=Depends(request_conn)):
+def calibrate(cid: Id, body: CalibrationSelection, request: Request, connection=Depends(request_conn)):
     snapshot = company_snapshot(connection, cid, body.model_id)
-    graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'])
+    graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'], empty_as_missing=True)
     with impact_errors():
-        proposals = calibration.proposals(impact_model(snapshot | {'graph': graph}, request, 52))
+        proposals = calibration.proposals(impact_model(snapshot | {'graph': graph}, request, 52), scalable=body.scalable)
     return reviews.propose(connection, cid, request.state.principal, 'calibration', snapshot,
                            {'edges': proposals, 'estimated_excluded': excluded})
+
+
+@router.post('/allocate')
+def allocate(cid: Id, body: joint_allocation.Allocation, connection=Depends(request_conn)):
+    get_company(connection, cid, allow_enterprise=True)
+    return joint_allocation.allocate(body)
+
+
+@router.post('/counterfactual')
+def historical_counterfactual(cid: Id, body: counterfactual.Counterfactual, connection=Depends(request_conn)):
+    snapshot = company_snapshot(connection, cid, body.model_id)
+    graph, excluded = reviews.observed_history(connection, snapshot['id'], snapshot['graph'], empty_as_missing=True)
+    with impact_errors():
+        result = counterfactual.replay(graph, body.target, body.interventions, body.weeks)
+    return {'model_id': snapshot['id'], 'version': snapshot['version'], 'estimated_excluded': excluded, **result}
 
 
 @router.post('/goal/interpret')
@@ -309,13 +348,17 @@ def get_review(cid: Id, review_id: Id, connection=Depends(request_conn)):
 def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connection=Depends(request_conn)):
     principal = request.state.principal
     pending = reviews.read(connection, cid, review_id)
-    changes_edges = pending['kind'] == 'calibration' or (
-        pending['kind'] == 'entry' and bool(pending['data']['relations']))
-    require_role(principal, 'approver' if changes_edges else 'planner')
+    requires_approval = pending['kind'] == 'calibration' or (
+        pending['kind'] == 'entry' and (pending['data'].get('company_import') or pending['data']['relations']))
+    require_role(principal, 'approver' if requires_approval else 'planner')
 
     def apply(review, current):
         payload = review['data']
         if review['kind'] == 'entry':
+            if payload.get('company_import'):
+                return company_import.approve(connection, cid, review, current, body.estimates, principal)
+            if current and current['graph'].onboarding is not None:
+                store.ensure_builder_scope(current['graph'])
             if not payload['model'] and not payload['schedules']:
                 raise api_error(422, 'ai_empty_diff', 'مفيش قيم أو جداول قابلة للاعتماد.')
             result = {'accepted_estimates': []}
@@ -345,6 +388,8 @@ def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connectio
             imports = reviews.save_schedules(connection, cid, review_id, payload['schedules'])
             return result | {'schedules_reviewed': len(payload['schedules']), 'p6_import_ids': imports}
         if review['kind'] == 'calibration':
+            if current['graph'].company_data is not None:
+                store.ensure_builder_scope(current['graph'])
             if not payload['edges']:
                 raise api_error(422, 'ai_empty_calibration', 'مفيش معاملات قابلة للاعتماد.')
             graph = current['graph']

@@ -170,8 +170,16 @@ def run_mc(template, dataset, plan, forecast, n=200, seed=42, *, parameters=None
     return simulate(dataset, defaults | (parameters or {}), plan, forecast, n, np.random.default_rng(seed))
 
 
-def driver_trials(centers, spreads, n, seed):
-    """Sample bounded, independent triangular assumptions in their own units."""
+def driver_trials(centers, spreads, n, seed, correlations=()):
+    """Preserve the original random stream for independent assumptions."""
+    if correlations:
+        from app.simulation.dependence import correlated_triangular
+
+        keys = sorted(key for key in centers if spreads[key])
+        for shock in correlated_triangular(keys, correlations, n, seed):
+            yield centers | {key: float(centers[key] + spreads[key] * value)
+                             for key, value in zip(keys, shock)}
+        return
     rng = np.random.default_rng(seed)
     columns = {
         key: rng.triangular(value - spreads[key], value, value + spreads[key], size=n)

@@ -18,6 +18,8 @@ def result_context(connection, snapshot, weeks=None):
     company = connection.execute('SELECT name FROM companies WHERE id=?', (company_id,)).fetchone()
     dates = [point.date for node in graph.nodes if isinstance(node.baseline, Series)
              for point in node.baseline.points]
+    if graph.company_data is not None:
+        dates = [item.day for item in graph.company_data.observations]
     if graph.onboarding:
         dates.extend(record.date for record in graph.onboarding.records if record.date)
     return {
@@ -25,6 +27,7 @@ def result_context(connection, snapshot, weeks=None):
         'company_name': company['name'] if company else snapshot['name'],
         'model_version': DEMO_VERSION if demo else snapshot['version'],
         'source': 'بيانات ديمو روافد التجريبية' if demo else
+                  'ملفات الشركة المعتمدة' if graph.company_data is not None else
                   'سجل تجهيز الشركة' if graph.onboarding else
                   'خطة إنتاج معتمدة من بيانات الشركة' if graph._client_sources else
                   'نموذج محفوظ بمحركات تستخدم بيانات تجريبية' if graph.arms else

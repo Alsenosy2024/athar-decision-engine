@@ -66,7 +66,10 @@
                                 type="button" :disabled="busy" @click="changeSection(key)" x-text="title"></button>
                     </template>
                 </nav>
-                <form class="stack" x-show="section === 'entry'" @submit.prevent="submitEntry()">
+                <p x-show="section === 'entry' && companyUsesFiles">
+                    <a class="button primary" :href="setupLink">ارفع وراجع ملفات الشركة</a>
+                </p>
+                <form class="stack" x-show="section === 'entry' && !companyUsesFiles" @submit.prevent="submitEntry()">
                     <label class="ai-drop field" @dragover.prevent @drop.prevent="setFiles($event)">
                         <strong>اسحب الملفات هنا أو اختارها</strong>
                         <small>Excel، CSV، PDF، Word، صور، Primavera P6، أو بريد محفوظ</small>
@@ -225,7 +228,11 @@
                         </div>
                         <span class="status neutral" x-text="statuses[review.status]"></span>
                     </div>
-                    <template x-if="review.kind === 'entry'">
+                    <template x-if="payload.company_import">
+                        <p><a class="button secondary"
+                            :href="setupLink.replace('#/', '&review_id=' + review.id + '#/')">افتح تفاصيل ربط الملفات</a></p>
+                    </template>
+                    <template x-if="review.kind === 'entry' && !payload.company_import">
                         <div class="stack">
                             <div class="actions">
                                 <span class="ai-tag" x-text="'AI · ' + labelOf(payload.provider)"></span>
@@ -336,7 +343,39 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <details x-show="Object.keys(payload.backtests).length">
+                            <template x-if="payload.model_calibration">
+                                <section class="stack" aria-label="تقرير معايرة التوقع">
+                                    <h4>تقرير معايرة التوقع</h4>
+                                    <p x-text="payload.evaluation_n
+                                        ? number(payload.model_calibration.selection_origins) + ' نوافذ اختيار · ' +
+                                          number(payload.calibration_n) + ' معايرة · ' +
+                                          number(payload.evaluation_n) + ' اختبار مستقل'
+                                        : 'السجل الفعلي قصير للاختبار المستقل. التوقع بالإحصائي السابق.'"></p>
+                                    <small x-show="payload.estimated_excluded"
+                                        x-text="number(payload.estimated_excluded) + ' نقاط تقديرية مستبعدة'"></small>
+                                    <small x-show="payload.model_calibration.unavailable.length"
+                                        x-text="'محركات غير متاحة: ' + payload.model_calibration.unavailable.map(engine => labelOf(engine)).join('، ')"></small>
+                                    <div class="table-scroll" x-show="Object.keys(payload.backtests).length">
+                                        <table class="ai-table ai-calibration-table" role="table" aria-label="مقارنة نماذج التوقع">
+                                            <thead><tr><th scope="col">المحرك</th><th scope="col">MASE</th>
+                                                <th scope="col">sMAPE</th><th scope="col">تغطية P10–P90 الأصلية</th>
+                                                <th scope="col">بعد المعايرة</th></tr></thead>
+                                            <tbody role="rowgroup">
+                                                <template x-for="[engine, score] in Object.entries(payload.backtests)" :key="engine">
+                                                    <tr role="row"><th scope="row" role="rowheader" x-text="labelOf(engine) + (engine === payload.engine ? ' · المختار' : '')"></th>
+                                                        <td role="cell" data-label="MASE" x-text="number((score.holdout || score).mase)"></td>
+                                                        <td role="cell" data-label="sMAPE" x-text="percent((score.holdout || score).smape / 100)"></td>
+                                                        <td role="cell" data-label="تغطية P10–P90 الأصلية" x-text="percent((score.holdout_raw || score).coverage)"></td>
+                                                        <td role="cell" data-label="التغطية بعد المعايرة" x-text="percent(score.holdout?.coverage)"></td></tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <small x-show="payload.evaluation_n">القيم من الاختبار المستقل. التغطية المستهدفة ٨٠٪.</small>
+                                    <small x-show="!payload.evaluation_n && Object.keys(payload.backtests).length">القيم من نوافذ الاختيار.</small>
+                                </section>
+                            </template>
+                            <details x-show="!payload.model_calibration && Object.keys(payload.backtests).length">
                                 <summary>أخطاء الاختبار حسب المحرك</summary>
                                 <ul class="change-summary"><template x-for="[engine, score] in Object.entries(payload.backtests)" :key="engine">
                                     <li x-text="labelOf(engine) + ' · MAE ' + number(score.mae) + ' · MAPE ' + number(score.mape) + '%'"></li>

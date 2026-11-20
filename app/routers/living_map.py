@@ -78,11 +78,14 @@ def baseline(body: MapBaseline, request: Request, connection=Depends(request_con
     weeks = effective_weeks(snapshot['graph'], body.weeks)
     with impact_errors():
         computed, _ = impact_model(snapshot, request, weeks).baseline()
-        metrics = kpis(computed.metrics(), computed.fill_rate)
+        values = computed.metrics()
+        metrics = kpis(values, computed.fill_rate)
         if body.include_ledger:
             return {'kpis': metrics, 'weeks': weeks,
                     'cash_ledger': {'period': 'week', 'currency': 'SAR', 'rows': computed.ledger}
-                    if computed.ledger is not None else None}
+                    if computed.ledger is not None else None,
+                    **({'period_revenue': values['pnl.revenue']}
+                       if snapshot['graph'].company_data is not None and computed.ledger is not None else {})}
         return metrics
 
 

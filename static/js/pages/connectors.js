@@ -3,10 +3,11 @@ document.addEventListener('alpine:init', () => {
         markup: '', mode: 'file', busy: '', error: '', message: '',
         models: [], modelId: '', model: null, file: null, sheets: [], sheet: '',
         fileMapping: {node: '', value: '', date: ''}, result: null,
-        connectors: [], connectorId: '', config: {},
+        connectors: [], legacyConnectors: [], legacyId: '', connectorId: '', config: {},
         p6File: null, p6Result: null, p6Imports: [], p6CompanyId: '', p6Selection: '',
         number,
         get integrationAdmin() { return this.$store.app.user?.role === 'admin'; },
+        get rawCompany() { return this.$store.app.template === 'enterprise_company'; },
         get companyModels() {
             return this.mode === 'erp'
                 ? this.models.filter(item => item.company_id === this.$store.app.companyId)
@@ -40,11 +41,12 @@ document.addEventListener('alpine:init', () => {
         load() {
             return this.run('load', async live => {
                 const companyId = this.$store.app.companyId;
-                const [fragment, models, connectors] = await Promise.all([
+                const [fragment, models, connectors, legacy] = await Promise.all([
                     this.markup || fetch('/static/partials/connectors.html').then(response => {
                         if (!response.ok) throw new Error('تعذّر فتح صفحة ربط البيانات.');
                         return response.text();
                     }), api('/enterprise/models'), companyId ? api(this.connectorPath()) : [],
+                    this.integrationAdmin ? api('/erp/legacy-connectors') : [],
                 ]);
                 if (!live()) return;
                 this.models = models;
@@ -57,6 +59,8 @@ document.addEventListener('alpine:init', () => {
                 if (this.model?.version !== model?.version) this.result = null;
                 this.model = model;
                 this.connectors = connectors;
+                this.legacyConnectors = legacy;
+                this.legacyId = '';
                 this.selectConnector(this.connectorId);
                 this.markup = fragment;
             });
@@ -130,7 +134,7 @@ document.addEventListener('alpine:init', () => {
         selectConnector(id = '') {
             this.connectorId = id;
             const saved = this.connectors.find(item => String(item.id) === id);
-            this.config = saved ? {...saved, mapping: {...saved.mapping}} : {
+            this.config = saved ? {...saved, sourceColumns: (saved.source_columns || []).join(', '), mapping: {...saved.mapping}} : {
                 kind: 'rest', name: '', url_env: '', token_env: '', rows_path: '',
                 table: '', schema_name: '', mapping: {node: '', value: '', date: ''},
             };
@@ -143,6 +147,8 @@ document.addEventListener('alpine:init', () => {
                 const config = this.config;
                 const body = {kind: config.kind, name: config.name, url_env: config.url_env,
                     mapping: this.columnMapping(config.mapping)};
+                if (this.rawCompany || config.sourceColumns) body.source_columns = (config.sourceColumns || '')
+                    .split(',').map(column => column.trim()).filter(Boolean);
                 if (config.kind === 'rest') Object.assign(body, {
                     token_env: config.token_env || null, rows_path: config.rows_path || '',
                 });
@@ -156,6 +162,19 @@ document.addEventListener('alpine:init', () => {
                 this.connectors = connectors;
                 this.selectConnector(String(saved.id));
                 this.message = 'اتحفظ إعداد الموصل.';
+            });
+        },
+        claimLegacy() {
+            return this.run('erp-claim', async live => {
+                const path = this.connectorPath();
+                const claimed = await api(path + '/' + this.legacyId + '/claim', post());
+                const [connectors, legacy] = await Promise.all([api(path), api('/erp/legacy-connectors')]);
+                if (!live()) return;
+                this.connectors = connectors;
+                this.legacyConnectors = legacy;
+                this.legacyId = '';
+                this.selectConnector(String(claimed.id));
+                this.message = 'اتسند الموصل للشركة.';
             });
         },
         previewErp() {

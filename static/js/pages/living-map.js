@@ -27,7 +27,7 @@ function mapTimeline(result, assumptions) {
         for (const edge of paths) {
             const source = times.get(edge.source);
             if (!source) continue;
-            const next = { week: source.week + (edge.rule?.lag_weeks || 0), depth: source.depth + 1 };
+            const next = { week: source.week + (edge.lag_weeks ?? edge.rule?.lag_weeks ?? 0), depth: source.depth + 1 };
             const current = times.get(edge.target);
             if (!current || next.week < current.week || (next.week === current.week && next.depth < current.depth)) {
                 times.set(edge.target, next);
@@ -39,7 +39,7 @@ function mapTimeline(result, assumptions) {
     const waves = paths.flatMap(edge => {
         const source = times.get(edge.source);
         if (!source) return [];
-        const lag = edge.rule?.lag_weeks || 0;
+        const lag = edge.lag_weeks ?? edge.rule?.lag_weeks ?? 0;
         const arrival = source.week + lag;
         return [{ ...edge, lag, arrival, phase: arrival + source.depth * .2 }];
     }).sort((a, b) => a.phase - b.phase);
@@ -69,7 +69,9 @@ document.addEventListener('alpine:init', () => {
             number, mapValue, assistant: ATHAR_ASSISTANT, enterpriseResultContext,
             get scopeId() { return this.demoMode ? null : this.$store.app.companyId; },
             get demoMode() { return this.$store.app.mapDemo; },
-            get onboardingProjection() { return this.map?.readiness != null && !this.map?.has_engines; },
+            get weeklyCashProjection() {
+                return this.map?.has_cash_ledger || (this.map?.readiness != null && !this.map?.has_engines);
+            },
             ledgerPhase: 'after',
             get ledgerRows() { return this.result ? this.result.cash_ledger?.[this.ledgerPhase] : this.baselineLedger; },
             get solverPartial() {
@@ -81,9 +83,10 @@ document.addEventListener('alpine:init', () => {
             toggleDemo() { this.$store.app.mapDemo = !this.demoMode; },
             metricPeriod(metric) {
                 if (metric.headline == null) return '';
-                if (this.onboardingProjection) {
-                    const horizon = this.result?.context?.calculation_weeks ?? this.baselineWeeks ?? 1;
-                    return (metric.id === 'cash_low' ? 'نهاية الأفق' : 'تراكمي') + ' · ' + number(horizon) + ' أسبوع';
+                if (this.weeklyCashProjection) {
+                    const horizon = this.result?.context?.calculation_weeks ?? this.baselineWeeks;
+                    return horizon == null ? '' :
+                        (metric.id === 'cash_low' ? 'نهاية الأفق' : 'تراكمي') + ' · ' + number(horizon) + ' أسبوع';
                 }
                 if (metric.id === 'cash_low' && this.map?.has_engines) return 'أدنى رصيد في دفتر السيولة اليومي';
                 const weeks = this.result?.context?.calculation_weeks;
@@ -140,7 +143,8 @@ document.addEventListener('alpine:init', () => {
                     return { ...kpi, history: this.briefing?.history[kpi.id] ?? [], baseline, after, headline: this.result ? headline : baseline,
                         bands, source: after != null
                             ? row?.scenario_source || 'estimated'
-                            : this.result ? 'missing' : (this.baselineKpis?.[kpi.id] ?? this.briefing?.kpis[kpi.id]) != null && (this.map.has_engines || kpi.baseline == null)
+                            : this.result ? 'missing' : (this.baselineKpis?.[kpi.id] ?? this.briefing?.kpis[kpi.id]) != null &&
+                                (this.map.has_engines || this.baselineWeeks != null && this.weeklyCashProjection || kpi.baseline == null)
                                 ? 'estimated' : kpi.source };
                 });
             },

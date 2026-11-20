@@ -19,7 +19,7 @@ class CompanyCreate(BaseModel):
 class Company(BaseModel):
     id: int
     name: CompanyName
-    template: TemplateId | Sector
+    template: TemplateId | Sector | Literal['enterprise_company']
     active_dataset_id: int | None
     model_version: int
 

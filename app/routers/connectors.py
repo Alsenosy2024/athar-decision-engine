@@ -4,14 +4,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 
-from app.access import require_role
-from app.connectors import erp, mapping, p6
+from app.access import active_principal, require_company, require_role
+from app.company_data import workflow as company_import
+from app.connectors import erp, mapping, ownership, p6
 from app.connectors.files import read_tables, upload_bytes
 from app.db import audit, encode, request_conn, utc_now
 from app.enterprise import store
-from app.enterprise.schema import ModelSnapshot
+from app.enterprise.schema import ModelSnapshot, StrictFields
 from app.routers.companies import get_company
 from app.schemas import api_error
 
@@ -46,6 +47,9 @@ def apply_import(model_id: int, body: mapping.ApplyRequest, connection=Depends(r
 
 
 def saved_connector(connection, company_id, connector_id):
+    if company_id is None:
+        raise api_error(404, 'erp_connector_not_found', 'موصل ERP محتاج نموذج مرتبط بالشركة.')
+    require_company(active_principal.get(), company_id)
     row = connection.execute('SELECT id, config_json FROM erp_connectors WHERE company_id=? AND id=?',
                              (company_id, connector_id)).fetchone()
     if row is None:
@@ -67,6 +71,19 @@ def connectors(company_id: int, connection=Depends(request_conn)):
     return [{'id': row['id'], **json.loads(row['config_json'])}
             for row in connection.execute(
                 'SELECT id, config_json FROM erp_connectors WHERE company_id=? ORDER BY id', (company_id,))]
+
+
+@router.get('/erp/legacy-connectors')
+def legacy_connectors(request: Request, connection=Depends(request_conn)):
+    require_role(request.state.principal)
+    return ownership.legacy_configs(connection)
+
+
+@router.post(ERP_PATH + '/{connector_id}/claim')
+def claim_connector(company_id: int, connector_id: int, request: Request, connection=Depends(request_conn)):
+    require_role(request.state.principal)
+    require_existing_company(connection, company_id)
+    return ownership.claim(connection, company_id, connector_id)
 
 
 @router.post(ERP_PATH, status_code=201)
@@ -94,10 +111,32 @@ def update_connector(company_id: int, connector_id: int, body: erp.ConnectorConf
     return {'id': connector_id, **body.model_dump()}
 
 
+class ErpCompanyEntry(StrictFields):
+    model_id: int = Field(ge=1, lt=2**63)
+    expected_version: int = Field(ge=1, strict=True)
+    company_mapping: str = Field(default='{}', max_length=64000)
+
+
+@router.post(ERP_PATH + '/{connector_id}/entry', status_code=201)
+def company_entry(company_id: int, connector_id: int, body: ErpCompanyEntry, request: Request,
+                  connection=Depends(request_conn)):
+    current = company_import.snapshot(connection, company_id, body.model_id)
+    if current['version'] != body.expected_version:
+        raise api_error(409, 'ai_stale_review', 'إصدار النموذج اتغيّر. اعمل معاينة جديدة.')
+    saved = saved_connector(connection, company_id, connector_id)
+    saved.pop('id')
+    config = ownership.config_adapter.validate_python(saved)
+    source = ownership.entry_file(connector_id, config)
+    return company_import.propose(connection, company_id, request.state.principal, current, [source],
+                                  body.company_mapping)
+
+
 @router.post('/enterprise/models/{model_id}/imports/erp/{connector_id}/preview')
 def preview_erp(model_id: int, connector_id: int, connection=Depends(request_conn)):
     snapshot = store.read(connection, model_id)
     saved = saved_connector(connection, snapshot['company_id'], connector_id)
+    if snapshot['graph'].company_data is not None:
+        store.ensure_builder_scope(snapshot['graph'])
     saved.pop('id')
     config = (erp.RestConfig if saved['kind'] == 'rest' else erp.SqlConfig).model_validate(saved)
     return mapping.preview(snapshot, config.name, erp.pull(config), config.mapping)

@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import numpy as np
 
+from app.company_data.finance import PROFIT_IDENTITY, ROLLED_UP
 from app.enterprise.impact_graph import reference
 from app.enterprise.schema import EdgeRule, Series
 
@@ -97,6 +98,8 @@ def calibrate(model, defaults):
         fitted = None
         if method != 'analytic':
             row.update(source_type='engine', reason='engine')
+        elif edge.evidence in (ROLLED_UP, PROFIT_IDENTITY):
+            row['reason'] = edge.evidence
         elif incoming[edge.target] > 1:
             row['reason'] = 'multiple_inputs'
         else:

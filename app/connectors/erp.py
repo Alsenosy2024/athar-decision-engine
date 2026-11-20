@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import quoted_name
 
-from app.connectors.mapping import MAX_ROWS, ColumnMapping
+from app.connectors.mapping import MAX_ROWS, Column, ColumnMapping
 from app.enterprise.schema import Label, StrictFields
 from app.ingestion.loader import Sheet
 from app.schemas import api_error
@@ -21,7 +21,11 @@ Identifier = Annotated[str, StringConstraints(pattern=r'^[A-Za-z_][A-Za-z0-9_]{0
 MAX_JSON_BYTES = 10 * 1024 * 1024
 
 
-class RestConfig(StrictFields):
+class SourceConfig(StrictFields):
+    source_columns: list[Column] = Field(default_factory=list, max_length=100, exclude_if=lambda columns: not columns)
+
+
+class RestConfig(SourceConfig):
     kind: Literal['rest']
     name: Label
     url_env: EnvName
@@ -30,7 +34,7 @@ class RestConfig(StrictFields):
     mapping: ColumnMapping
 
 
-class SqlConfig(StrictFields):
+class SqlConfig(SourceConfig):
     kind: Literal['sql']
     name: Label
     url_env: EnvName
@@ -116,7 +120,7 @@ def sql_rows(config, columns):
 
 
 def pull(config):
-    columns = list(dict.fromkeys(config.mapping.columns()))
+    columns = list(dict.fromkeys([*config.mapping.columns(), *config.source_columns]))
     rows = rest_rows(config) if config.kind == 'rest' else sql_rows(config, columns)
     if len(rows) > MAX_ROWS:
         raise api_error(422, 'too_many_rows', f'مصدر ERP محتاج يرجّع {MAX_ROWS} صف أو أقل.')

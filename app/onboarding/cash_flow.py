@@ -18,7 +18,7 @@ def lagged(values, weeks):
     return result
 
 
-def forecast_ledger(values, terms, weeks):
+def forecast_ledger(values, terms, weeks, *, purchase_amounts=None):
     if any(values.get(key) is None for key in ('cash.opening', 'ar', 'ap', *FLOW_LABELS, 'unit_cost')):
         return None
 
@@ -27,7 +27,8 @@ def forecast_ledger(values, terms, weeks):
     purchase_units = sales.copy()
     stock = values['inventory']
     opening_stock = float(stock[0]) if stock is not None else None
-    if opening_stock is not None and terms.inventory_target is not None:
+    replenish_to_target = opening_stock is not None and terms.inventory_target is not None
+    if replenish_to_target:
         # Replenishment arrives in the week of purchase. Draw down excess
         # opening stock before ordering more than the target requires.
         balance = opening_stock
@@ -35,7 +36,8 @@ def forecast_ledger(values, terms, weeks):
             purchase_units[week] = max(0, sold + terms.inventory_target - balance)
             balance += purchase_units[week] - sold
 
-    purchases = purchase_units * values['unit_cost']
+    purchases = (purchase_units * values['unit_cost'] if purchase_amounts is None or replenish_to_target
+                 else purchase_amounts)
     collected = lagged(revenue, terms.collection_lag_weeks)
     paid = lagged(purchases, terms.payment_lag_weeks)
     collected[0] += values['ar'][0]

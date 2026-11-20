@@ -2,6 +2,7 @@
 from collections import defaultdict
 from math import log1p
 
+from app.company_data import finance as company_finance
 from app.enterprise.edge_contracts import contract_unit, needs_coefficient
 from app.enterprise.impact_graph import ImpactError, reference
 from app.enterprise.scenarios import KPI_NODES, kpi_specs
@@ -33,27 +34,41 @@ HEADLINE_PRIORITY = {key: index for index, key in enumerate(HEADLINES)}
 def map_payload(snapshot, company, models, *, demo=False):
     graph = snapshot['graph']
     sources = projection.provenance(graph) if graph.onboarding else {}
+    company_data = graph.company_data
+    departments_by_key = {key: name for key, (name, _) in DEPARTMENTS.items()}
+    if company_data is not None:
+        departments_by_key = {'company': 'إجماليات الشركة'}
+        departments_by_key.update({key: entity.name for key, entity in company_data.entities.items()})
     grouped = defaultdict(list)
     nodes = {}
     for node in graph.nodes:
         baseline = reference(node)
         source = sources.get(node.id, 'missing' if baseline is None else 'estimated')
+        group = GROUP[node.type]
+        if company_data is not None:
+            entity_ids = company_data.node_entities.get(node.id, ())
+            group = next((key for key in entity_ids if company_data.entities[key].kind == 'department'),
+                         entity_ids[0] if entity_ids else 'company')
+            source = 'actual' if baseline is not None else 'missing'
         nodes[node.id] = {
             'id': node.id, 'name_ar': node.name_ar, 'type': node.type, 'unit': node.unit,
-            'department': GROUP[node.type], 'baseline': baseline, 'source': source,
+            'department': group, 'baseline': baseline, 'source': source,
             'history': [point.value for point in node.baseline.points[-16:]]
             if isinstance(node.baseline, Series) else [],
         }
-        grouped[GROUP[node.type]].append(nodes[node.id])
+        grouped[group].append(nodes[node.id])
 
     departments = []
-    for key, (name, _) in DEPARTMENTS.items():
+    for key, name in departments_by_key.items():
         if key not in grouped:
             continue
         rows = grouped[key]
         # A missing standard headline can still be inspected in departmental detail.
-        headline = min(rows, key=lambda row: (row['baseline'] is None,
-                                              HEADLINE_PRIORITY.get(row['id'], len(HEADLINES))))
+        headline = min(rows, key=lambda row: (
+            row['baseline'] is None,
+            not row['id'].startswith(('pnl.revenue', 'sales.')) if company_data is not None else False,
+            HEADLINE_PRIORITY.get(row['id'], len(HEADLINES)),
+        ))
         departments.append({'id': key, 'name_ar': name, 'node_ids': [row['id'] for row in rows],
                             'headline_id': headline['id']})
 
@@ -82,11 +97,13 @@ def map_payload(snapshot, company, models, *, demo=False):
         edges.append({
             'source': edge.source, 'target': edge.target, 'name_ar': edge.name_ar,
             'from_department': left['department'], 'to_department': right['department'],
-            'lag_weeks': edge.rule.lag_weeks if edge.rule else 0,
+            'lag_weeks': edge.rule.lag_weeks if edge.rule else company_finance.cash_lag(edge, company_data),
             'unit': edge.unit or contract_unit(unit, right['unit'], edge.rule, 'built_in'),
             'status': edge.status or 'approved',
             'provenance': edge.provenance.model_dump(mode='json') if edge.provenance else None,
             'can_approve': edge.status == 'draft' and not needs_coefficient(edge, nodes_by_id, None),
+            **({'kind': 'aggregation' if edge.evidence == company_finance.ROLLED_UP else 'accounting',
+                'source_type': edge.evidence} if company_data is not None and edge.evidence else {}),
             'baseline_volume': volume, 'volume_unit': unit if volume is not None else None,
             'weight': log1p(volume) / log1p(maximum) if volume and maximum else 0,
         })
@@ -106,4 +123,5 @@ def map_payload(snapshot, company, models, *, demo=False):
         'departments': departments, 'nodes': list(nodes.values()), 'edges': edges,
         'kpis': kpis, 'drivers': drivers, 'goal_drivers': goal_drivers,
         'readiness': readiness, 'analysis_error': analysis_error, 'has_engines': bool(graph.arms),
+        'has_cash_ledger': company_finance.ledger_ready(graph),
     }

@@ -25,7 +25,10 @@
                 </tr></template></tbody></table></div>
         </details>
     </article>
-    <form class="card" x-show="mode === 'file' && model" @submit.prevent="previewFile()">
+    <p class="notice" x-show="mode === 'file' && rawCompany">
+        <a href="#/onboarding">ارفع ملفات الشركة وراجع ربطها من تجهيز الشركة.</a>
+    </p>
+    <form class="card" x-show="mode === 'file' && model && !rawCompany" @submit.prevent="previewFile()">
         <h2>اختار الملف واربط الأعمدة</h2>
         <p>استخدم صف للعناوين، والقيم بوحدة العنصر. السلاسل الزمنية محتاجة تاريخ لكل صف.</p>
         <div class="field-group">
@@ -54,6 +57,22 @@
         </div>
         <div class="actions" x-show="sheet"><button class="button primary" :disabled="!!busy || !fileMapping.node || !fileMapping.value">راجع البيانات</button></div>
     </form>
+    <form class="card stack" x-show="mode === 'erp' && integrationAdmin && legacyConnectors.length"
+        @submit.prevent="claimLegacy()">
+        <h2>موصلات قديمة غير مسندة</h2>
+        <p>اختار الموصل بعد التحقق من مصدره. الإسناد هيتم للشركة المختارة في الشريط العلوي.</p>
+        <label class="field">الموصل القديم
+            <select x-model="legacyId" :disabled="!!busy">
+                <option value="">اختار موصل</option>
+                <template x-for="item in legacyConnectors" :key="item.id">
+                    <option :value="String(item.id)" :disabled="!item.claimable"
+                        x-text="item.name || 'إعداد غير صالح · ' + number(item.id)"></option>
+                </template>
+            </select>
+        </label>
+        <div class="actions"><button class="button primary" :disabled="!!busy || !legacyId || !$store.app.companyId"
+            x-text="'اسند للشركة ' + ($store.app.company?.name || '')"></button></div>
+    </form>
     <form class="card" x-show="mode === 'erp'" @submit.prevent="saveConnector()">
         <h2>إعداد موصل ERP</h2>
         <p id="erp-company-name" x-text="$store.app.company?.name || 'اختار شركة من الهيدر.'"></p>
@@ -80,9 +99,14 @@
                 <label class="field"><span x-text="label"></span><input x-model.trim="config.mapping[key]" :disabled="!!busy || !integrationAdmin" :required="key !== 'date'" maxlength="200" dir="ltr"></label>
             </template>
         </div>
+        <label class="field" x-show="rawCompany">أعمدة إضافية لاكتشاف الهيكل والمؤشرات، مفصولة بفاصلة
+            <input x-model.trim="config.sourceColumns" :disabled="!!busy || !integrationAdmin" dir="ltr"
+                placeholder="department, account_code, sku">
+        </label>
         <div class="actions">
             <button class="button secondary" x-show="integrationAdmin" :disabled="!!busy || !$store.app.companyId">احفظ إعداد الموصل</button>
-            <button class="button primary" type="button" :disabled="!!busy || !model || !connectorId" @click="previewErp()">اسحب بالإعداد المحفوظ وراجع</button>
+            <a class="button primary" href="#/onboarding" x-show="rawCompany">اسحب وراجع في تجهيز الشركة</a>
+            <button class="button primary" type="button" x-show="!rawCompany" :disabled="!!busy || !model || !connectorId" @click="previewErp()">اسحب بالإعداد المحفوظ وراجع</button>
         </div>
     </form>
     <article class="card" x-show="result" data-testid="mapping-report">

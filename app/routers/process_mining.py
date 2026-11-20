@@ -9,7 +9,7 @@ from app.process_mining import store
 from app.process_mining.demo import generate_csv
 from app.process_mining.discovery import discover
 from app.process_mining.events import MAX_BYTES, parse
-from app.process_mining.simulation import SimulationRequest, simulate
+from app.process_mining.simulation import SimulationRequest, repeat
 from app.schemas import api_error
 
 router = APIRouter(tags=['process-mining'])
@@ -59,6 +59,7 @@ def run_simulation(body: SimulationRequest, request: Request, connection=Depends
         raise api_error(409, 'event_log_required', 'ارفع سجل أحداث أو حمّل سجل الديمو عشان تشغّل المحاكاة.')
     if body.revision is not None and body.revision != record['revision']:
         raise api_error(409, 'event_log_changed', 'سجل الأحداث اتغيّر. حدّث الخريطة وشغّل المحاكاة تاني.')
+    weeks, bands = repeat(record['profile'], body)
+    scenario = body.scenario.model_dump(exclude={'shifts'} if not body.scenario.shifts else None)
     return {'company_id': body.company_id, 'revision': record['revision'], 'source': record['source'],
-            'seed': body.seed, 'scenario': body.scenario.model_dump(),
-            'weeks': simulate(record['profile'], body.weeks, body.scenario, body.seed)}
+            'seed': body.seed, 'scenario': scenario, 'weeks': weeks, **bands}

@@ -1,12 +1,15 @@
 """Rolling-origin model comparison and horizon-specific split conformal intervals."""
 from datetime import timedelta
 from pathlib import Path
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
+from statsmodels.tools.sm_exceptions import ConvergenceWarning
 
 from app.config import ROOT
 from app.forecasting.foundation import MAX_CONTEXT, TimesFMWorker
-from app.forecasting.methods import backtest, croston_sba, holt_alpha, is_intermittent, ses_holt_damped
+from app.forecasting.methods import croston_sba, holt_alpha, is_intermittent, ses_holt_damped
+from app.intelligence import forecast_metrics
 
 SELECTION = 8
 CALIBRATION = 14
@@ -50,6 +53,8 @@ def worker_predictions(worker, contexts, horizon, nonnegative):
         return None
     if np.any(bands[:, :-1] > bands[:, 1:]):
         return None
+    if isinstance(nonnegative, (list, np.ndarray)):
+        return np.where(np.asarray(nonnegative)[:, None, None], np.maximum(0, bands), bands)
     return np.maximum(0, bands) if nonnegative else bands
 
 
@@ -79,7 +84,6 @@ def ready_history(points, frequency):
 def ensemble_forecast(node, horizon, timesfm=None, chronos=None):
     points, step = ready_history(node.baseline.points, node.baseline.frequency)
     values = np.asarray([point.value for point in points], dtype=float)
-    nonnegative = bool(np.all(values >= 0)) and node.type not in {'cash', 'profit_loss'}
     size = len(values)
     calibration_start = size - EVALUATION - CALIBRATION - 2 * (horizon - 1)
     selection_end = calibration_start - (horizon - 1)
@@ -94,37 +98,79 @@ def ensemble_forecast(node, horizon, timesfm=None, chronos=None):
         calibration = evaluation = []
     origins = [*selection, *calibration, *evaluation, size]
     contexts = [values[max(0, index - MAX_CONTEXT):index].tolist() for index in origins]
-    predictions = {'stat': np.asarray([stat_prediction(context, horizon, nonnegative) for context in contexts])}
+    positive = [node.type not in {'cash', 'profit_loss'} and min(context) >= 0 for context in contexts]
+    predictions = {'stat': np.asarray([stat_prediction(context, horizon, nonnegative)
+                                       for context, nonnegative in zip(contexts, positive)])}
+    period = forecast_metrics.seasonal_period(contexts[0], node.baseline.frequency)
+    unavailable = []
+    if period > 1:
+        for name, method in (('seasonal_naive', forecast_metrics.seasonal_naive),
+                             ('seasonal_ets', forecast_metrics.seasonal_ets)):
+            try:
+                with catch_warnings():
+                    simplefilter('error', ConvergenceWarning)
+                    guessed = np.asarray([method(context, horizon, period, nonnegative)
+                                          for context, nonnegative in zip(contexts, positive)])
+                if not np.isfinite(guessed).all():
+                    raise ValueError('Nonfinite seasonal forecast')
+            except (ValueError, np.linalg.LinAlgError, ConvergenceWarning):
+                unavailable.append(name)
+            else:
+                predictions[name] = guessed
     if selection:
         for name, worker in (('timesfm', timesfm), ('chronos_bolt', chronos)):
-            result = worker_predictions(worker, contexts, horizon, nonnegative)
+            result = worker_predictions(worker, contexts, horizon, positive)
             if result is not None:
                 predictions[name] = result
+            else:
+                unavailable.append(name)
     if 'timesfm' in predictions and 'chronos_bolt' in predictions:
         predictions['ensemble'] = (predictions['timesfm'] + predictions['chronos_bolt']) / 2
-    target = np.asarray([values[index:index + horizon] for index in selection])
-    scores = {name: backtest(target.ravel(), bands[:len(selection), 1].ravel(), name)
-              for name, bands in predictions.items()} if selection else {}
-    engine = min(scores, key=lambda key: (scores[key]['mae'], scores[key]['mape'])) if scores else 'stat'
-    chosen = predictions[engine]
-    bands = chosen[-1].copy()
-    empirical = []
-    if calibration:
-        first = len(selection)
-        end = first + len(calibration)
+
+    def measure(indices, guessed, name):
+        actual = np.asarray([values[index:index + horizon] for index in indices])
+        scales = np.asarray([forecast_metrics.scale(values[:index], period) for index in indices])
+        return forecast_metrics.score(actual, guessed, scales, name)
+
+    first = len(selection)
+    end = first + len(calibration)
+    scores = {}
+    final = {}
+    for name, guessed in predictions.items():
+        final[name] = guessed[-1].copy()
+        if not selection:
+            continue
+        scores[name] = measure(selection, guessed[:first], name)
+        if not evaluation:
+            continue
         actual = np.asarray([values[index:index + horizon] for index in calibration])
-        future_actual = np.asarray([values[index:index + horizon] for index in evaluation])
-        residuals = actual - chosen[first:end, 1]
-        for index in range(horizon):
-            radius = conformal_radius(residuals[:, index])
-            bands[0, index] = bands[1, index] - radius
-            bands[2, index] = bands[1, index] + radius
-            empirical.append(float(np.mean(np.abs(future_actual[:, index] - chosen[end:-1, 1, index]) <= radius)))
-    if nonnegative:
-        bands = np.maximum(0, bands)
+        residuals = actual - guessed[first:end, 1]
+        radius = np.asarray([conformal_radius(column) for column in residuals.T])
+        held_out = guessed[end:-1].copy()
+        calibrated = held_out.copy()
+        calibrated[:, 0] = calibrated[:, 1] - radius
+        calibrated[:, 2] = calibrated[:, 1] + radius
+        calibrated = np.where(np.asarray(positive[end:-1])[:, None, None], np.maximum(calibrated, 0), calibrated)
+        final[name][0] = final[name][1] - radius
+        final[name][2] = final[name][1] + radius
+        scores[name]['holdout_raw'] = measure(evaluation, held_out, name)
+        scores[name]['holdout'] = measure(evaluation, calibrated, name)
+    if evaluation:
+        candidates = [name for name in scores if name != 'stat'
+                      and forecast_metrics.improve(scores[name], scores['stat'])]
+        candidate = min(candidates, key=lambda name: (scores[name]['mae'], scores[name]['smape']), default='stat')
+        engine = (candidate if forecast_metrics.improve(scores[candidate]['holdout'], scores['stat']['holdout'])
+                  else 'stat')
+    else:
+        engine = 'stat'
+    bands = np.maximum(0, final[engine]) if positive[-1] else final[engine]
+    empirical = scores[engine]['holdout']['coverage_by_horizon'] if evaluation else []
     return {
         'node_id': node.id, 'name_ar': node.name_ar, 'unit': node.unit, 'engine': engine,
         'history_count': size, 'backtests': scores,
+        'model_calibration': {'selection_origins': len(selection), 'scale_period': period,
+                              'unavailable': unavailable, 'holdout_start': points[evaluation[0]].date.isoformat()
+                              if evaluation else None},
         'confidence': COVERAGE if calibration else None,
         'interval_method': 'mapie_split_conformal' if calibration else 'uncalibrated',
         'calibration_n': len(calibration), 'evaluation_n': len(evaluation), 'evaluation_coverage': empirical,

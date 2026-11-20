@@ -35,3 +35,10 @@
 [data-testid="onboarding-review"] th:first-child { width: 50%; }
 [data-testid="onboarding-review"] :is(th, td) { white-space: normal; overflow-wrap: anywhere; }
 [data-testid="onboarding-review"] small { display: block; color: var(--muted); }
+.raw-source { border-block-end: 1px solid var(--line); padding-block-end: var(--space-3); overflow-wrap: anywhere; }
+.raw-source h3 { margin: 0; }
+.raw-source select { min-width: 0; max-width: 100%; }
+.raw-source details fieldset, .raw-observations { margin-block-start: var(--space-3); }
+.raw-observations { max-block-size: 16rem; overflow: auto; overflow-wrap: anywhere; }
+
+.raw-evidence { display: block; color: var(--muted); }

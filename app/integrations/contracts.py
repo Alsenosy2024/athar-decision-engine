@@ -64,6 +64,8 @@ class MapEdge(BaseModel):
     status: EdgeStatus
     provenance: EdgeProvenance | None
     can_approve: bool
+    kind: Literal['aggregation', 'accounting'] | None = None
+    source_type: str | None = None
     baseline_volume: float | None
     volume_unit: Unit | None
     weight: float
@@ -104,6 +106,7 @@ class MapResult(BaseModel):
     readiness: int | None
     analysis_error: str | None
     has_engines: bool
+    has_cash_ledger: bool
 
 
 class Kpis(BaseModel):
@@ -123,6 +126,7 @@ class KpiResult(SelectionResult):
 
 class ImpactEdge(Edge):
     method: str
+    lag_weeks: int | None = None
 
 
 class Quantiles(BaseModel):

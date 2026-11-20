@@ -4,6 +4,8 @@ from secrets import token_urlsafe
 from time import time
 
 from app.access import require_role
+from app.company_data.projection import empty_graph
+from app.company_data.schema import COMPANY_TEMPLATE
 from app.db import audit, encode, get_conn, utc_now
 from app.enterprise import store
 from app.enterprise.schema import ModelInput
@@ -22,8 +24,8 @@ def initialize(path):
         connection.execute('PRAGMA foreign_keys = OFF')
         connection.execute('BEGIN IMMEDIATE')
         definition = connection.execute("SELECT sql FROM sqlite_master WHERE name='companies'").fetchone()['sql']
-        if "'custom'" not in definition:
-            sectors = ','.join(f"'{sector}'" for sector in ('contracting', 'production', *SECTORS))
+        if f"'{COMPANY_TEMPLATE}'" not in definition:
+            sectors = ','.join(f"'{sector}'" for sector in ('contracting', 'production', *SECTORS, COMPANY_TEMPLATE))
             connection.execute(f"""
                 CREATE TABLE companies_onboarding_upgrade (
                     id INTEGER PRIMARY KEY, name TEXT NOT NULL,
@@ -50,7 +52,7 @@ def initialize(path):
 
 def create(connection, body, principal):
     require_role(principal)
-    graph = graph_for(body.sector)
+    graph = empty_graph() if body.sector == COMPANY_TEMPLATE else graph_for(body.sector)
     with connection:
         connection.execute('BEGIN IMMEDIATE')
         company_id = connection.execute(
@@ -64,19 +66,28 @@ def create(connection, body, principal):
         store.write_version(connection, model_id, 1, ModelInput(name=body.name, graph=graph), origin='onboarding_template')
         audit(connection, company_id, 'onboarding.create', 'enterprise_model', model_id,
               {'sector': body.sector, 'version': 1})
-    return describe(snapshot(connection, company_id))
+    return describe(snapshot(connection, company_id, allow_raw=True))
 
 
-def snapshot(connection, company_id):
+def snapshot(connection, company_id, *, allow_raw=False):
     row = connection.execute('SELECT model_id FROM onboarding_companies WHERE company_id=?',
                              (company_id,)).fetchone()
     if row is None:
         raise api_error(404, 'onboarding_company_not_found', 'الشركة لسه ملهاش نموذج تجهيز.')
-    return store.read(connection, row['model_id'])
+    model = store.read(connection, row['model_id'])
+    if model['graph'].company_data is not None and not allow_raw:
+        raise api_error(422, 'company_data_managed_model', 'استخدم معاينة ملفات الشركة والاعتماد.')
+    return model
 
 
 def describe(model):
-    data = model['graph'].onboarding
+    graph = model['graph']
+    if graph.company_data is not None:
+        return {'company_id': model['company_id'], 'model_id': model['id'], 'version': model['version'],
+                'name': model['name'], 'sector': COMPANY_TEMPLATE, 'cash_terms': graph.company_data.cash_terms,
+                'counts': {'entities': len(graph.company_data.entities), 'observations': len(graph.company_data.observations),
+                           'nodes': len(graph.company_data.node_entities), 'edges': len(graph.edges)}}
+    data = graph.onboarding
     return {'company_id': model['company_id'], 'model_id': model['id'], 'version': model['version'],
             'name': model['name'], 'sector': data.sector, 'records': data.records, 'cash_terms': data.cash_terms,
             'edges': [edge for edge in model['graph'].edges if edge.rule],
@@ -158,15 +169,19 @@ def commit(connection, company_id, user_id, token):
 def update_cash_terms(connection, company_id, expected_version, terms):
     with connection:
         connection.execute('BEGIN IMMEDIATE')
-        model = snapshot(connection, company_id)
+        model = snapshot(connection, company_id, allow_raw=True)
         check_version(model, expected_version)
         graph = model['graph']
-        if graph.onboarding.cash_terms == terms:
+        field = 'company_data' if graph.company_data is not None else 'onboarding'
+        data = getattr(graph, field)
+        if data.cash_terms == terms:
             return describe(model)
-        updated = graph.model_copy(update={'onboarding': graph.onboarding.model_copy(update={'cash_terms': terms})})
+        updated = graph.model_copy(update={field: data.model_copy(update={'cash_terms': terms})})
+        if graph.onboarding:
+            updated = materialize(updated)
         version = model['version'] + 1
         store.write_version(connection, model['id'], version,
-                            ModelInput(name=model['name'], graph=materialize(updated)))
+                            ModelInput(name=model['name'], graph=updated))
         audit(connection, company_id, 'onboarding.cash_terms', 'enterprise_model', model['id'],
               {'version': version, 'terms': terms.model_dump(mode='json')})
-        return describe(snapshot(connection, company_id))
+        return describe(snapshot(connection, company_id, allow_raw=True))

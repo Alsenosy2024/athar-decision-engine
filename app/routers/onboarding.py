@@ -1,6 +1,6 @@
 """Progressive company setup and review-before-save endpoints."""
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from pydantic import Field, StringConstraints
@@ -26,7 +26,7 @@ Section = Annotated[str | None, Query(max_length=30)]
 
 class Create(StrictFields):
     name: CompanyName
-    sector: Sector
+    sector: Sector | Literal['enterprise_company']
 
 
 class ManualRow(StrictFields):
@@ -90,7 +90,7 @@ def create(body: Create, request: Request, connection=Depends(request_conn)):
 
 @router.get(BASE)
 def company(company_id: CompanyID, connection=Depends(request_conn)):
-    return storage.describe(storage.snapshot(connection, company_id))
+    return storage.describe(storage.snapshot(connection, company_id, allow_raw=True))
 
 
 @router.post(BASE + '/sections/{section}/manual/preview')

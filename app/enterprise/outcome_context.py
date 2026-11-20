@@ -2,12 +2,18 @@
 from datetime import timedelta
 from math import ceil
 
+from app.company_data import finance as company_finance
 from app.enterprise.arms import start_date
 from app.enterprise.schema import Engine, EngineLink
 from app.onboarding.cash_flow import FLOW_LABELS
 
 
-def measurement_basis(graph, node_id, weeks):
+def measurement_basis(graph, node_id, weeks, *, period_flows=None):
+    if graph.company_data is not None:
+        flows = company_finance.flow_nodes(graph.company_data) if period_flows is None else period_flows
+        if node_id in flows:
+            return 'total_over_period' if weeks > 1 else 'week_end_snapshot'
+        return 'final_value'
     if graph.onboarding:
         if weeks > 1:
             return 'total_over_period' if node_id in FLOW_LABELS else 'final_value'
@@ -41,9 +47,12 @@ def plan_period(model, sector, params):
 
 def indicator_period(model, node, evaluation, plans, ledger_nodes):
     period = {'unit': str(node.unit), 'weeks': model.weeks,
-              'basis': measurement_basis(model.graph, node.id, model.weeks)}
+              'basis': measurement_basis(model.graph, node.id, model.weeks, period_flows=model.period_flows)}
     link = node.definition
-    if model.template and evaluation.cash_start and node.id in ledger_nodes:
+    if model.company_ledger and node.id in (model.period_flows | {'cash'}):
+        reference = model.causal.nodes['pnl.revenue'].baseline.points[-1].date
+        period |= dated_period(reference + timedelta(weeks=1), model.weeks * 7)
+    elif model.template and evaluation.cash_start and node.id in ledger_nodes:
         period |= dated_period(evaluation.cash_start, len(evaluation.values['cash']) - 1)
     elif isinstance(link, EngineLink) and link.output.startswith('ledger.') and evaluation.ledger:
         period |= dated_period(evaluation.cash_start, model.weeks * 7)

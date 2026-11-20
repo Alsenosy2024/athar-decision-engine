@@ -5,6 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, StringConstraints, model_validator
 
+from app.company_data.finance import ledger_ready
 from app.access import active_principal, company_visible, require_company
 from app.db import audit, encode, utc_now
 from app.enterprise.impact_graph import Assumption, ImpactError, ScenarioAssumptions, WhatIfRequest
@@ -27,6 +28,11 @@ KPI_NODES = {'profit': 'pnl.result', 'cash_low': 'cash', 'credit_breach': 'risk.
 
 
 def kpi_specs(graph):
+    if graph.company_data is not None:
+        return KPIS | {
+            'cash_low': {**KPIS['cash_low'], 'label': ENDING_CASH_LABEL if ledger_ready(graph) else 'آخر رصيد نقدي'},
+            'profit': {**KPIS['profit'], 'label': 'الربح التراكمي بعد التمويل'},
+        }
     if not graph.onboarding:
         return KPIS
     return KPIS | {

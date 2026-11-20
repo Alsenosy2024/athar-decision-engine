@@ -8,6 +8,7 @@ from pydantic import Field, model_validator
 
 from app.enterprise.edge_contracts import EdgeContractError, conversion, needs_coefficient
 from app.enterprise.schema import Graph, NodeId, Number, Scalar, StrictFields
+from app.simulation.dependence import Correlation, correlation_factor
 
 
 class ImpactError(ValueError):
@@ -39,6 +40,14 @@ class WhatIfRequest(ScenarioAssumptions):
     n: int = Field(default=200, ge=1, le=1000, strict=True)
     seed: int = Field(default=42, ge=0, le=2**32 - 1, strict=True)
     weeks: int = Field(default=52, ge=1, le=104, strict=True)
+    correlations: list[Correlation] = Field(default_factory=list, max_length=1225)
+
+    @model_validator(mode='after')
+    def valid_correlation(self):
+        if self.correlations:
+            correlation_factor(sorted(item.node_id for item in self.assumptions if item.uncertainty),
+                               self.correlations)
+        return self
 
 
 def reference(node):

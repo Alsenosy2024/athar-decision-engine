@@ -17,7 +17,7 @@ const pages = [
     ['actuals', 'الفعلي مقابل المخطط', 'delivery'],
 ];
 
-const onboardingSectors = new Set(['trading', 'retail', 'services', 'custom']);
+const onboardingSectors = new Set(['enterprise_company', 'trading', 'retail', 'services', 'custom']);
 const onboardingPages = new Set(['map', 'onboarding', 'enterprise', 'connectors', 'impact', 'scenarios', 'prescriptive', 'chat']);
 
 const locale = 'ar-SA-u-ca-gregory-nu-latn';

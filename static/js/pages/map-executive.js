@@ -5,7 +5,7 @@ function mapExecutiveControls() {
     let baselineTimer, baselineController;
 
     return {
-        baselineLoading: false, baselineError: '', baselineLedger: null, baselineWeeks: null,
+        baselineLoading: false, baselineError: '', baselineLedger: null, baselineWeeks: null, baselineRevenue: null,
         animateValue, percentileLabel, executiveRisk,
         resetExecutiveBaseline() {
             baselineRequest++;
@@ -13,11 +13,11 @@ function mapExecutiveControls() {
             baselineController?.abort();
             this.baselineLoading = false;
             this.baselineError = '';
-            this.baselineKpis = this.baselineLedger = this.baselineWeeks = null;
+            this.baselineKpis = this.baselineLedger = this.baselineWeeks = this.baselineRevenue = null;
         },
         refreshExecutiveBaseline({ defer = false } = {}) {
             this.resetExecutiveBaseline();
-            if (!(this.map?.has_engines || this.onboardingProjection) || this.map.analysis_error || this.map.process_only) return;
+            if (!(this.map?.has_engines || this.weeklyCashProjection) || this.map.analysis_error || this.map.process_only) return;
             const requestId = baselineRequest;
             const query = new URLSearchParams({ ...this.selection, weeks: this.weeks, include_ledger: 'true' });
             this.baselineLoading = true;
@@ -31,6 +31,7 @@ function mapExecutiveControls() {
                         this.baselineKpis = values.kpis;
                         this.baselineLedger = values.cash_ledger?.rows ?? null;
                         this.baselineWeeks = values.weeks;
+                        this.baselineRevenue = values.period_revenue ?? null;
                     }
                 } catch (error) {
                     if (requestId === baselineRequest) this.baselineError = error.message;
@@ -48,8 +49,11 @@ function mapExecutiveControls() {
                 const row = this.map?.nodes.find(node => node.id === id);
                 if (row?.baseline == null) return [];
                 const impact = this.result?.nodes.find(node => node.id === id);
-                const headline = impact ? impact.quantiles?.p50 ?? impact.after : row.baseline;
-                return [{ ...row, label: row.name_ar, headline, baseline: impact?.before ?? row.baseline, history: [],
+                const periodRevenue = id === 'pnl.revenue' ? this.baselineRevenue : null;
+                const headline = impact ? impact.quantiles?.p50 ?? impact.after : periodRevenue ?? row.baseline;
+                const source = impact?.scenario_source ?? (impact || periodRevenue != null ? 'estimated' : row.source);
+                return [{ ...row, label: impact?.name_ar ?? row.name_ar, headline, source,
+                    baseline: impact?.before ?? periodRevenue ?? row.baseline, history: [],
                     bands: impact?.quantiles }];
             });
             return [...metrics.slice(0, 2),

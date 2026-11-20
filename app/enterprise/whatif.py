@@ -5,6 +5,7 @@ from math import isfinite
 
 import numpy as np
 
+from app.company_data import finance as company_finance
 from app.enterprise.arms import Arms, contracting_ledger, production_ledger, start_date
 from app.enterprise.client_plans import ledger_edges
 from app.enterprise.demo import demo_template
@@ -110,6 +111,9 @@ def compilation_inputs(graph):
     methods = (projection.projection_edges(graph) if graph.onboarding else edge_methods(graph, template, bound))
     if client_plan:
         methods.update(ledger_edges(graph, links, drivers))
+    if company_finance.ledger_ready(graph):
+        methods.update({(edge.source, edge.target): 'company_cash' for edge in graph.edges
+                        if edge.evidence == company_finance.CASH_IDENTITY})
     return template, links, bound & keys, drivers, methods
 
 
@@ -121,14 +125,15 @@ class Evaluation:
     cash_start: date | None = None
     fill_rate: float | None = None
     ledger: list | None = None
-    weekly_flows: bool = False
+    weekly_flows: frozenset = frozenset()
+    ending_cash: bool = False
 
     def metric(self, key):
         values = self.values[key]
-        if self.weekly_flows and values is not None:
-            if key in FLOW_LABELS:
+        if values is not None:
+            if key in self.weekly_flows:
                 return float(np.sum(values))
-            if key == 'cash':
+            if key == 'cash' and self.ending_cash:
                 return float(values[-1])
         return metric(key, values)
 
@@ -140,6 +145,11 @@ class ImpactModel:
     def __init__(self, graph, *, weeks, time_limit=15, forecast_engine='stat', foundation=None):
         self.weeks = weeks
         self.graph = graph
+        self.company_ledger = company_finance.ledger_ready(graph)
+        self.period_flows = frozenset(
+            FLOW_LABELS if graph.onboarding else company_finance.flow_nodes(graph.company_data)
+            if graph.company_data is not None else ()
+        )
         self.template, links, bound, drivers, built_in = compilation_inputs(graph)
         self.arms = Arms(graph.arms, graph._client_sources, time_limit=time_limit,
                          forecast_engine=forecast_engine, foundation=foundation)
@@ -162,6 +172,8 @@ class ImpactModel:
                                  for edge in missing]
 
     def adjustable(self, key):
+        if (self.graph.company_data is not None and key == 'pnl.result') or (self.company_ledger and key == 'cash'):
+            return False
         return self.causal.adjustable(key) and (not self.graph.onboarding or key in ONBOARDING_INPUTS)
 
     def drivers(self):
@@ -272,7 +284,7 @@ class ImpactModel:
         if self.graph.onboarding:
             values, effects, ledger = projection.evaluate(
                 self.causal, self.weeks, changes, self.graph.onboarding.cash_terms)
-            return Evaluation(values, effects, 0, ledger=ledger, weekly_flows=True)
+            return Evaluation(values, effects, 0, ledger=ledger, weekly_flows=self.period_flows, ending_cash=True)
         computed, iterations, cash_start, fill_rate, ledger = self.computed(get, arm_inputs, plans, trial=trial)
         anchors = {
             key: metric(key, baseline.values.get(key) if baseline else value)
@@ -282,7 +294,11 @@ class ImpactModel:
         raw = upstream | {key: np.full(self.weeks, metric(key, value)) for key, value in computed.items()}
         values, effects = self.causal.propagate(self.weeks, changes, computed=raw, anchors=anchors)
         values.update(computed)
-        return Evaluation(values, effects | upstream_effects, iterations, cash_start, fill_rate, ledger)
+        if self.company_ledger:
+            ledger = company_finance.project_ledger(values, self.graph.company_data.cash_terms, self.weeks)
+            values['cash'] = np.array([row['closing_cash'] for row in ledger])
+        return Evaluation(values, effects | upstream_effects, iterations, cash_start, fill_rate, ledger,
+                          self.period_flows, self.company_ledger)
 
     def assumption_values(self, assumptions):
         centers, spreads, reference_values = {}, {}, {}
@@ -326,7 +342,7 @@ class ImpactModel:
         root_changes = {key for key in centers if centers[key] != reference_values[key] or spreads[key]}
         max_iterations = max(baseline.iterations, central.iterations)
         if any(spreads.values()):
-            for sample in driver_trials(centers, spreads, request.n, request.seed):
+            for sample in driver_trials(centers, spreads, request.n, request.seed, request.correlations):
                 check_search_time()
                 evaluation = self.evaluate(sample, self.input_values(sample), central_plans, baseline, trial=True)
                 max_iterations = max(max_iterations, evaluation.iterations)
@@ -350,11 +366,10 @@ class ImpactModel:
         for node in self.graph.nodes:
             key = node.id
             name = node.name_ar
-            if self.graph.onboarding:
-                if key == 'cash':
-                    name = ENDING_CASH_LABEL
-                elif self.weeks > 1:
-                    name = FLOW_LABELS.get(key, name)
+            if key == 'cash' and central.ending_cash:
+                name = ENDING_CASH_LABEL
+            elif self.weeks > 1 and key in self.period_flows:
+                name = FLOW_LABELS.get(key, name)
             left, right = before[key], after[key]
             delta = right - left if left is not None and right is not None else None
             pct = 100 * delta / abs(left) if left and delta is not None else None
@@ -423,6 +438,8 @@ class ImpactModel:
                     reachable.add(edge.target)
                     result.setdefault(edge.target, {})[edge.source] = {
                         **edge.model_dump(mode='json'), 'method': method,
+                        **({'lag_weeks': company_finance.cash_lag(edge, self.graph.company_data)}
+                           if method == 'company_cash' else {}),
                     }
             if len(reachable) == count:
                 return {key: list(incoming.values()) for key, incoming in result.items()}
@@ -438,7 +455,7 @@ class ImpactModel:
             dates = [(baseline.cash_start + timedelta(days=index - 1)).isoformat()
                      for index in range(max(len(before), len(after)))]
             charts['cash'] = {'dates': dates, 'before': before, 'after': after}
-        elif self.graph.onboarding and baseline.values['cash'] is not None:
+        elif baseline.ending_cash and baseline.values['cash'] is not None:
             charts['cash'] = {'period_ar': 'نهاية الأسبوع',
                               'before': baseline.values['cash'].tolist(),
                               'after': central.values['cash'].tolist()}

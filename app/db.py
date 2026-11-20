@@ -80,6 +80,8 @@ def request_conn(request: Request):
 
 
 def initialize(path: Path):
+    from app.connectors.ownership import OWNERSHIP_TRIGGERS
+
     path.parent.mkdir(parents=True, exist_ok=True)
     with get_conn(path) as connection:
         connection.execute('PRAGMA journal_mode = WAL')
@@ -90,6 +92,8 @@ def initialize(path: Path):
             # Legacy settings have no trusted owner. Preserve them without granting access.
             connection.execute('ALTER TABLE erp_connectors ADD COLUMN company_id INTEGER REFERENCES companies(id)')
         connection.execute('CREATE INDEX IF NOT EXISTS erp_connectors_company ON erp_connectors(company_id, id)')
+        for trigger in OWNERSHIP_TRIGGERS:
+            connection.execute(trigger)
     from app.access import initialize_access_schema
     initialize_access_schema(path)
 

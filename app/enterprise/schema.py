@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, model_validator
 
+from app.company_data.schema import CompanyData
 from app.enterprise.edge_contracts import EdgeProvenance, EdgeStatus, EdgeUnit
 from app.onboarding.records import OnboardingData
 
@@ -168,6 +169,8 @@ class Graph(StrictFields):
     edges: list[Edge] = Field(default_factory=list)
     arms: list[Arm] = Field(default_factory=list, max_length=2)
     onboarding: OnboardingData | None = Field(default=None, exclude_if=lambda data: data is None)
+
+    company_data: CompanyData | None = Field(default=None, exclude_if=lambda data: data is None)
 
     @model_validator(mode='after')
     def validate_references(self):

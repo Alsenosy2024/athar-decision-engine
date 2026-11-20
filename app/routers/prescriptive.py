@@ -9,7 +9,7 @@ from app.db import audit, encode, request_conn
 from app.enterprise import store
 from app.enterprise.impact_graph import ImpactError
 from app.enterprise.result_context import effective_weeks, result_context
-from app.enterprise.scenarios import KPIS
+from app.enterprise.scenarios import kpi_specs
 from app.enterprise.schema import StrictFields
 from app.enterprise.whatif import ImpactModel
 from app.prescriptive import calibration, goal, monitor, records
@@ -48,7 +48,7 @@ def setup(model_id: RecordId, request: Request, connection=Depends(request_conn)
     with impact_errors():
         model = engine(snapshot, request)
         drivers = goal.controllable(model)
-    return {'version': snapshot['version'], 'controls': drivers, 'drivers': model.drivers(), 'kpis': KPIS,
+    return {'version': snapshot['version'], 'controls': drivers, 'drivers': model.drivers(), 'kpis': kpi_specs(snapshot['graph']),
             'thresholds': thresholds(connection, model_id),
             'calibration': records.read_calibration(connection, model_id, snapshot['version'])}
 
@@ -71,6 +71,8 @@ def preview_calibration(model_id: RecordId, request: Request, connection=Depends
 @router.post(scope + '/calibration')
 def apply_calibration(model_id: RecordId, body: Revision, request: Request, connection=Depends(request_conn)):
     snapshot = records.checked_version(connection, model_id, body.version)
+    if snapshot['graph'].company_data is not None:
+        store.ensure_builder_scope(snapshot['graph'])
     with impact_errors():
         graph, report = calibration_report(connection, snapshot, request)
         # Recompile before committing the fitted graph.

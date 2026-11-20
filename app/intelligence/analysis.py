@@ -29,10 +29,20 @@ def history(graph):
     return {node.id: node for node in graph.nodes if isinstance(node.baseline, Series)}
 
 
-def anomalies(graph):
+def anomalies(graph, method='rolling_mad'):
     found = []
     for node in history(graph).values():
         points = node.baseline.points
+        if method == 'seasonal':
+            from app.intelligence.seasonal_anomalies import seasonal_signals
+
+            for index, center, score, n, signal in seasonal_signals(points, node.baseline.frequency):
+                point = points[index]
+                found.append({'node_id': node.id, 'name_ar': node.name_ar, 'date': point.date.isoformat(),
+                              'value': point.value, 'reference': center, 'score': round(score, 3),
+                              'unit': node.unit, 'confidence': min(0.95, n / 25), 'reference_n': n,
+                              'method': 'stl_robust_change', 'signal': signal})
+            continue
         for index in range(max(8, len(points) - 40), len(points)):
             point = points[index]
             past = [p.value for p in points[max(0, index - 24):index]]
@@ -59,7 +69,8 @@ def fact(node_id, text, evidence, confidence=1.0):
 def insight_facts(items):
     return [fact(item['node_id'],
                  f"{item['name_ar']} يوم {item['date']} سجّل {display(item['value'], item['unit'])}، "
-                 f"والوسيط السابق {display(item['reference'], item['unit'])}.",
+                 f"و{'الوسيط السابق' if item['method'] == 'rolling_median_mad' else 'القيمة المرجعية'} "
+                 f"{display(item['reference'], item['unit'])}.",
                  {'kind': 'anomaly', **item}, item['confidence']) for item in items]
 
 
@@ -176,8 +187,8 @@ def target_ids(graph, question, explicit=None):
     return list(dict.fromkeys([*([explicit] if explicit else []), *found]))
 
 
-def refresh(settings, graph):
-    items = anomalies(graph)
+def refresh(settings, graph, *, anomaly_method='rolling_mad'):
+    items = anomalies(graph, anomaly_method)
     facts = insight_facts(items)
     if facts:
         narrative = answer(settings, 'لخّص أهم إشارات البيانات الجديدة', facts, list(range(min(3, len(facts)))))

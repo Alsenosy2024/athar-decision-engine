@@ -9,7 +9,7 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     },
     statuses: { pending: 'بانتظار المراجعة', accepted: 'مقبول', rejected: 'مرفوض' },
     engines: {
-        stat: 'إحصائي', timesfm: 'TimesFM', chronos_bolt: 'Chronos-Bolt', ensemble: 'TimesFM + Chronos-Bolt',
+        stat: 'إحصائي', seasonal_naive: 'خط أساس موسمي', seasonal_ets: 'ETS موسمي', timesfm: 'TimesFM', chronos_bolt: 'Chronos-Bolt', ensemble: 'TimesFM + Chronos-Bolt',
         codex: 'Codex', rules: 'قواعد محلية', median: 'وسيط سابق',
     },
     units: { SAR: 'ريال', 'SAR/unit': 'ريال للوحدة', units: 'وحدة', storage_units: 'وحدة تخزين',
@@ -38,8 +38,13 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     get questionFacts() { return this.payload.facts || this.payload.insight?.facts || []; },
     get reviewTitle() { return this.kinds[this.review?.kind] || ''; },
     get assistantVersion() { return this.data?.models.find(model => String(model.id) === this.modelId)?.version; },
+    get companyUsesFiles() {
+        return this.$store.app.companies.find(company => String(company.id) === this.companyId)?.template === 'enterprise_company';
+    },
+    get setupLink() { return '/?company_id=' + this.companyId + '#/onboarding'; },
     get scope() { return '/companies/' + this.companyId + '/ai'; },
     get canAccept() {
+        if (this.payload.company_import) return false;
         if (this.review.kind === 'entry') {
             return this.payload.diff.length || this.payload.relations.length ||
                 this.payload.schedules.length || this.estimates.length;

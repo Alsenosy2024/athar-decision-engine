@@ -1,0 +1,5 @@
+txn_day,store_id,branch_name,branch_parent,department,department_parent,sku,units_sold,net_sales_sar,stock_units,supplier_code
+2026-11-02,RYD,الرياض,SA,الأغذية,التجزئة,A01,6,120,24,S01
+2026-11-03,JED,جدة,SA,الأجهزة,التجزئة,B02,2,200,11,S02
+2026-11-09,RYD,الرياض,SA,الأغذية,التجزئة,A01,10,200,22,S01
+2026-11-10,JED,جدة,SA,الأجهزة,التجزئة,B02,3,300,8,S02

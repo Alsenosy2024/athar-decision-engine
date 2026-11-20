@@ -1,5 +1,5 @@
 <header class="page-title">
-    <div><h1>تجهيز الشركة</h1><p>كوّن نموذج الشركة على مراحل أو ارفع بيانات الأقسام في ملف واحد.</p></div>
+    <div><h1>تجهيز الشركة</h1><p>ارفع ملفات الشركة وراجع ربطها قبل اعتماد النموذج.</p></div>
 </header>
 <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل تجهيز الشركة…</p>
 <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
@@ -9,8 +9,9 @@
         <h2>شركة جديدة</h2>
         <form class="stack" x-show="admin" @submit.prevent="create()">
             <label>اسم الشركة <input required maxlength="150" x-model="name"></label>
-            <label>قالب القطاع
-                <select x-model="sector">
+            <label>طريقة التجهيز
+                <select x-model="sector" aria-label="قالب القطاع">
+                    <option value="enterprise_company">من بيانات الشركة · CSV أو XLSX</option>
                     <template x-for="item in sectors" :key="item.id">
                         <option :value="item.id" x-text="item.name"></option>
                     </template>
@@ -24,7 +25,7 @@
         <p x-show="!admin">اختار شركة بتستخدم نموذج التجهيز من الشريط العلوي. الأدمن يقدر ينشئ شركة جديدة.</p>
     </article>
 </template>
-<template x-if="model && !creating">
+<template x-if="model && !creating && !raw">
     <div class="stack onboarding-layout">
         <article class="snapshot">
             <div class="snapshot-info">
@@ -186,5 +187,191 @@
                 </div>
             </article>
         </template>
+    </div>
+</template>
+<template x-if="raw && !creating">
+    <div class="stack onboarding-layout">
+        <article class="snapshot">
+            <div class="snapshot-info">
+                <h2 x-text="model.name"></h2>
+                <p>نموذج الشركة · إصدار <bdi x-text="model.version"></bdi></p>
+            </div>
+            <div class="actions">
+                <button type="button" class="button secondary" x-show="admin" :disabled="!!busy" @click="creating = true">شركة جديدة</button>
+                <a class="button secondary" href="#/map" x-show="model.counts.nodes">افتح خريطة الشركة</a>
+            </div>
+        </article>
+        <form class="card stack" x-show="editable" @submit.prevent="previewRaw()">
+            <h2>ملفات الشركة</h2>
+            <p>اختار ملفات بعناوين أعمدة. هنقترح ربط الفروع والأقسام والحسابات ومراكز التكلفة والمنتجات والمؤشرات.</p>
+            <label>ملفات CSV أو XLSX
+                <span class="file-picker">
+                    <bdi class="file-label" x-text="rawFiles.map(file => file.name).join('، ') || 'اختار الملفات'"></bdi>
+                    <input type="file" aria-label="ملفات CSV أو XLSX" x-ref="rawFile" accept=".csv,.xlsx"
+                        multiple :disabled="!!busy" @change="selectRawFiles($event.target.files)">
+                </span>
+            </label>
+            <label x-show="rawSheets.length > 1">ورقة البيانات
+                <select x-model="rawSheet" :disabled="!!busy" @change="rawReview = null; mappingsDirty = false">
+                    <option value="">كل الأوراق</option>
+                    <template x-for="sheet in rawSheets" :key="sheet.name">
+                        <option :value="sheet.name" x-text="sheet.name"></option>
+                    </template>
+                </select>
+            </label>
+            <label x-show="connectors.length">أو اسحب من موصل ERP محفوظ
+                <select x-model="rawConnectorId" :disabled="!!busy" @change="selectRawConnector()">
+                    <option value="">اختار الموصل</option>
+                    <template x-for="connector in connectors" :key="connector.id">
+                        <option :value="String(connector.id)" x-text="connector.name"></option>
+                    </template>
+                </select>
+            </label>
+            <div class="actions">
+                <button type="submit" class="button primary" :disabled="!!busy || !rawSource"
+                    x-text="busy === 'preview' ? 'جارٍ تجهيز المعاينة…' : (rawConnectorId ? 'اسحب وراجع' : 'راجع الملفات')"></button>
+            </div>
+        </form>
+        <template x-if="rawReview">
+            <article class="card stack" x-ref="rawReview" tabindex="-1" data-testid="company-import-review">
+                <div><h2>مراجعة بيانات الشركة</h2><p>راجع مفاتيح الكيانات، ومراجع الأب، ووحدات المؤشرات قبل الاعتماد.</p></div>
+                <template x-for="source in rawReview.data.sources" :key="source.id">
+                    <div class="stack raw-source">
+                        <div>
+                            <h3><bdi x-text="source.file"></bdi> · <bdi x-text="source.sheet"></bdi></h3>
+                            <p><bdi x-text="number(source.rows)"></bdi> صف <span x-text="source.reused ? '· ربط معتمد سابقًا' : '· ربط للمراجعة'"></span></p>
+                        </div>
+                        <details :open="!rawReview.data.validation.ok">
+                            <summary>ربط الأعمدة وتعديله</summary>
+                            <fieldset class="onboarding-fields" :disabled="!!busy || !rawSource">
+                                <label>تاريخ الحركة
+                                    <select x-model="source.mapping.day" @change="source.mapping.day ||= null; mappingsDirty = true">
+                                        <option value="">اختار عمود</option>
+                                        <template x-for="column in source.columns" :key="column"><option :value="column" x-text="column"></option></template>
+                                    </select>
+                                </label>
+                                <template x-for="[kind, label] in Object.entries(rawDimensions)" :key="kind">
+                                    <div class="onboarding-field">
+                                        <template x-for="[group, suffix] in [['dimensions', 'المعرّف'], ['parents', 'مرجع الأب'], ['names', 'الاسم']]" :key="group">
+                                            <label><span x-text="label + ' · ' + suffix"></span>
+                                                <select :value="source.mapping[group][kind] || ''"
+                                                    @change="setRawColumn(source, group, kind, $event.target.value)">
+                                                    <option value="">اختياري</option>
+                                                    <template x-for="column in source.columns" :key="column">
+                                                        <option :value="column" :selected="source.mapping[group][kind] === column" x-text="column"></option>
+                                                    </template>
+                                                </select>
+                                            </label>
+                                        </template>
+                                    </div>
+                                </template>
+                                <template x-for="(measure, index) in source.mapping.measures" :key="index">
+                                    <div class="onboarding-field" @input="mappingsDirty = true" @change="mappingsDirty = true">
+                                        <label>عمود المؤشر
+                                            <select x-model="measure.column">
+                                                <option value="">اختار عمود</option>
+                                                <template x-for="column in source.columns" :key="column"><option :value="column" x-text="column"></option></template>
+                                            </select>
+                                        </label>
+                                        <label>معرّف المؤشر <input dir="ltr" x-model.trim="measure.key" maxlength="40"></label>
+                                        <label>اسم المؤشر <input x-model.trim="measure.name" maxlength="160"></label>
+                                        <label>الوحدة
+                                            <select x-model="measure.unit">
+                                                <template x-for="unit in ['SAR', 'units', 'days', 'weeks', 'teams', 'storage_units']" :key="unit">
+                                                    <option :value="unit" x-text="unit"></option>
+                                                </template>
+                                            </select>
+                                        </label>
+                                        <label>التجميع
+                                            <select x-model="measure.aggregation"><option value="sum">مجموع الفترة</option><option value="closing">آخر رصيد</option></select>
+                                        </label>
+                                        <button type="button" class="button secondary" @click="source.mapping.measures.splice(index, 1); mappingsDirty = true">شيل المؤشر</button>
+                                    </div>
+                                </template>
+                                <div class="actions"><button class="button secondary" type="button"
+                                    :disabled="source.mapping.measures.length >= 20" @click="addMeasure(source)">ضيف مؤشر</button></div>
+                            </fieldset>
+                        </details>
+                        <p x-show="source.unmapped_columns.length">أعمدة خارج الربط
+                            <bdi x-text="source.unmapped_columns.join('، ')"></bdi>
+                        </p>
+                    </div>
+                </template>
+                <ul class="notice error" x-show="!rawReview.data.validation.ok">
+                    <template x-for="(issue, index) in rawReview.data.validation.errors" :key="index">
+                        <li><bdi x-text="issue.sheet"></bdi> <span x-text="(issue.row ? '· صف ' + issue.row + ' · ' : '') + issue.msg_ar"></span></li>
+                    </template>
+                </ul>
+                <div x-show="rawReview.data.model && !mappingsDirty">
+                    <p x-text="number(rawReview.data.validation.summary.entities) + ' كيان جديد أو مُعدّل · ' +
+                        number(rawReview.data.validation.summary.observations) + ' قراءة جديدة أو مُعدّلة · ' +
+                        number(rawReview.data.validation.summary.nodes) + ' عقدة · ' +
+                        number(rawReview.data.validation.summary.edges) + ' علاقة تجميع'"></p>
+                    <details x-show="rawReview.data.entities.length">
+                        <summary>الكيانات ومراجعها</summary>
+                        <ul class="raw-observations">
+                            <template x-for="entity in rawReview.data.entities" :key="entity.id">
+                                <li><span x-text="rawDimensions[entity.kind]"></span> · <bdi x-text="entity.name"></bdi>
+                                    <span x-show="entity.parent_id" x-text="'يتبع ' +
+                                        rawReview.data.model?.graph.company_data.entities[entity.parent_id]?.name"></span></li>
+                            </template>
+                        </ul>
+                    </details>
+                    <details x-show="rawReview.data.diff.length">
+                        <summary>القيم ومصدر كل قراءة</summary>
+                        <ul class="raw-observations">
+                            <template x-for="(item, index) in rawReview.data.diff" :key="index">
+                                <li>
+                                    <span x-text="item.name_ar"></span>
+                                    <bdi x-text="item.before == null ? number(item.value) : number(item.before) + ' → ' + number(item.value)"></bdi>
+                                    <bdi x-text="item.unit"></bdi>
+                                    <span x-show="item.entities.length" x-text="'· ' + item.entities.join(' / ')"></span>
+                                    <small class="raw-evidence"><bdi x-text="item.date"></bdi> ·
+                                        <bdi x-text="item.evidence.file + ' / ' + item.evidence.sheet + ' · ' + item.evidence.column"></bdi>
+                                        · صفوف <bdi x-text="item.evidence.rows.join(', ')"></bdi></small>
+                                </li>
+                            </template>
+                        </ul>
+                    </details>
+                    <details x-show="rawReview.data.relations.length">
+                        <summary>علاقات التجميع ومعاملاتها</summary>
+                        <ul class="raw-observations">
+                            <template x-for="item in rawReview.data.relations" :key="item.edge.source + ':' + item.edge.target">
+                                <li>
+                                    <bdi x-text="reviewNodeName(item.edge.source)"></bdi> ←
+                                    <bdi x-text="reviewNodeName(item.edge.target)"></bdi>
+                                    <small class="raw-evidence">
+                                        جمع من نطاقات معتمدة · معامل <bdi x-text="number(item.edge.rule.multiplier)"></bdi>
+                                    </small>
+                                </li>
+                            </template>
+                        </ul>
+                    </details>
+                </div>
+                <p x-show="rawReview.data.validation.ok && !rawReview.data.model && !mappingsDirty">الملفات مطابقة للإصدار الحالي.</p>
+                <div class="actions" x-show="editable && rawReview.status === 'pending'">
+                    <button type="button" class="button primary" :disabled="!!busy" x-show="mappingsDirty" @click="previewRaw()">راجع الربط المعدّل</button>
+                    <button type="button" class="button primary" :disabled="!!busy"
+                        x-show="rawReview.data.model && !mappingsDirty" @click="decideRaw('accepted')">اعتمد وابنِ الجراف</button>
+                    <button type="button" class="button secondary" :disabled="!!busy" @click="decideRaw('rejected')">ارفض المراجعة</button>
+                </div>
+            </article>
+        </template>
+        <article class="card stack" x-show="rawReviews.length">
+            <h2>سجل مراجعات الملفات</h2>
+            <div class="actions">
+                <template x-for="item in rawReviews" :key="item.id">
+                    <button type="button" class="button secondary" :disabled="!!busy"
+                        @click="work('review', live => readRawReview(item.id, live))"
+                        x-text="'مراجعة ' + number(item.id) + ' · ' +
+                            ({pending: 'قيد المراجعة', accepted: 'معتمدة', rejected: 'مرفوضة'}[item.status])"></button>
+                </template>
+            </div>
+        </article>
+        <article class="card stack" x-show="model.counts.entities || model.counts.observations">
+            <h2>البيانات المعتمدة</h2>
+            <p x-text="number(model.counts.entities) + ' كيان · ' + number(model.counts.observations) + ' قراءة · ' +
+                number(model.counts.nodes) + ' عقدة · ' + number(model.counts.edges) + ' علاقة تجميع'"></p>
+        </article>
     </div>
 </template>

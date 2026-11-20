@@ -126,6 +126,8 @@ def archive(connection, model_id):
 
 
 def ensure_builder_scope(*graphs):
+    if any(graph.company_data is not None for graph in graphs):
+        raise api_error(422, 'company_data_managed_model', 'عدّل النموذج من خلال مراجعة بيانات الشركة.')
     if any(graph.onboarding is not None for graph in graphs):
         raise api_error(422, 'onboarding_managed_model', 'عدّل النموذج ده من صفحة تجهيز الشركة.')
 

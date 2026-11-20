@@ -55,3 +55,24 @@
     .ai-topbar { align-items: flex-start; }
     .ai-brand { display: grid; }
 }
+
+@media (max-width: 640px) {
+    .ai-calibration-table { min-inline-size: 0; display: block; }
+    .ai-calibration-table thead {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+    .ai-calibration-table tbody,
+    .ai-calibration-table tr { display: grid; }
+    .ai-calibration-table tr + tr { margin-block-start: var(--space-3); }
+    .ai-calibration-table td {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--space-2);
+    }
+    .ai-calibration-table td::before { content: attr(data-label); }
+}
