@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS runs (id INTEGER PRIMARY KEY, company_id INTEGER NOT 
 CREATE TABLE IF NOT EXISTS plans (id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL, run_id INTEGER NOT NULL REFERENCES runs(id), variant TEXT NOT NULL CHECK(variant IN ('optimized','scenario')), status TEXT NOT NULL CHECK(status IN ('draft','approved','rejected')), comment TEXT, actor TEXT, created_at TEXT NOT NULL, decided_at TEXT);
 CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY, company_id INTEGER, actor TEXT NOT NULL, action TEXT NOT NULL, entity TEXT NOT NULL, entity_id INTEGER, details_json TEXT, ts TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS actuals (id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL, plan_id INTEGER NOT NULL REFERENCES plans(id), payload_json TEXT NOT NULL, comparison_json TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS hybrid_observations (run_id INTEGER PRIMARY KEY REFERENCES runs(id), result_json TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS calibrations (id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL, key TEXT NOT NULL, value_json TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(company_id,key));
 CREATE TABLE IF NOT EXISTS chat_messages (id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL, role TEXT NOT NULL CHECK(role IN ('user','assistant')), content TEXT NOT NULL, scenario_json TEXT, run_id INTEGER, provider TEXT, ts TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS enterprise_models (

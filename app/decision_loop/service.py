@@ -9,6 +9,7 @@ from app.decision_loop.scenarios import Demand, check_observations, draw_paths, 
 from app.optimization.budget import SolveBudget
 from app.optimization.common import OptimizationInputError
 from app.optimization.production import baseline, prepare
+from app.schemas import RiskPolicy
 
 PATHS = 64
 SHORT_PATHS = 16
@@ -22,13 +23,24 @@ def select(candidates, key):
                key=lambda row: (row[key]['score'], row['id']), default=None)
 
 
-def experiment(dataset, parameters, weights, policy, *, hard_credit=False):
+def pinned_experiment(dataset, model, contract):
+    return experiment(dataset, model['parameters'], model['weights'],
+                      RiskPolicy.model_validate(contract['risk_policy']),
+                      hard_credit=model['constraints'].get('credit_limit') == 'hard', contract=contract)
+
+
+def experiment(dataset, parameters, weights, policy, *, hard_credit=False, contract=None):
     started = perf_counter()
     if parameters['horizon_days'] > MAX_HORIZON or len(dataset['orders']) > MAX_ORDERS:
         raise OptimizationInputError('التجربة متاحة لأفق ٣٥ يوم و١٠٠ طلب مؤكد بحد أقصى.')
     base = prepare(dataset, parameters)
-    demand = Demand.from_problem(base, policy.forecast_uplift)
-    realized = check_observations(demand, policy.observations or [])
+    if contract:
+        demand = Demand.from_contract(dataset, base, contract)
+    else:
+        demand = Demand.from_problem(base, policy.forecast_uplift)
+    observations = getattr(policy, 'observations', None)
+    expected_commitment = getattr(policy, 'expected_commitment', None)
+    realized = check_observations(demand, observations or [])
     paths = draw_paths(demand, PATHS, SEED)
     reduced = reduced_sample(paths, policy.short_paths)
     typical = reduced_sample(paths, 3)
@@ -79,8 +91,8 @@ def experiment(dataset, parameters, weights, policy, *, hard_credit=False):
     for point in points:
         point['version'] = next(row['version'] for row in candidates if row['id'] == point['candidate_id'])
     replan = None
-    if policy.rolling and chosen:
-        actual = policy.observations is not None
+    if getattr(policy, 'rolling', False) and chosen:
+        actual = observations is not None
         if not actual:
             realized = paths[typical[1][0]]
         replan = rolling(base, demand, chosen['plan'], realized, weights,
@@ -101,15 +113,15 @@ def experiment(dataset, parameters, weights, policy, *, hard_credit=False):
             })
 
         replan['commitment'] = {'through_day': through_day, 'fingerprint': commitment_at(through_day)}
-        if policy.expected_commitment:
-            expected = policy.expected_commitment
+        if expected_commitment:
+            expected = expected_commitment
             if expected.through_day > through_day or commitment_at(expected.through_day) != expected.fingerprint:
                 raise OptimizationInputError('إعادة التشغيل ما طابقتش الالتزام السابق. راجع نسخة القرار.')
         if replan['metrics'] is not None:
             case = demand.problem(base, realized)
             replan['fixed_plan_metrics'] = measure(case, dispatch(case, chosen['plan']))
 
-    if policy.expected_commitment and replan is None:
+    if expected_commitment and replan is None:
         raise OptimizationInputError('الالتزام السابق محتاج إعادة تشغيل على نفس نسخة القرار.')
 
     return {
@@ -126,7 +138,10 @@ def experiment(dataset, parameters, weights, policy, *, hard_credit=False):
         'scenario_set': {
             'fingerprint': fingerprint(paths), 'full_count': len(paths), 'reduced_count': len(reduced),
             'representatives': [{'index': index, 'probability': mass} for index, mass in reduced],
-            'method': 'persistent_shared_demand_shock', 'source': 'synthetic_incremental_demand',
+            'method': 'persistent_shared_demand_shock',
+            'source': 'pinned_forecast_quantiles' if contract else 'synthetic_incremental_demand',
+            **({'input_fingerprint': contract['input_fingerprint'],
+                'quantile_fingerprint': contract['scenario_set_fingerprint']} if contract else {}),
             'forecast_orders': [{**demand.orders[key], 'release_day': demand.release[key]} for key in demand.forecast],
         },
         'policy': policy.model_dump(exclude={'observations', 'expected_commitment'}),

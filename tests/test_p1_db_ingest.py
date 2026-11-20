@@ -47,7 +47,8 @@ def test_ddl(client, db_path):
         assert tables == {
             'integration_api_keys', 'integration_webhook_routes', 'integration_webhook_outbox', 'integration_alert_state',
             'companies', 'datasets', 'company_models', 'forecasts', 'runs', 'plans', 'audit_log',
-            'actuals', 'calibrations', 'chat_messages', 'enterprise_models', 'enterprise_model_versions',
+            'actuals', 'hybrid_observations', 'calibrations', 'chat_messages', 'enterprise_models',
+            'enterprise_model_versions',
             'enterprise_scenarios', 'erp_connectors', 'p6_imports', 'users', 'user_companies', 'auth_sessions',
             'onboarding_companies', 'onboarding_previews',
             'enterprise_edge_calibrations', 'enterprise_kpi_thresholds', 'enterprise_decisions',

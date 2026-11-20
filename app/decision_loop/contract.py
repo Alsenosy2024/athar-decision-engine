@@ -70,7 +70,7 @@ def _snapshot(template, dataset, forecast, horizon):
 
 def freeze_contract(*, company, dataset_id, dataset, dataset_created_at, model, weights,
                     forecast_id, forecast, forecast_created_at, cutoff_at, time_limit, previous_run_id,
-                    previous):
+                    previous, risk_policy=None):
     evidence = forecast.get('decision_evidence') or {}
     template = company['template']
     production = template == 'production'
@@ -131,6 +131,8 @@ def freeze_contract(*, company, dataset_id, dataset, dataset_created_at, model, 
         'previous_run_id': previous_run_id,
         'previous_plan_fingerprint': fingerprint(previous) if previous is not None else None,
     }
+    if risk_policy is not None:
+        contract['risk_policy'] = risk_policy.model_dump()
     return contract | {'input_fingerprint': fingerprint(contract)}
 
 
@@ -147,7 +149,18 @@ def solution_fingerprint(result):
     # Wall time, request IDs and narrative vary independently of the solved plan.
     solver = {key: result['solver'][key]
               for key in ('objective', 'bound', 'status', 'search_status', 'state', 'stop_reason')}
-    return fingerprint({'baseline': result['baseline'], 'optimized': result['optimized'], 'solver': solver})
+    evidence = {'baseline': result['baseline'], 'optimized': result['optimized'], 'solver': solver}
+    if 'risk_assessment' in result:
+        risk = result['risk_assessment']
+        evidence['risk_assessment'] = {
+            'selected_id': risk['selected_id'],
+            'reference_id': risk['reference_id'],
+            'credit_policy': risk['credit_policy'],
+            'scenario_set': risk['scenario_set'],
+            'candidates': [{key: row[key] for key in ('id', 'version', 'plan', 'assessment', 'reduced_assessment')}
+                           for row in risk['candidates']],
+        }
+    return fingerprint(evidence)
 
 
 def production_targets(dataset, contract):

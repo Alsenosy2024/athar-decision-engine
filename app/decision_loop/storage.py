@@ -36,7 +36,7 @@ def previous_plan(connection, cid, run_id):
 
 
 def decision_contract(connection, company, dataset_id, payload, dataset_created_at, model, weights,
-                      forecast_id, time_limit, previous_run_id, previous):
+                      forecast_id, time_limit, previous_run_id, previous, risk_policy=None):
     row = connection.execute(
         'SELECT * FROM forecasts WHERE id = ? AND company_id = ?', (forecast_id, company['id']),
     ).fetchone()
@@ -49,6 +49,7 @@ def decision_contract(connection, company, dataset_id, payload, dataset_created_
         model=model, weights=weights, forecast_id=forecast_id, forecast=json.loads(row['result_json']),
         forecast_created_at=row['created_at'], cutoff_at=utc_now(), time_limit=time_limit,
         previous_run_id=previous_run_id, previous=asdict(previous) if previous is not None else None,
+        risk_policy=risk_policy,
     )
 
 

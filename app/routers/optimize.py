@@ -6,6 +6,7 @@ from app.db import audit, encode, request_conn, utc_now
 from app.decision_loop.approval_gate import effective_inputs, read_record
 from app.decision_loop.contract import ContractError, contracting_dataset, solution_fingerprint
 from app.decision_loop.eligibility import approved_inputs, constraint_policy
+from app.decision_loop.service import pinned_experiment
 from app.decision_loop.solution_record import solution_record, solve_options, stored_record
 from app.decision_loop.storage import decision_contract, previous_plan, replay_inputs
 from app.llm.explain import optimization_explanation
@@ -42,6 +43,8 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
             weights = contract['weights']
             time_limit = contract['solver']['wall_limit_s']
         else:
+            if body.risk_policy is not None and (template != 'production' or body.forecast_id is None):
+                raise ContractError('forecast_required', 'تقييم المخاطر محتاج توقع مثبت في قالب الإنتاج.')
             dataset_id, dataset, payload, model, weights = optimization_inputs(
                 connection, company, body, dataset_id,
             )
@@ -51,7 +54,7 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
             if body.forecast_id is not None:
                 contract = decision_contract(
                     connection, company, dataset_id, payload, dataset['created_at'], model, weights,
-                    body.forecast_id, time_limit, body.previous_run_id, previous,
+                    body.forecast_id, time_limit, body.previous_run_id, previous, body.risk_policy,
                 )
 
         solver_module = {'contracting': contracting, 'production': production}[template]
@@ -63,6 +66,8 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
         )
         if contract is not None:
             result['decision_contract'] = contract
+            if 'risk_policy' in contract:
+                result['risk_assessment'] = pinned_experiment(payload, model | {'weights': weights}, contract)
             result['solution_fingerprint'] = solution_fingerprint(result)
             if body.replay_run_id is not None and result['solution_fingerprint'] != original['solution_fingerprint']:
                 raise ContractError('replay_result_changed', 'نتيجة الإعادة اختلفت عن التشغيل المحفوظ.')

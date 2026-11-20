@@ -8,6 +8,7 @@ from pydantic import Field, JsonValue
 
 from app.decision_loop.contract import contracting_dataset
 from app.decision_loop.eligibility import approved_inputs, constraint_policy
+from app.decision_loop.service import pinned_experiment
 from app.decision_loop.solution_record import changed_input, solution_record, solve_options
 from app.db import audit, encode, request_conn, utc_now
 from app.llm.explain import scenario_explanation
@@ -43,6 +44,7 @@ class WhatIfResult(StrictBody):
     approval_policy: Literal['shadow_only'] | None = None
     source_input_fingerprint: str | None = None
     solution_record: dict[str, JsonValue] | None = None
+    risk_assessment: dict[str, JsonValue] | None = None
 
 
 def base_optimization(connection, cid, run_id):
@@ -91,6 +93,7 @@ def run_whatif(connection, company, body, settings, provider):
             payload, parameters, changed_model['weights'], time_limit,
             decision_contract=contract, **solve_options(template, policy),
         )
+        risk = pinned_experiment(payload, changed_model, contract) if contract and 'risk_policy' in contract else None
     except OptimizationInputError as error:
         raise api_error(422, 'invalid_optimization_input', str(error)) from None
     solver = solved['solver']
@@ -113,6 +116,8 @@ def run_whatif(connection, company, body, settings, provider):
     if contract:
         result['approval_policy'] = contract['approval_policy']
         result['source_input_fingerprint'] = contract['input_fingerprint']
+    if risk is not None:
+        result['risk_assessment'] = risk
     run_id = connection.execute(
         '''INSERT INTO runs (company_id, dataset_id, model_id, kind, base_run_id,
                              scenario_json, result_json, status, wall_s, created_at)

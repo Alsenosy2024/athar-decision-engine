@@ -203,6 +203,16 @@ class ProductionRisk(BaseModel):
     forecast_shortfall_units: dict[str, int] | None = None
 
 
+class RiskPolicy(BaseModel):
+    model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
+    alpha: float = Field(default=0.9, ge=0.5, le=0.95)
+    tail_weight: float = Field(default=0.5, ge=0, le=5)
+    min_service_pct: float = Field(default=0, ge=0, le=100)
+    max_service_risk: float = Field(default=0, ge=0, le=1)
+    max_credit_risk: float = Field(default=1, ge=0, le=1)
+    short_paths: int = Field(default=16, ge=4, le=64)
+
+
 class OptimizeRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
     dataset_id: int | None = Field(default=None, gt=0)
@@ -211,6 +221,7 @@ class OptimizeRequest(BaseModel):
     forecast_id: int | None = Field(default=None, gt=0)
     previous_run_id: int | None = Field(default=None, gt=0)
     replay_run_id: int | None = Field(default=None, gt=0)
+    risk_policy: RiskPolicy | None = None
 
 
 class PlanVariant(BaseModel):
@@ -242,6 +253,7 @@ class OptimizeResult(BaseModel):
     decision_contract: dict[str, JsonValue] | None = None
     solution_fingerprint: str | None = None
     solution_record: dict[str, JsonValue] | None = None
+    risk_assessment: dict[str, JsonValue] | None = None
 
 
 class RunDetail(BaseModel):

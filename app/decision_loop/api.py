@@ -5,11 +5,14 @@ from typing import Annotated, Self
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from app.db import request_conn
+from app.db import audit, encode, request_conn, utc_now
+from app.decision_loop.contract import ContractError, solution_fingerprint
 from app.decision_loop.evaluation import measure
 from app.decision_loop.frontier import shared_frontier
+from app.decision_loop.outcomes import evaluate_window
 from app.decision_loop.scenarios import fingerprint
 from app.decision_loop.service import PATHS, SHORT_PATHS, experiment
+from app.decision_loop.storage import optimization_snapshot, replay_inputs
 from app.delivery import approvals
 from app.enterprise.schema import NodeId, Number
 from app.optimization.common import OptimizationInputError
@@ -89,6 +92,62 @@ def production_experiment(cid: Id, body: ProductionExperiment, connection=Depend
         'input_fingerprint': fingerprint({'data': data, 'model': model, 'request': body.model_dump()}),
         'mode': 'exploratory',
     }
+
+
+class ActualDemand(StrictModel):
+    quantities: dict[str, Quantity] = Field(max_length=3500)
+
+
+def saved_observations(connection, cid, rid):
+    row = connection.execute(
+        'SELECT hybrid_observations.result_json FROM hybrid_observations JOIN runs ON runs.id = run_id '
+        'WHERE run_id = ? AND runs.company_id = ?', (rid, cid),
+    ).fetchone()
+    return json.loads(row['result_json']) if row else None
+
+
+@router.get('/companies/{cid}/decision-loop/runs/{rid}/actuals')
+def hybrid_actuals(cid: Id, rid: Id, connection=Depends(request_conn)):
+    try:
+        optimization_snapshot(connection, cid, rid)
+    except ContractError as error:
+        raise api_error(404, error.code, str(error)) from None
+    result = saved_observations(connection, cid, rid)
+    if result is None:
+        raise api_error(404, 'observations_not_found', 'مفيش طلب فعلي مسجل للتشغيل.')
+    return result
+
+
+@router.post('/companies/{cid}/decision-loop/runs/{rid}/actuals')
+def record_hybrid_actuals(cid: Id, rid: Id, body: ActualDemand, connection=Depends(request_conn)):
+    company = get_company(connection, cid)
+    existing = saved_observations(connection, cid, rid)
+    if existing is None:
+        try:
+            _, data, model, contract, _, original = replay_inputs(connection, company, rid)
+            risk = original.get('risk_assessment')
+            if risk is None or solution_fingerprint(original) != original['solution_fingerprint']:
+                raise ContractError('hybrid_run_required', 'التشغيل محتاج سجل تقييم مخاطر مثبت.')
+            benchmark = evaluate_window(data, model | {'weights': contract['weights']}, contract, risk, body.quantities)
+        except ContractError as error:
+            status = 404 if error.code == 'run_not_found' else 409
+            raise api_error(status, error.code, str(error)) from None
+        except OptimizationInputError as error:
+            raise api_error(422, 'invalid_observations', str(error)) from None
+        result = {'run_id': rid, 'company_id': cid, 'input_fingerprint': contract['input_fingerprint'],
+                  'solution_fingerprint': original['solution_fingerprint'], 'quantities': body.quantities,
+                  'created_at': utc_now(), 'benchmark': benchmark}
+        inserted = connection.execute(
+            'INSERT INTO hybrid_observations (run_id, result_json) VALUES (?, ?) ON CONFLICT(run_id) DO NOTHING',
+            (rid, encode(result)),
+        )
+        if inserted.rowcount:
+            audit(connection, cid, 'decision_loop.actuals', 'run', rid)
+            return result
+        existing = saved_observations(connection, cid, rid)
+    if existing['quantities'] != body.quantities:
+        raise api_error(409, 'observations_already_recorded', 'التشغيل له طلب فعلي مسجل بالفعل.')
+    return existing
 
 
 class UnitPlans(StrictModel):

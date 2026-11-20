@@ -153,6 +153,21 @@ class Answer:
                 lines.append(f'{item["label_ar"]} عند الحد في {count}.')
         return ' '.join(lines)
 
+    def risk(self, result):
+        risk = result.get('risk_assessment')
+        if risk is None:
+            return ''
+        for index, row in enumerate(risk['candidates']):
+            if row['id'] == risk['selected_id']:
+                path = ['risk_assessment', 'candidates', index, 'assessment']
+                cost = self.value('expected_cost', row['assessment']['mean']['cost_sar'],
+                                  [*path, 'mean', 'cost_sar'], self.unit)
+                tail = self.value('cost_cvar', row['assessment']['cvar']['cost_sar'],
+                                  [*path, 'cvar', 'cost_sar'], self.unit)
+                return (f'بديل السيناريوهات حقق أقل درجة بين البدائل المؤهلة للتجربة. '
+                        f'متوسط تكلفته {cost}، ومتوسط تكلفة الذيل (CVaR) {tail}.')
+        return 'بوابة المخاطر استبعدت كل البدائل من الاختيار التجريبي.'
+
     def summary(self, result, variant, *, compare=False, show_limit=False):
         solver = self.record['solver']
         status = solver.get('search_status') or solver['status']
@@ -162,7 +177,10 @@ class Answer:
         if 'inputs_unapproved' in verdict['reasons']:
             text += ' المدخلات محتاجة اعتماد.'
         if not verdict['has_candidate']:
-            return text + ' مفيش خطة قابلة للعرض للتغييرات دي.'
+            label = 'خطة مركزية' if 'risk_assessment' in result else 'خطة'
+            return ' '.join(filter(None, (
+                text + f' مفيش {label} قابلة للعرض للتغييرات دي.', self.risk(result),
+            )))
         if show_limit and (change := self.record.get('changed_input')):
             key, unit, name = change['metric'], change['unit'], change['label_ar']
             constraint_id = change.get('constraint_id')
@@ -171,4 +189,4 @@ class Answer:
             new = self.value(key, change['after'], ['solution_record', 'changed_input', 'after'],
                              unit, constraint_id=constraint_id)
             text += f' {name} اتغير من {prior} إلى {new}.'
-        return ' '.join(filter(None, (text, self.cost(result, variant, compare), self.constraints())))
+        return ' '.join(filter(None, (text, self.cost(result, variant, compare), self.constraints(), self.risk(result))))
