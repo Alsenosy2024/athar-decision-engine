@@ -1,6 +1,7 @@
 from app.access import active_principal, company_visible, require_company, require_role
 from app.db import audit, encode, utc_now
 from app.enterprise.client_plans import resolve_client_plans
+from app.enterprise.edge_workflow import materialize, prepare_write
 from app.enterprise.schema import EngineLink, Graph, ModelInput, ModelUpdate
 from app.ingestion.loader import load_demo
 from app.schemas import api_error
@@ -53,8 +54,9 @@ def read(connection, model_id, version=None):
     if row is None or not company_visible(active_principal.get(), row['company_id']):
         raise api_error(404, 'enterprise_model_not_found', 'النموذج المؤسسي أو الإصدار مش موجود.')
     result = dict(row)
-    result['graph'] = Graph.model_validate_json(result.pop('graph_json'))
-    result['graph']._client_sources = resolve_client_plans(connection, result['graph'], result['company_id'])
+    graph = materialize(Graph.model_validate_json(result.pop('graph_json')), result['created_at'])
+    graph._client_sources = resolve_client_plans(connection, graph, result['company_id'])
+    result['graph'] = graph
     return result
 
 
@@ -66,15 +68,18 @@ def list_versions(connection, model_id):
     return [dict(row) for row in rows]
 
 
-def write_version(connection, model_id, version, body: ModelInput):
+def write_version(connection, model_id, version, body: ModelInput, *, origin='system', review=None, reviewer=None):
+    previous = read(connection, model_id, version - 1)['graph'] if version > 1 else None
+    timestamp = utc_now()
+    graph = prepare_write(body.graph, timestamp, previous=previous, origin=origin, review=review, reviewer=reviewer)
     connection.execute(
         '''INSERT INTO enterprise_model_versions (model_id, version, name, graph_json, created_at)
            VALUES (?, ?, ?, ?, ?)''',
-        (model_id, version, body.name, encode(body.graph.model_dump(mode='json')), utc_now()),
+        (model_id, version, body.name, encode(graph.model_dump(mode='json')), timestamp),
     )
 
 
-def create(connection, body: ModelInput, company_id=None):
+def create(connection, body: ModelInput, company_id=None, *, origin='builder'):
     require_company(active_principal.get(), company_id)
     if company_id is not None and not connection.execute(
             'SELECT 1 FROM companies WHERE id = ?', (company_id,)).fetchone():
@@ -86,7 +91,7 @@ def create(connection, body: ModelInput, company_id=None):
         model_id = connection.execute(
             "INSERT INTO enterprise_models (template, company_id) VALUES ('enterprise', ?)", (company_id,),
         ).lastrowid
-        write_version(connection, model_id, 1, body)
+        write_version(connection, model_id, 1, body, origin=origin)
         audit(connection, company_id, 'enterprise.create', 'enterprise_model', model_id, {'version': 1})
         return read(connection, model_id)
 
@@ -101,7 +106,7 @@ def update(connection, model_id, body: ModelUpdate):
         bind_sources(connection, body.graph, previous['company_id'], previous['graph'])
         validate_link_entities(body.graph)
         version = previous['version'] + 1
-        write_version(connection, model_id, version, body)
+        write_version(connection, model_id, version, body, origin='builder')
         audit(connection, previous['company_id'], 'enterprise.update', 'enterprise_model', model_id, {'version': version})
         return read(connection, model_id)
 
@@ -132,3 +137,29 @@ def bind_sources(connection, graph, company_id, previous=None):
     if pinned != old and principal is not None:
         require_role(principal)
     graph._client_sources = resolve_client_plans(connection, graph, company_id)
+
+
+def approve_edge(connection, model_id, version, source, target, principal):
+    require_role(principal, 'approver')
+    with connection:
+        connection.execute('BEGIN IMMEDIATE')
+        snapshot = read(connection, model_id)
+        if snapshot['version'] != version:
+            raise api_error(409, 'enterprise_version_conflict', 'النموذج اتعدّل. حمّل الإصدار الحالي وحاول تاني.')
+        graph = snapshot['graph']
+        edges = []
+        found = False
+        for edge in graph.edges:
+            if (edge.source, edge.target) == (source, target):
+                if edge.status != 'draft':
+                    raise api_error(409, 'edge_already_approved', 'العلاقة معتمدة بالفعل.')
+                found = True
+                edge = edge.model_copy(update={'status': 'approved'})
+            edges.append(edge)
+        if not found:
+            raise api_error(404, 'edge_not_found', 'العلاقة مش موجودة في الإصدار ده.')
+        body = ModelInput(name=snapshot['name'], graph=graph.model_copy(update={'edges': edges}))
+        write_version(connection, model_id, version + 1, body, origin='edge_approval', reviewer=principal.username)
+        audit(connection, snapshot['company_id'], 'enterprise.edge.approve', 'enterprise_model', model_id,
+              {'version': version + 1, 'source': source, 'target': target})
+        return read(connection, model_id)

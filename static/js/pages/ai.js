@@ -21,6 +21,12 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     forecastNode: '', forecastSource: 'model', horizon: '4',
     objective: '', direction: 'maximize', targetPct: '', cashFloor: '', riskCeiling: '', controls: [],
     goalText: '', busy: false, error: '', message: '',
+    get mayResolve() {
+        const role = this.$store.app.user?.role;
+        const edgeReview = this.review?.kind === 'calibration' ||
+            (this.review?.kind === 'entry' && this.payload?.relations?.length);
+        return role === 'admin' || (edgeReview ? role === 'approver' : role === 'planner');
+    },
     get allowed() { return ['admin', 'planner'].includes(this.$store.app.user?.role); },
     get payload() { return this.review?.data || {}; },
     get modelNodes() { return this.data?.nodes || []; },

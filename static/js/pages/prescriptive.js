@@ -169,17 +169,22 @@ document.addEventListener('alpine:init', () => {
             if (live()) this.message = 'اتسجلت المراجعة.';
         },
         startActuals(item) {
-            this.actualForms[item.id] = { observed_on: item.actuals?.observed_on || '', metrics: { ...item.actuals?.metrics } };
+            this.actualForms[item.id] = {
+                observed_on: item.actuals?.observed_on || '', metrics: { ...item.actuals?.metrics }, close: false, evidence: '',
+            };
         },
         async saveActuals(id, base, live) {
             const form = this.actualForms[id];
             const metrics = Object.fromEntries(Object.entries(form.metrics).filter(([, value]) => phase18Value(value) !== null)
                 .map(([key, value]) => [key, Number(value)]));
-            await api(this.endpoint + '/decisions/' + id + '/actuals', post({ observed_on: form.observed_on, metrics }));
+            await api(this.endpoint + '/decisions/' + id + '/actuals', post({ observed_on: form.observed_on, metrics, close: form.close === true, evidence: form.evidence?.trim() || null }));
             if (!live()) return;
             delete this.actualForms[id];
             await this.loadTab(base, live);
-            if (live()) this.message = 'اتسجلت القيم الفعلية واتحدّث تقرير الدقة.';
+            if (live()) this.message = form.close ? 'اتقفل القرار بالقيم الفعلية.' : 'اتسجلت القيم الفعلية واتحدّث تقرير الدقة.';
+        },
+        outcomeLabel(status) {
+            return { tracking: 'جاري القياس', awaiting_actuals: 'في انتظار القياس', closed: 'مقفل بالفعلي' }[status];
         },
         decisionLabel(status) { return { draft: 'مسودة', approved: 'معتمد', rejected: 'مرفوض' }[status]; },
     }));

@@ -9,6 +9,7 @@ import re
 import numpy as np
 from pydantic import Field
 
+from app.enterprise.edge_contracts import contract_unit
 from app.enterprise.impact_graph import CausalGraph, ImpactError
 from app.enterprise.schema import Edge, EdgeRule, Graph, ModelInput, Node, NodeType, Scalar, Series, StrictFields, Unit
 from app.intelligence.documents import Evidence
@@ -485,7 +486,7 @@ def preview(rows, graph, name, settings, fx):
 
 def explicit_relationships(rows, graph, definitions, issues):
     edges = list(graph.edges)
-    keys = {node.id for node in graph.nodes}
+    nodes = {node.id: node for node in graph.nodes}
     reviewed = []
     for row in rows:
         if not row.source.startswith('وصف الشركة:'):
@@ -496,19 +497,26 @@ def explicit_relationships(rows, graph, definitions, issues):
             continue
         source = alias_match(match[1], definitions)
         target = alias_match(match[2], definitions)
-        if not source or not target or any(item[0] not in keys for item in (source, target)):
+        if not source or not target or any(item[0] not in nodes for item in (source, target)):
             issues.append({'source': row.source, 'message_ar': 'طرف العلاقة محتاج بند موجود في المسودة.'})
             continue
         try:
             multiplier = float(decimal_value(match[3]))
             if abs(multiplier) > 100:
                 raise ValueError
+            rule = EdgeRule(multiplier=multiplier)
             edge = Edge(source=source[0], target=target[0],
                         name_ar=f'{definitions[source[0]][2]} → {definitions[target[0]][2]}'[:160],
-                        rule=EdgeRule(multiplier=multiplier))
+                        rule=rule, unit=contract_unit(nodes[source[0]].unit, nodes[target[0]].unit, rule),
+                        evidence=row.source[:600], status='draft')
             others = [item for item in edges if (item.source, item.target) != (edge.source, edge.target)]
-            updated = Graph(nodes=graph.nodes, edges=[*others, edge])
-            CausalGraph(updated)
+            updated = Graph(nodes=graph.nodes, edges=[*others, edge], arms=graph.arms)
+            proposed = {(item['edge']['source'], item['edge']['target']) for item in reviewed}
+            proposed.add((edge.source, edge.target))
+            CausalGraph(updated.model_copy(update={'edges': [
+                item.model_copy(update={'status': 'approved'}) if (item.source, item.target) in proposed else item
+                for item in updated.edges
+            ]}))
         except (ValueError, ImpactError):
             issues.append({'source': row.source, 'message_ar': 'العلاقة أو المعامل مش صالحين أو بيعملوا دورة.'})
             continue

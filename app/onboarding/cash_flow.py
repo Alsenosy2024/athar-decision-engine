@@ -19,7 +19,7 @@ def lagged(values, weeks):
 
 
 def forecast_ledger(values, terms, weeks):
-    if any(values[key] is None for key in ('cash.opening', 'ar', 'ap', *FLOW_LABELS, 'unit_cost')):
+    if any(values.get(key) is None for key in ('cash.opening', 'ar', 'ap', *FLOW_LABELS, 'unit_cost')):
         return None
 
     sales = values['sales.volume']

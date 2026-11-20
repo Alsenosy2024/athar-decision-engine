@@ -44,6 +44,10 @@ def test_horizon_ledger_with_receivable_payable_and_inventory_roll_forward(clien
         kpis = by_key(result['nodes'])
         assert kpis['pnl.result']['after'] == 1540 * weeks
         assert kpis['cash']['after'] == after[-1]['closing_cash']
+        indicators = result['outcome_context']['indicators']
+        assert indicators['cash']['weeks'] == indicators['pnl.result']['weeks'] == weeks
+        assert indicators['cash']['basis'] == ('week_end_snapshot' if weeks == 1 else 'final_value')
+        assert indicators['pnl.result']['basis'] == ('week_end_snapshot' if weeks == 1 else 'total_over_period')
         assert result['charts']['cash']['after'] == [row['closing_cash'] for row in after]
         assert after[0]['opening_inventory'] == 100 and after[0]['closing_inventory'] == 50
         assert after[0]['purchased_units'] == 60
@@ -153,6 +157,7 @@ def test_scheduled_snapshot_and_approved_client_plan_replay(client, db_path, tmp
     assert (rows['pnl.revenue']['before'], rows['pnl.revenue']['after']) == (120, 150)
     assert (rows['pnl.result']['before'], rows['pnl.result']['after']) == (80, 110)
     assert 'operating_ledger' in {edge['method'] for edge in result['paths']}
+    assert result['paths'][0]['status'] == 'approved' and result['paths'][0]['unit'] == 'SAR'
     assert result['optimizers_run'] == {'baseline': [], 'scenario': ['production']}
     booked, collected = result['cash_ledger']['before']
     reconcile([booked, collected])
@@ -161,6 +166,8 @@ def test_scheduled_snapshot_and_approved_client_plan_replay(client, db_path, tmp
     assert booked['produced_units'] == production_in_week_one
     short = ok(client.post(WHATIF, json=body | {'weeks': 1}))
     assert by_key(short['nodes'])['line.LineQA']['before'] == production_in_week_one
+    indicators = short['outcome_context']['indicators']
+    assert indicators['pnl.revenue']['days'] == indicators['line.LineQA']['days'] == 7
     assert booked['shipped_units'] == 10
     assert booked['direct_cost'] == 4 * booked['shipped_units']
     assert ok(client.get(MAP_BASELINE, params={'model_id': snapshot['id'], 'weeks': 2}))['profit'] == 80

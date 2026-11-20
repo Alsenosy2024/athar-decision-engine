@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, JsonValue
 
+from app.enterprise.edge_contracts import EdgeProvenance, EdgeStatus, EdgeUnit
 from app.enterprise.schema import Edge, NodeType, Unit
 
 Source = Literal['actual', 'estimated', 'missing']
@@ -59,6 +60,10 @@ class MapEdge(BaseModel):
     from_department: str
     to_department: str
     lag_weeks: int
+    unit: EdgeUnit
+    status: EdgeStatus
+    provenance: EdgeProvenance | None
+    can_approve: bool
     baseline_volume: float | None
     volume_unit: Unit | None
     weight: float
@@ -176,6 +181,7 @@ class Charts(BaseModel):
 class WhatIfResult(SelectionResult):
     context: ResultContext
     name: str
+    outcome_context: dict[str, JsonValue]
     nodes: list[ImpactNode]
     assumptions: list[AppliedAssumption]
     paths: list[ImpactEdge]

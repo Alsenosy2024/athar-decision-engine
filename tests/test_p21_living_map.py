@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from playwright.sync_api import expect, sync_playwright
 import pytest
 
+from app.db import encode, get_conn
 from app.enterprise.living_map import GROUP
 from app.enterprise.schema import NodeType
 from app.enterprise.whatif import ImpactModel
@@ -146,10 +147,14 @@ def test_map_scope_and_goal_csrf(client):
     assert first['critique']['weakest']['node_id'] == 'demand'
 
 
-def test_map_preserves_invalid_graph_for_inspection(client):
+def test_map_preserves_invalid_graph_for_inspection(client, db_path):
     body = graph()
-    body['graph']['edges'].append({'source': 'cash', 'target': 'demand', 'name_ar': 'دورة'})
     model = client.post('/api/enterprise/models?company_id=1', json=body).json()
+    body['graph']['edges'].append({'source': 'cash', 'target': 'demand', 'name_ar': 'دورة', 'rule': {'multiplier': 1}})
+    # This version predates rejection of cyclic graphs at the write boundary.
+    with get_conn(db_path) as connection:
+        connection.execute('UPDATE enterprise_model_versions SET graph_json = ? WHERE model_id = ?',
+                           (encode(body['graph']), model['id']))
     result = client.get(API, params={'model_id': model['id']}).json()
     assert result['analysis_error'] and not result['drivers']
     assert len(result['edges']) == len(body['graph']['edges'])

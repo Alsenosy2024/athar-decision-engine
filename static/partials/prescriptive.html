@@ -127,7 +127,7 @@
         <div class="actions">
             <button type="button" class="button secondary" :disabled="!!busy"
                     @click="perform('preview', preview)" data-testid="p18-preview">عاين المعايرة</button>
-            <button type="button" class="button primary" :disabled="!!busy || !calibration.length" x-show="editAllowed"
+            <button type="button" class="button primary" :disabled="!!busy || !calibration.length" x-show="$store.app.canApprove"
                     @click="perform('apply', apply)" data-testid="p18-apply">احفظ المعايرة</button>
         </div>
         <div class="table-scroll" x-show="calibration.length">
@@ -226,17 +226,22 @@
                         · إصدار <bdi x-text="number(item.version)"></bdi></summary>
                     <p x-show="item.reviewer">المراجع <bdi x-text="item.reviewer"></bdi> · <span x-text="timestamp(item.decided_at)"></span></p>
                     <p x-show="item.comment" x-text="item.comment"></p>
+                    <p x-show="outcomeLabel(item.outcome_status)" data-testid="decision-outcome-state"
+                       x-text="outcomeLabel(item.outcome_status)"></p>
                     <ul>
                         <template x-for="change in item.forecast.assumptions" :key="change.node_id">
                             <li><bdi x-text="change.node_id"></bdi> <bdi x-text="'من ' + number(change.before) + ' إلى ' + number(change.after)"></bdi></li>
                         </template>
                     </ul>
                     <div class="table-scroll">
-                        <table><thead><tr><th>المؤشر</th><th>خط الأساس</th><th>التوقع</th><th>الفعلي</th><th>الفرق</th></tr></thead><tbody>
+                        <table><thead><tr><th>المؤشر</th><th>خط الأساس</th><th>التوقع</th><th>أفق القياس</th><th>الفعلي</th><th>الفرق</th></tr></thead><tbody>
                             <template x-for="(value, key) in item.forecast.kpis" :key="key">
-                                <tr><th scope="row" x-text="labels[key] + ' (' + setup?.kpis[key]?.unit + ')'"></th>
+                                <tr><th scope="row" x-text="(item.outcome_contract?.indicators[key]?.label || labels[key] || key)
+                                    + ' (' + (item.outcome_contract?.indicators[key]?.unit || setup?.kpis[key]?.unit || '') + ')'"></th>
                                     <td><bdi x-text="number(item.forecast.baseline[key])"></bdi></td>
                                     <td><bdi x-text="number(value)"></bdi></td>
+                                    <td><bdi x-text="item.outcome_contract?.indicators[key]
+                                        ? number(item.outcome_contract.indicators[key].weeks) + ' أسبوع' : '—'"></bdi></td>
                                     <td><bdi x-text="number(item.actuals?.metrics[key])"></bdi></td>
                                     <td><bdi x-text="signed(item.accuracy.find(row => row.kpi === key)?.error)"></bdi></td></tr>
                             </template>
@@ -252,8 +257,9 @@
                                     @click="perform('decision', (base, live) => decide(item.id, 'rejected', base, live))">ارفض</button>
                         </div>
                     </div>
-                    <p x-show="item.actuals">تاريخ قياس الفعلي <bdi x-text="item.actuals?.observed_on"></bdi></p>
-                    <button type="button" class="button secondary" x-show="editAllowed && item.status === 'approved' && !actualForms[item.id]"
+                    <p x-show="item.actuals">تاريخ قياس الفعلي <bdi x-text="item.actuals?.observed_on"></bdi>
+                        <small x-show="item.actuals?.evidence" x-text="item.actuals?.evidence"></small></p>
+                    <button type="button" class="button secondary" x-show="editAllowed && item.status === 'approved' && item.outcome_status !== 'closed' && !actualForms[item.id]"
                             :disabled="!!busy" @click="startActuals(item)">سجّل القيم الفعلية</button>
                     <template x-if="actualForms[item.id]">
                         <form @submit.prevent="perform('actuals', (base, live) => saveActuals(item.id, base, live))">
@@ -263,11 +269,13 @@
                             </label>
                             <div class="field-group">
                                 <template x-for="key in Object.keys(item.forecast.kpis).filter(key => item.forecast.kpis[key] != null)" :key="key">
-                                    <label class="field"><span x-text="labels[key]"></span>
-                                        <input type="number" step="any" x-model="actualForms[item.id].metrics[key]" :data-testid="'p18-actual-' + key">
+                                    <label class="field"><span x-text="item.outcome_contract?.indicators[key]?.label || labels[key] || key"></span>
+                                        <input type="number" step="any" :required="actualForms[item.id].close === true && item.outcome_contract?.indicators[key]?.required === true" x-model="actualForms[item.id].metrics[key]" :data-testid="'p18-actual-' + key">
                                     </label>
                                 </template>
                             </div>
+                            <label class="field">مرجع القياس<input x-model="actualForms[item.id].evidence" maxlength="600"></label>
+                            <label class="check"><input type="checkbox" x-model="actualForms[item.id].close"> اقفل القرار بالقيم الفعلية</label>
                             <div class="actions"><button class="button primary" :disabled="!!busy">احفظ الفعلي</button></div>
                         </form>
                     </template>
@@ -280,7 +288,7 @@
             <div class="table-scroll">
                 <table class="prescriptive-accuracy"><thead><tr><th>المؤشر</th><th>العدد</th><th><abbr title="متوسط الخطأ المطلق">MAE</abbr></th><th><abbr title="متوسط نسبة الخطأ المطلق">MAPE</abbr></th></tr></thead><tbody>
                     <template x-for="row in log?.accuracy || []" :key="row.kpi">
-                        <tr data-testid="p18-accuracy"><th scope="row" x-text="labels[row.kpi]"></th>
+                        <tr data-testid="p18-accuracy"><th scope="row" x-text="labels[row.kpi] || row.kpi"></th>
                             <td><bdi x-text="number(row.count)"></bdi></td><td><bdi x-text="number(row.mae)"></bdi></td>
                             <td><bdi x-text="percent(row.mape == null ? null : row.mape / 100)"></bdi></td></tr>
                     </template>
@@ -305,7 +313,7 @@
                     <p x-show="item.accuracy.length">الفعلي بيغطي <bdi x-text="number(item.observed_rows)"></bdi> بند من الخطة.</p>
                     <ul>
                         <template x-for="row in item.accuracy" :key="row.kpi">
-                            <li><span x-text="labels[row.kpi]"></span>
+                            <li><span x-text="labels[row.kpi] || row.kpi"></span>
                                 · مخطط <bdi x-text="number(row.predicted)"></bdi>
                                 · فعلي <bdi x-text="number(row.actual)"></bdi>
                                 · فرق <bdi x-text="signed(row.error)"></bdi></li>

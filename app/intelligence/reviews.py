@@ -4,6 +4,8 @@ import json
 from app.db import audit, encode, get_conn, utc_now
 from app.enterprise import store
 from app.enterprise.schema import ModelInput, Scalar, Series
+from app.prescriptive import records
+from app.prescriptive.outcomes import recommendation_forecast
 from app.schemas import api_error
 
 DDL = """
@@ -75,13 +77,28 @@ def read(connection, company_id, review_id):
 def propose(connection, company_id, user, kind, snapshot, data, *, xml_files=()):
     model_id = snapshot['id'] if snapshot else None
     version = snapshot['version'] if snapshot else None
+    created_at = utc_now()
     with connection:
         review_id = connection.execute(
             '''INSERT INTO ai_reviews
                (company_id, model_id, model_version, kind, payload_json, created_at, created_by, created_by_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (company_id, model_id, version, kind, encode(data), utc_now(), user.username, user.id),
+            (company_id, model_id, version, kind, encode(data), created_at, user.username, user.id),
         ).lastrowid
+        proposed = data.get('relations', []) if kind == 'entry' else data.get('edges', []) if kind == 'calibration' else []
+        if proposed:
+            provenance = {'source': 'lab_review', 'actor': user.username,
+                          'recorded_at': created_at, 'review_id': review_id}
+            related = {}
+            for item in proposed:
+                edge = item['edge']
+                edge['provenance'] = provenance | {'evidence': edge.get('evidence')}
+                related[edge['source'], edge['target']] = edge
+            if kind == 'entry':
+                edges = data['model']['graph']['edges']
+                data['model']['graph']['edges'] = [related.get((edge['source'], edge['target']), edge)
+                                                   for edge in edges]
+            connection.execute('UPDATE ai_reviews SET payload_json = ? WHERE id = ?', (encode(data), review_id))
         if xml_files:
             connection.executemany('INSERT INTO ai_review_p6 (review_id, ordinal, xml) VALUES (?, ?, ?)',
                                    [(review_id, i, contents) for i, contents in enumerate(xml_files)])
@@ -90,7 +107,7 @@ def propose(connection, company_id, user, kind, snapshot, data, *, xml_files=())
         return read(connection, company_id, review_id)
 
 
-def write_model(connection, company_id, existing, model: ModelInput):
+def write_model(connection, company_id, existing, model: ModelInput, review, reviewer):
     store.validate_link_entities(model.graph)
     if existing is None:
         model_id = connection.execute(
@@ -101,7 +118,8 @@ def write_model(connection, company_id, existing, model: ModelInput):
     else:
         model_id = existing['id']
         version = existing['version'] + 1
-    store.write_version(connection, model_id, version, model)
+    store.write_version(connection, model_id, version, model, origin='lab_review',
+                        review=review, reviewer=reviewer.username)
     audit(connection, company_id, 'enterprise.create' if existing is None else 'enterprise.update',
           'enterprise_model', model_id, {'version': version, 'source': 'ai_review'})
     return {'model_id': model_id, 'version': version}
@@ -138,16 +156,22 @@ def observed_history(connection, model_id, graph, imported=(), *, empty_as_missi
     return graph.model_copy(update={'nodes': nodes}), excluded
 
 
-def save_recommendation(connection, company_id, snapshot, review_id, rank, recommendation):
+def save_recommendation(connection, company_id, snapshot, review_id, rank, payload):
+    recommendation = payload['recommendations'][rank]
+    name = f'اقتراح أثر {review_id} · {rank + 1}'
     scenario_id = connection.execute(
         '''INSERT INTO enterprise_scenarios (name, model_id, version, assumptions_json, created_at, company_id)
            VALUES (?, ?, ?, ?, ?, ?)''',
-        (f'اقتراح أثر {review_id} · {rank + 1}', snapshot['id'], snapshot['version'],
+        (name, snapshot['id'], snapshot['version'],
          encode(recommendation['assumptions']), utc_now(), company_id),
     ).lastrowid
     audit(connection, company_id, 'enterprise.scenario.create', 'enterprise_scenario', scenario_id,
           {'model_id': snapshot['id'], 'version': snapshot['version'], 'review_id': review_id})
-    return {'scenario_id': scenario_id, 'rank': rank}
+    outcome = {'scenario_id': scenario_id, 'rank': rank}
+    if recommendation.get('target_met') is not False:
+        forecast = recommendation_forecast(snapshot, review_id, payload, recommendation)
+        outcome['decision_id'] = records.insert_draft(connection, snapshot, name, forecast)
+    return outcome
 
 
 def save_schedules(connection, company_id, review_id, schedules):

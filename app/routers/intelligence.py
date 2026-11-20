@@ -9,11 +9,12 @@ from fastapi import APIRouter, Depends, File, Form, Path, Query, Request, Upload
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import Field, ValidationError
 
-from app.access import request_principal
+from app.access import request_principal, require_role
 from app.config import STATIC_DIR
 from app.connectors.files import MAX_UPLOAD_BYTES, upload_bytes
 from app.db import request_conn
 from app.enterprise import store
+from app.enterprise.result_context import result_context
 from app.enterprise.impact_graph import Assumption, ImpactError, WhatIfRequest
 from app.enterprise.schema import Graph, ModelInput, Node, NodeId, StrictFields
 from app.intelligence import analysis, calibration, decision, documents, extraction, forecasting, reviews
@@ -247,6 +248,9 @@ def recommend(cid: Id, body: GoalRequest, request: Request, connection=Depends(r
     with impact_errors():
         model = impact_model(snapshot, request, body.goal.weeks)
         result = decision.recommend(model, body.goal)
+        result['context'] = result_context(connection, snapshot, body.goal.weeks)
+        result['context'] = {key: value.isoformat() if isinstance(value, date) else value
+                             for key, value in result['context'].items()}
     return reviews.propose(connection, cid, request.state.principal, 'decision', snapshot, result)
 
 
@@ -303,6 +307,12 @@ def get_review(cid: Id, review_id: Id, connection=Depends(request_conn)):
 
 @router.post('/reviews/{review_id}/decide')
 def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connection=Depends(request_conn)):
+    principal = request.state.principal
+    pending = reviews.read(connection, cid, review_id)
+    changes_edges = pending['kind'] == 'calibration' or (
+        pending['kind'] == 'entry' and bool(pending['data']['relations']))
+    require_role(principal, 'approver' if changes_edges else 'planner')
+
     def apply(review, current):
         payload = review['data']
         if review['kind'] == 'entry':
@@ -318,7 +328,13 @@ def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connectio
                     model = extraction.apply_estimates(model, payload['estimates'], chosen)
                 except ValueError as error:
                     raise api_error(422, 'ai_invalid_estimates', str(error)) from None
-                result |= reviews.write_model(connection, cid, current, model)
+                proposed = {(item['edge']['source'], item['edge']['target']) for item in payload['relations']}
+                graph = model.graph.model_copy(update={'edges': [
+                    edge.model_copy(update={'status': 'approved'}) if (edge.source, edge.target) in proposed else edge
+                    for edge in model.graph.edges
+                ]})
+                result |= reviews.write_model(connection, cid, current, model.model_copy(update={'graph': graph}),
+                                              review, principal)
                 result['accepted_estimates'] = [payload['estimates'][index] for index in chosen]
                 reviews.update_provenance(connection, result['model_id'], review_id,
                                           payload['diff'], result['accepted_estimates'])
@@ -335,16 +351,15 @@ def decide(cid: Id, review_id: Id, body: Resolution, request: Request, connectio
             edges = {(edge.source, edge.target): edge.model_dump(mode='json') for edge in graph.edges}
             for row in payload['edges']:
                 edge = row['edge']
-                edges[edge['source'], edge['target']] = edge
+                edges[edge['source'], edge['target']] = edge | {'status': 'approved'}
             updated = Graph.model_validate(graph.model_dump(mode='json') | {'edges': list(edges.values())})
-            with impact_errors():
-                impact_model(current | {'graph': updated}, request, 52)
-            return reviews.write_model(connection, cid, current, ModelInput(name=current['name'], graph=updated))
+            return reviews.write_model(connection, cid, current, ModelInput(name=current['name'], graph=updated),
+                                       review, principal)
         if review['kind'] == 'decision':
             options = payload['recommendations']
             if body.rank >= len(options) or options[body.rank]['violations']:
                 raise api_error(422, 'ai_recommendation_infeasible', 'اختار توصية بتحترم القيود قبل الحفظ.')
-            return reviews.save_recommendation(connection, cid, current, review_id, body.rank, options[body.rank])
+            return reviews.save_recommendation(connection, cid, current, review_id, body.rank, payload)
         if review['kind'] == 'forecast' and review['model_id'] is None:
             company = get_company(connection, cid, allow_enterprise=True)
             if company['active_dataset_id'] != payload['dataset_id']:

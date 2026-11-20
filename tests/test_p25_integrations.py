@@ -97,7 +97,7 @@ def test_v1_map_kpis_whatif_match_existing_engine(client, db_path):
     public_map = client.get(f'{base}/map', headers=auth)
     assert public_map.status_code == 200, public_map.text
     assert public_map.headers['Cache-Control'] == 'no-store'
-    internal_fields = {'is_demo', 'models', 'flow_source', 'flow_roads', 'process_mining'}
+    internal_fields = {'is_demo', 'models', 'flow_source', 'flow_roads', 'process_mining', 'decision_outcomes'}
     assert public_map.json() == {key: value for key, value in live_map.items() if key not in internal_fields}
     baseline = client.get(f'{base}/kpis', headers=auth, params={'weeks': 8}).json()
     assert baseline['weeks'] == 8 and baseline['kpis']['profit'] == 240
@@ -237,9 +237,10 @@ def test_approval_and_alert_outbox_signed_retries_and_dedup(client, db_path, rec
     base = f'/api/enterprise/models/{model_id}/prescriptive'
     other_base = f'/api/enterprise/models/{other_model}/prescriptive'
     with get_conn(db_path) as connection:
-        approved = records.create_draft(connection, model_id, 1, 'اختبار الاعتماد', {})
-        rejected = records.create_draft(connection, model_id, 1, 'اختبار الرفض', {})
-        unrelated = records.create_draft(connection, other_model, 1, 'شركة تانية', {})
+        forecast = {'kpis': {'profit': 240, 'cash_low': 500}, 'weeks': 8}
+        approved = records.create_draft(connection, model_id, 1, 'اختبار الاعتماد', forecast)
+        rejected = records.create_draft(connection, model_id, 1, 'اختبار الرفض', forecast)
+        unrelated = records.create_draft(connection, other_model, 1, 'شركة تانية', forecast)
         audit(connection, 1, 'enterprise.decision.approved', 'enterprise_decision', approved)
         connection.rollback()  # The approval event shares the audit transaction.
     with get_conn(db_path) as connection:

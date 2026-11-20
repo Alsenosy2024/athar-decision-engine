@@ -24,7 +24,8 @@ def latest_records(records):
 
 
 def projection_edges(graph):
-    return {(edge.source, edge.target): 'projection' for edge in graph.edges if edge.rule is None}
+    return {(source, target): 'projection'
+            for target, (_, _, _, sources) in OUTPUTS.items() for source in sources}
 
 
 def compute_inputs(graph):
@@ -58,8 +59,11 @@ def project_output(key, values, weeks):
 
 def evaluate(causal, weeks, changes, terms=None):
     values, effects, ledger = {}, {}, None
+    dependencies = {(edge.source, edge.target) for edge, method in causal.executable if method == 'projection'}
     for key in causal.order:
-        if key == 'cash':
+        if key in OUTPUTS and not all((source, key) in dependencies for source in OUTPUTS[key][3]):
+            value = None
+        elif key == 'cash':
             stock = values.get('inventory')
             if 'inventory' not in values and causal.nodes.get('inventory') is not None:
                 opening_stock = changes.get('inventory', reference(causal.nodes['inventory']))
@@ -75,7 +79,8 @@ def evaluate(causal, weeks, changes, terms=None):
         if value is not None:
             for edge in causal.rules[key]:
                 ref = reference(causal.nodes[edge.source])
-                if ref in (None, 0) or reference(causal.nodes[key]) is None:
+                if (ref is None or (edge.rule and edge.rule.mode == 'elasticity' and not ref)
+                        or reference(causal.nodes[key]) is None):
                     continue
                 effect = causal.edge_effect(edge, values[edge.source], reference(causal.nodes[key]), weeks, ref)
                 if effect is not None:

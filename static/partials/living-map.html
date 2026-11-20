@@ -33,6 +33,37 @@
       </div>
     </header>
 
+    <details class="lm-divider" x-show="draftEdges.length" data-testid="map-edge-contracts">
+      <summary>علاقات في انتظار الاعتماد <bdi x-text="number(draftEdges.length)"></bdi></summary>
+      <ul>
+        <template x-for="edge in draftEdges" :key="edge.source + '→' + edge.target">
+          <li>
+            <span x-text="edge.name_ar"></span> · <bdi x-text="edge.unit"></bdi>
+            · <bdi x-text="edge.provenance?.actor"></bdi> · <bdi x-text="edge.provenance?.recorded_at?.slice(0, 10)"></bdi>
+            <small x-show="edge.provenance?.evidence" x-text="edge.provenance?.evidence"></small>
+            <button class="lm-action" type="button" x-show="$store.app.canApprove && map.model.id && edge.can_approve"
+                    :disabled="!!busy" @click="approveEdge(edge)">اعتمد العلاقة</button>
+          </li>
+        </template>
+      </ul>
+    </details>
+
+    <details class="lm-divider" x-show="map.decision_outcomes?.length" data-testid="map-decision-outcomes">
+      <summary>متابعة نتائج القرارات للإصدار <bdi x-text="number(map.model?.version)"></bdi></summary>
+      <template x-for="item in map.decision_outcomes" :key="item.id">
+        <article class="lm-recommendation">
+          <strong x-text="item.name"></strong>
+          <p x-text="({closed: 'مقفل بالفعلي', tracking: 'جاري القياس', awaiting_actuals: 'في انتظار القياس'})[item.outcome_status]"></p>
+          <template x-for="(spec, key) in item.outcome_contract.indicators" :key="key">
+            <p><span x-text="spec.label"></span>
+              · توقع <bdi x-text="mapValue(spec.expected, spec.unit)"></bdi>
+              · فعلي <bdi x-text="mapValue(item.accuracy.find(row => row.kpi === key)?.actual, spec.unit)"></bdi>
+            </p>
+          </template>
+        </article>
+      </template>
+    </details>
+
     <section class="executive-strip" aria-label="ملخص القرار" x-show="metrics.length">
       <div class="lm-ribbon executive-grid" aria-label="مؤشرات الشركة" data-testid="map-kpis">
         <template x-for="metric in executiveMetrics" :key="metric.id">
@@ -331,6 +362,7 @@
             <div class="lm-stack" data-testid="map-recommendations">
               <p x-show="recommendations.evaluated_trials" x-text="'اتحسبت ' + number(recommendations.evaluated_trials) + ' تجربة. الترتيب حسب استيفاء القيود، ثم أعلى ربح، ثم أقل مخاطرة وتغيير.'"></p>
               <p x-text="enterpriseResultContext(recommendations.context)"></p>
+              <small>مصدر فرضيات البحث هو الحدود اللي دخلتها.</small>
               <p x-show="recommendations.search_status?.stop_reason === 'time_limit'" role="status"
                  x-text="recommendations.recommendations.length ? 'مهلة البحث خلصت. دي أفضل البدائل اللي اتقيّمت.' : 'مهلة البحث خلصت قبل ما يتقيّم بديل.'"></p>
               <p x-show="!recommendations.recommendations.length && recommendations.search_status?.stop_reason !== 'time_limit'">مفيش بديل قابل للحساب جوه النطاق ده.</p>
@@ -339,10 +371,13 @@
                   <template x-for="row in item.assumptions" :key="row.node_id">
                     <p><span x-text="label(row.node_id)"></span> <bdi x-text="mapValue(row.value, unit(row.node_id))"></bdi></p>
                   </template>
-                  <p>الربح <bdi x-text="mapValue(item.objective, 'SAR')"></bdi></p>
+                  <p>الربح <bdi x-text="mapValue(item.objective, 'SAR')"></bdi>
+                    <small x-text="number(item.outcome_context?.indicators[recommendations.objective]?.weeks) + ' أسبوع'"></small></p>
                   <p><span x-text="cashLabel"></span> <bdi x-text="mapValue(item.cash, 'SAR')"></bdi></p>
-                  <p x-show="item.risk != null">تجاوز الائتمان <bdi x-text="mapValue(item.risk, '%')"></bdi></p>
-                  <p x-text="item.violations.length ? 'السيولة أقل من الحد المطلوب' : item.target_met === false ? 'البديل أقل من هدف الربح' : item.target_met ? 'البديل حقّق الهدف' : 'بديل محسوب'"></p>
+                  <p x-show="item.risk != null">
+                    <span x-text="item.outcome_context?.risk?.kind === 'sampled_frequency' ? 'تكرار تجاوز الائتمان في المحاكاة' :
+                        item.outcome_context?.risk ? 'تجاوز الائتمان في الحالة المحسوبة' : 'مؤشر تجاوز الائتمان'"></span> <bdi x-text="mapValue(item.risk, '%')"></bdi></p>
+                  <p x-text="item.violations.length ? 'السيولة أقل من الحد المطلوب' : item.target_met === false ? 'البديل مستوفٍ للقيود وأقل من هدف الربح. متاح للمقارنة.' : item.target_met ? 'البديل حقّق الهدف' : 'بديل محسوب'"></p>
                   <small x-text="recommendationBasis(item)"></small>
                   <h3>محامي الشيطان</h3><p x-text="item.critique.reply_ar"></p>
                   <button class="lm-action" type="button" @click="useRecommendation(item)" :disabled="!!busy">راجع الفرضيات دي</button>

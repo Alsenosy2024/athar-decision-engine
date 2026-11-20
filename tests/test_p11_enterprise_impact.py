@@ -3,6 +3,7 @@ from collections import Counter
 import numpy as np
 import pytest
 
+from app.db import encode, get_conn
 from app.enterprise.demo import demo_template
 from app.enterprise.finance import Ledger, settle
 from app.enterprise.impact_graph import CausalGraph
@@ -97,9 +98,16 @@ def test_reference_pinned_and_neutral_scenario(client):
     assert result['version'] == 2 and rows['input']['delta'] == -2
 
 
-def test_cycles_reported_as_arabic_422(client):
-    model_id = save_graph(client, [scalar('left', 10), scalar('right', 10)],
-                          [edge('left', 'right'), edge('right', 'left', lag_weeks=1)])
+def test_cycles_reported_as_arabic_422(client, db_path):
+    nodes = [scalar('left', 10), scalar('right', 10)]
+    model_id = save_graph(client, nodes, [edge('left', 'right')])
+    # A pre-contract snapshot may already contain the cycle. It remains readable
+    # for correction, while both calculation endpoints must fail closed.
+    with get_conn(db_path) as connection:
+        connection.execute('UPDATE enterprise_model_versions SET graph_json = ? WHERE model_id = ?',
+                           (encode({'nodes': nodes, 'edges': [
+                               edge('left', 'right'), edge('right', 'left', lag_weeks=1),
+                           ]}), model_id))
     response = client.post(PATH, json={'model_id': model_id, 'assumptions': [assume('left', 1)]})
     assert response.status_code == 422
     assert 'دورة' in response.json()['detail']['msg_ar']

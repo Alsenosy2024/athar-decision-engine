@@ -9,6 +9,7 @@ from app.access import require_role
 from app.connectors import erp
 from app.connectors.files import read_tables, upload_bytes
 from app.db import request_conn
+from app.enterprise.edge_workflow import DEMO_STAMP, materialize
 from app.enterprise.schema import Number, StrictFields
 from app.onboarding import ingest, storage
 from app.onboarding.presets import SECTIONS, SECTORS, graph_for, section_specs
@@ -72,7 +73,8 @@ def templates():
 
 @router.get('/onboarding/templates/{sector}')
 def template(sector: Sector):
-    return {'id': sector, 'name': SECTORS[sector], 'graph': graph_for(sector), 'sections': section_specs(sector)}
+    return {'id': sector, 'name': SECTORS[sector],
+            'graph': materialize(graph_for(sector), DEMO_STAMP), 'sections': section_specs(sector)}
 
 
 @router.get('/onboarding/templates/{sector}/workbook')

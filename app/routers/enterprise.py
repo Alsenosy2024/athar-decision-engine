@@ -2,6 +2,8 @@ from base64 import b64encode
 from contextlib import contextmanager
 from typing import Annotated
 
+from pydantic import Field
+
 from fastapi import APIRouter, Depends, Query, Request, Response
 import numpy as np
 
@@ -11,8 +13,9 @@ from app.delivery.export import scenario_excel, tornado_excel
 from app.enterprise import scenarios, store
 from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.demo import demo_template
+from app.enterprise.edge_workflow import DEMO_STAMP, materialize
 from app.enterprise.impact_graph import ImpactError, WhatIfRequest
-from app.enterprise.schema import ModelInput, ModelSnapshot, ModelSummary, ModelUpdate, Template
+from app.enterprise.schema import ModelInput, ModelSnapshot, ModelSummary, ModelUpdate, NodeId, StrictFields, Template
 from app.enterprise.whatif import ImpactModel
 from app.optimization.common import OptimizationInputError, OptimizationTimeout
 from app.schemas import api_error
@@ -22,8 +25,9 @@ CompanyScope = Annotated[int | None, Query(ge=1, lt=2**63)]
 
 
 @router.get('/templates/enterprise', response_model=Template)
-def template():
-    return demo_template()
+def published_template():
+    demo = demo_template()
+    return demo.model_copy(update={'graph': materialize(demo.graph, DEMO_STAMP)})
 
 
 @router.get('/models', response_model=list[ModelSummary])
@@ -38,7 +42,7 @@ def create(body: ModelInput, company_id: CompanyScope = None, connection=Depends
 
 @router.post('/models/demo', response_model=ModelSnapshot, status_code=201)
 def create_demo(company_id: CompanyScope = None, connection=Depends(request_conn)):
-    return store.create(connection, demo_template(), company_id)
+    return store.create(connection, demo_template(), company_id, origin='demo')
 
 
 @router.get('/models/{model_id}', response_model=ModelSnapshot)
@@ -49,6 +53,16 @@ def read(model_id: int, connection=Depends(request_conn)):
 @router.put('/models/{model_id}', response_model=ModelSnapshot)
 def update(model_id: int, body: ModelUpdate, connection=Depends(request_conn)):
     return store.update(connection, model_id, body)
+
+
+class EdgeApproval(StrictFields):
+    expected_version: int = Field(ge=1, strict=True)
+
+
+@router.post('/models/{model_id}/edges/{source}/{target}/approve', response_model=ModelSnapshot)
+def approve_edge(model_id: int, source: NodeId, target: NodeId, body: EdgeApproval,
+                 request: Request, connection=Depends(request_conn)):
+    return store.approve_edge(connection, model_id, body.expected_version, source, target, request.state.principal)
 
 
 @router.delete('/models/{model_id}', status_code=204)
@@ -85,7 +99,7 @@ def read_version(model_id: int, version: int, connection=Depends(request_conn)):
 
 def whatif_snapshot(connection, model_id, version):
     if model_id is None:
-        template = demo_template()
+        template = published_template()
         return {'id': None, 'version': None, 'name': template.name, 'graph': template.graph}
     return store.read(connection, model_id, version)
 

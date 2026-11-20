@@ -61,7 +61,7 @@ def create(connection, body, principal):
             "INSERT INTO enterprise_models (template, company_id) VALUES ('enterprise', ?)", (company_id,),
         ).lastrowid
         connection.execute('INSERT INTO onboarding_companies VALUES (?, ?)', (company_id, model_id))
-        store.write_version(connection, model_id, 1, ModelInput(name=body.name, graph=graph))
+        store.write_version(connection, model_id, 1, ModelInput(name=body.name, graph=graph), origin='onboarding_template')
         audit(connection, company_id, 'onboarding.create', 'enterprise_model', model_id,
               {'sector': body.sector, 'version': 1})
     return describe(snapshot(connection, company_id))
@@ -148,7 +148,7 @@ def commit(connection, company_id, user_id, token):
             update={'records': sorted(records.values(), key=lambda row: (row.key, row.date is not None, row.date))})})
         version = model['version'] + 1
         store.write_version(connection, model['id'], version,
-                            ModelInput(name=model['name'], graph=materialize(graph)))
+                            ModelInput(name=model['name'], graph=materialize(graph)), origin='onboarding_review')
         audit(connection, company_id, 'onboarding.commit', 'enterprise_model', model['id'],
               {'version': version, 'records': len(payload['records']), 'rules': len(payload['rules'])})
         connection.execute('DELETE FROM onboarding_previews WHERE token=?', (token,))

@@ -6,6 +6,7 @@ from typing import Literal
 import numpy as np
 from pydantic import Field, model_validator
 
+from app.enterprise.edge_contracts import EdgeContractError, conversion, needs_coefficient
 from app.enterprise.schema import Graph, NodeId, Number, Scalar, StrictFields
 
 
@@ -52,11 +53,19 @@ class CausalGraph:
         self.bound = set(bound)
         self.rules = defaultdict(list)
         self.executable = []
+        self.conversions = {}
         self.drivers = set(drivers)
         dependencies = {node_id: set() for node_id in self.nodes}
         for edge in graph.edges:
             pair = edge.source, edge.target
             method = built_in_edges.get(pair) if built_in_edges else None
+            if edge.status == 'draft' or (edge.status is None and edge.unit is None
+                                          and needs_coefficient(edge, self.nodes, method)):
+                continue
+            try:
+                self.conversions[pair] = conversion(edge, self.nodes, method)
+            except EdgeContractError as error:
+                raise ImpactError(str(error)) from None
             if edge.rule is not None and method is not None:
                 raise ImpactError(f'العلاقة {edge.source} ← {edge.target} مرتبطة بحساب جاهز.')
             if method is None:
@@ -120,7 +129,7 @@ class CausalGraph:
         source = np.asarray(source)
         if source.size != weeks:
             source = np.full(weeks, source[-1])
-        delta = source - source_reference
+        delta = (source - source_reference) * self.conversions[edge.source, edge.target]
         if rule is None:
             return delta
         if rule.mode == 'elasticity':

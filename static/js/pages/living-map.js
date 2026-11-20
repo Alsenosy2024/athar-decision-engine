@@ -96,6 +96,17 @@ document.addEventListener('alpine:init', () => {
                     model_id: this.map.model.id, version: this.map.model.version,
                 };
             },
+            get draftEdges() { return (this.map?.edges || []).filter(edge => edge.status === 'draft'); },
+            async approveEdge(edge) {
+                const { model_id, version } = this.selection;
+                let approved = false;
+                await this.work('edge', async live => {
+                    await api('/enterprise/models/' + model_id + '/edges/' + encodeURIComponent(edge.source) + '/' +
+                        encodeURIComponent(edge.target) + '/approve', post({ expected_version: version }));
+                    approved = live();
+                });
+                if (approved) await this.load(this.scopeId, model_id);
+            },
             get models() { return this.map?.models || []; },
             get availableDrivers() {
                 return (this.map?.drivers || []).filter(row => !this.edits.some(edit => edit.node_id === row.id));
@@ -255,6 +266,7 @@ document.addEventListener('alpine:init', () => {
                     if (!map.departments) map.departments = [];
                     if (refresh && !map.process_only && !this.map?.process_only &&
                         map.model.id === this.map?.model.id && map.model.version === this.map?.model.version) {
+                        this.map.decision_outcomes = map.decision_outcomes;
                         this.refreshBriefing();
                         this.refreshExecutiveBaseline();
                         return;
@@ -268,7 +280,7 @@ document.addEventListener('alpine:init', () => {
                     edgeByPair = new Map(map.edges.map(edge => [mapPair(edge.source, edge.target), edge]));
                     const grouped = new Map();
                     for (const edge of map.edges) {
-                        if (edge.from_department === edge.to_department) continue;
+                        if (edge.status === 'draft' || edge.from_department === edge.to_department) continue;
                         const key = mapPair(edge.from_department, edge.to_department);
                         const old = grouped.get(key);
                         grouped.set(key, { key, from: edge.from_department, to: edge.to_department,

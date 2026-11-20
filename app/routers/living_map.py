@@ -12,6 +12,7 @@ from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.scenarios import kpis
 from app.enterprise.schema import StrictFields
 from app.intelligence import decision
+from app.prescriptive.records import decision_log
 from app.process_mining.map_projection import with_process_flow
 from app.routers.enterprise import CompanyScope, impact_errors, impact_model, whatif_snapshot
 from app.schemas import api_error
@@ -48,6 +49,11 @@ def read_map(request: Request, company_id: CompanyScope = None, model_id: Select
         raise api_error(404, 'enterprise_model_not_found', 'النموذج المؤسسي مش موجود للشركة دي.')
     payload = map_payload(snapshot, company, models, demo=model_id is None)
     payload['context'] = result_context(connection, snapshot)
+    payload['decision_outcomes'] = [
+        {key: item[key] for key in ('id', 'name', 'version', 'outcome_status', 'outcome_contract', 'accuracy')}
+        for item in decision_log(connection, snapshot, pinned=True)['decisions']
+        if item['status'] == 'approved'
+    ] if model_id is not None else []
     return with_process_flow(connection, payload, snapshot.get('company_id'))
 
 

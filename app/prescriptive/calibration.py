@@ -87,7 +87,7 @@ def aligned_by_date(source, target, lag):
 
 def calibrate(model, defaults):
     incoming = {target: len(edges) for target, edges in model.causal.rules.items()}
-    rows, edges = [], []
+    rows, fitted_edges = [], {}
     for edge, method in model.causal.executable:
         default = defaults.get((edge.source, edge.target), edge.rule)
         effective = default or EdgeRule()
@@ -105,8 +105,13 @@ def calibrate(model, defaults):
             fitted, row['reason'] = fit_rule(model.causal.nodes[edge.source], model.causal.nodes[edge.target],
                                              effective, max_lag)
         if fitted is not None:
+            if fitted['rule'].mode == 'linear':
+                fitted['rule'] = fitted['rule'].model_copy(update={
+                    'multiplier': fitted['rule'].multiplier / model.causal.conversions[edge.source, edge.target],
+                })
             row.update(fitted, source_type='calibrated')
         rule = row['rule'] if fitted else default
-        edges.append(edge.model_copy(update={'rule': rule}))
+        fitted_edges[edge.source, edge.target] = edge.model_copy(update={'rule': rule})
         rows.append(row)
+    edges = [fitted_edges.get((edge.source, edge.target), edge) for edge in model.graph.edges]
     return model.graph.model_copy(update={'edges': edges}), rows

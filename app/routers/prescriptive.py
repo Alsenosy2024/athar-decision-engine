@@ -8,7 +8,7 @@ from pydantic import Field, ValidationError
 from app.db import audit, encode, request_conn
 from app.enterprise import store
 from app.enterprise.impact_graph import ImpactError
-from app.enterprise.result_context import effective_weeks
+from app.enterprise.result_context import effective_weeks, result_context
 from app.enterprise.scenarios import KPIS
 from app.enterprise.schema import StrictFields
 from app.enterprise.whatif import ImpactModel
@@ -93,8 +93,9 @@ def goal_input(model_id: RecordId, body: GoalText, connection=Depends(request_co
 def goal_seek(model_id: RecordId, body: goal.Goal, request: Request, connection=Depends(request_conn)):
     snapshot = records.checked_version(connection, model_id, body.version)
     with impact_errors():
-        result = goal.search(engine(snapshot, request), body)
-    return {'version': snapshot['version'], **result}
+        model = engine(snapshot, request)
+        result = goal.search(model, body)
+    return {'version': snapshot['version'], 'context': result_context(connection, snapshot, model.weeks), **result}
 
 
 @router.get(scope + '/monitor')
@@ -142,10 +143,10 @@ def decide(model_id: RecordId, decision_id: RecordId, body: records.Decision, re
 
 
 @router.post(scope + '/decisions/{decision_id}/actuals', status_code=201)
-def record_actuals(model_id: RecordId, decision_id: RecordId, body: records.Actuals,
+def record_actuals(model_id: RecordId, decision_id: RecordId, body: records.Actuals, request: Request,
                    connection=Depends(request_conn)):
     snapshot = store.read(connection, model_id)
-    return {'id': records.record_actuals(connection, snapshot, decision_id, body)}
+    return {'id': records.record_actuals(connection, snapshot, decision_id, body, request.state.principal)}
 
 
 @router.get(scope + '/decisions')

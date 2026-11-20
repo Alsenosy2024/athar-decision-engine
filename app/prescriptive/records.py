@@ -6,13 +6,13 @@ from math import isfinite
 from statistics import mean
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from app.db import audit, encode, get_conn, utc_now
 from app.enterprise import store
-from app.enterprise.scenarios import Kpi
-from app.enterprise.schema import EdgeRule, ModelInput, StrictFields
+from app.enterprise.schema import EdgeRule, ModelInput, NodeId, StrictFields
 from app.prescriptive.goal import Value
+from app.prescriptive.outcomes import legacy_contract
 from app.schemas import api_error
 
 DDL = """
@@ -56,6 +56,14 @@ CREATE INDEX IF NOT EXISTS enterprise_actuals_decision ON enterprise_decision_ac
 def initialize(path):
     with get_conn(path) as connection:
         connection.executescript(DDL)
+        connection.execute('BEGIN IMMEDIATE')
+        columns = {row['name'] for row in connection.execute('PRAGMA table_info(enterprise_decision_actuals)')}
+        if 'closed' not in columns:
+            connection.execute('ALTER TABLE enterprise_decision_actuals ADD COLUMN closed INTEGER NOT NULL DEFAULT 0')
+        if 'evidence' not in columns:
+            connection.execute('ALTER TABLE enterprise_decision_actuals ADD COLUMN evidence TEXT')
+        if 'recorded_by' not in columns:
+            connection.execute('ALTER TABLE enterprise_decision_actuals ADD COLUMN recorded_by TEXT')
 
 
 class Decision(StrictFields):
@@ -65,16 +73,9 @@ class Decision(StrictFields):
 
 class Actuals(StrictFields):
     observed_on: date
-    metrics: dict[Kpi, Value] = Field(min_length=1)
-
-    @model_validator(mode='after')
-    def kpi_ranges(self):
-        rates = ('credit_breach', 'fill_rate')
-        if any(not 0 <= self.metrics[key] <= 100 for key in rates if key in self.metrics):
-            raise ValueError('Rates must be 0–100')
-        if self.metrics.get('delays', 0) < 0:
-            raise ValueError('Delay cannot be negative')
-        return self
+    metrics: dict[NodeId, Value] = Field(min_length=1)
+    close: bool = Field(default=False, strict=True)
+    evidence: str | None = Field(default=None, min_length=1, max_length=600)
 
 
 def read_calibration(connection, model_id, version):
@@ -119,7 +120,7 @@ def save_calibration(connection, model_id, version, graph, report):
         changed = graph != snapshot['graph']
         latest = version + int(changed)
         if changed:
-            store.write_version(connection, model_id, latest, ModelInput(name=snapshot['name'], graph=graph))
+            store.write_version(connection, model_id, latest, ModelInput(name=snapshot['name'], graph=graph), origin='prescriptive_calibration')
         connection.execute(
             '''INSERT INTO enterprise_edge_calibrations VALUES (?, ?, ?)
                ON CONFLICT(model_id, version) DO UPDATE SET report_json = excluded.report_json''',
@@ -134,13 +135,28 @@ def create_draft(connection, model_id, version, name, forecast):
     with connection:
         connection.execute('BEGIN IMMEDIATE')
         snapshot = checked_version(connection, model_id, version)
-        decision_id = connection.execute(
-            '''INSERT INTO enterprise_decisions (model_id, version, name, forecast_json, created_at)
-               VALUES (?, ?, ?, ?, ?)''', (model_id, version, name, encode(forecast), utc_now()),
-        ).lastrowid
-        audit(connection, snapshot['company_id'], 'enterprise.decision.create', 'enterprise_decision', decision_id,
-              {'model_id': model_id, 'version': version})
-        return decision_id
+        forecast['outcome_contract'] = legacy_contract(snapshot, forecast)
+        return insert_draft(connection, snapshot, name, forecast)
+
+
+def insert_draft(connection, snapshot, name, forecast):
+    indicators = forecast['outcome_contract']['indicators']
+    if not any(row['required'] for row in indicators.values()):
+        raise api_error(422, 'decision_missing_expectation', 'القرار محتاج توقع قابل للقياس.')
+    decision_id = connection.execute(
+        '''INSERT INTO enterprise_decisions (model_id, version, name, forecast_json, created_at)
+           VALUES (?, ?, ?, ?, ?)''',
+        (snapshot['id'], snapshot['version'], name, encode(forecast), utc_now()),
+    ).lastrowid
+    audit(connection, snapshot['company_id'], 'enterprise.decision.create', 'enterprise_decision', decision_id,
+          {'model_id': snapshot['id'], 'version': snapshot['version']})
+    return decision_id
+
+
+def outcome_contract(connection, snapshot, version, forecast):
+    if 'outcome_contract' in forecast:
+        return forecast['outcome_contract']
+    return legacy_contract(store.read(connection, snapshot['id'], version), forecast)
 
 
 def decide(connection, snapshot, decision_id, body, principal):
@@ -169,39 +185,58 @@ def get_decision(connection, snapshot, decision_id):
     return row
 
 
-def record_actuals(connection, snapshot, decision_id, body):
+def record_actuals(connection, snapshot, decision_id, body, principal):
     with connection:
         connection.execute('BEGIN IMMEDIATE')
         decision = get_decision(connection, snapshot, decision_id)
         if decision['status'] != 'approved':
             raise api_error(409, 'decision_not_approved', 'اعتمد القرار قبل تسجيل القيم الفعلية.')
-        predicted = json.loads(decision['forecast_json'])['kpis']
-        if any(predicted.get(key) is None for key in body.metrics):
+        forecast = json.loads(decision['forecast_json'])
+        indicators = outcome_contract(connection, snapshot, decision['version'], forecast)['indicators']
+        if not body.metrics.keys() <= indicators.keys():
             raise api_error(422, 'missing_prediction', 'سجّل الفعلي للمؤشرات اللي لها توقع محفوظ.')
+        for key, value in body.metrics.items():
+            spec = indicators[key]
+            if ((spec['node_id'] in ('risk.credit', 'risk.fill') and not 0 <= value <= 100)
+                    or (spec['node_id'] == 'risk.delay' and value < 0)):
+                raise api_error(422, 'actual_outside_range', 'القيمة الفعلية خارج نطاق المؤشر.')
+            if not isfinite(value - spec['expected']):
+                raise api_error(422, 'actual_outside_range', 'الفرق أكبر من نطاق الحساب المدعوم.')
         observed = body.observed_on.isoformat()
         if observed < decision['decided_at'][:10] or body.observed_on > date.today():
             raise api_error(422, 'invalid_observed_date', 'تاريخ القياس لازم يكون من يوم الاعتماد ولحد النهارده.')
         previous = latest_actuals(connection, decision_id)
+        if previous and previous['closed']:
+            raise api_error(409, 'decision_closed', 'القرار اتقفل بالقيم الفعلية.')
         metrics = body.metrics
         if previous and observed < previous['observed_on']:
             raise api_error(409, 'older_actuals', 'تاريخ القياس أقدم من آخر بيانات فعلية مسجلة للقرار.')
         if previous and observed == previous['observed_on']:
             metrics = previous['metrics'] | metrics
+        if body.close and any(row['required'] and key not in metrics for key, row in indicators.items()):
+            raise api_error(422, 'decision_missing_actuals', 'سجّل الفعلي لكل المؤشرات المطلوبة في نفس تاريخ القياس.')
         actuals_id = connection.execute(
-            '''INSERT INTO enterprise_decision_actuals (decision_id, observed_on, metrics_json, recorded_at)
-               VALUES (?, ?, ?, ?)''', (decision_id, observed, encode(metrics), utc_now()),
+            '''INSERT INTO enterprise_decision_actuals (decision_id, observed_on, metrics_json, recorded_at, closed, evidence, recorded_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (decision_id, observed, encode(metrics), utc_now(), body.close, body.evidence, principal.username),
         ).lastrowid
-        audit(connection, snapshot['company_id'], 'enterprise.decision.actuals', 'enterprise_decision', decision_id,
+        audit(connection, snapshot['company_id'], 'enterprise.decision.close' if body.close else 'enterprise.decision.actuals',
+              'enterprise_decision', decision_id,
               {'actuals_id': actuals_id, 'observed_on': observed})
     return actuals_id
 
 
 def latest_actuals(connection, decision_id):
     row = connection.execute(
-        '''SELECT observed_on, metrics_json FROM enterprise_decision_actuals
+        '''SELECT observed_on, metrics_json, closed, evidence, recorded_by, recorded_at FROM enterprise_decision_actuals
            WHERE decision_id = ? ORDER BY id DESC LIMIT 1''', (decision_id,),
     ).fetchone()
-    return {'observed_on': row['observed_on'], 'metrics': json.loads(row['metrics_json'])} if row else None
+    if not row:
+        return None
+    item = dict(row)
+    item['metrics'] = json.loads(item.pop('metrics_json'))
+    item['closed'] = bool(item['closed'])
+    return item
 
 
 def accuracy(predicted, actual):
@@ -220,17 +255,21 @@ def accuracy(predicted, actual):
     return rows
 
 
-def decision_log(connection, snapshot):
+def decision_log(connection, snapshot, *, pinned=False):
     decisions, scores = [], defaultdict(list)
     rows = connection.execute(
-        'SELECT * FROM enterprise_decisions WHERE model_id = ? ORDER BY id DESC', (snapshot['id'],),
+        'SELECT * FROM enterprise_decisions WHERE model_id = ? AND (? IS NULL OR version = ?) ORDER BY id DESC',
+        (snapshot['id'], snapshot['version'] if pinned else None, snapshot['version']),
     )
     for row in rows:
         item = dict(row)
         item['forecast'] = json.loads(item.pop('forecast_json'))
         actuals = latest_actuals(connection, item['id'])
         report = accuracy(item['forecast']['kpis'], actuals['metrics']) if actuals else []
-        item.update(actuals=actuals, accuracy=report)
+        contract = outcome_contract(connection, snapshot, item['version'], item['forecast'])
+        state = ('closed' if actuals and actuals['closed'] else 'tracking' if actuals else 'awaiting_actuals'
+                 if item['status'] == 'approved' else item['status'])
+        item.update(actuals=actuals, accuracy=report, outcome_contract=contract, outcome_status=state)
         decisions.append(item)
         for result in report:
             scores[result['kpi']].append(result)

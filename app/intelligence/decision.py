@@ -211,8 +211,15 @@ def search(model, goal, budget):
         if signature in seen:
             continue
         seen.add(signature)
+        target_met = meets_target(score['objective'], target, goal.direction)
         recommendations.append({
-            **score, 'target_met': meets_target(score['objective'], target, goal.direction), 'violations': bad,
+            **score, 'target_met': target_met, 'violations': bad,
+            'disposition': 'infeasible' if bad else 'scenario_only' if target_met is False else 'eligible_decision',
+            'constraints': {'cash_floor': goal.cash_floor, 'risk_ceiling': goal.risk_ceiling,
+                            'control_bounds': [item.model_dump(mode='json') for item in controls]},
+            'outcome_context': result['outcome_context'] | {'assumptions': [
+                item | {'source': 'goal_search_controls'} for item in result['outcome_context']['assumptions']
+            ]},
             'model_basis': 'cp_sat_and_propagation' if model.graph.arms else 'propagation',
             'assumptions': [item.model_dump(mode='json') for item in body.assumptions],
             'critique': critique(model, goal, controls, values, result, base, budget),
@@ -225,7 +232,8 @@ def search(model, goal, budget):
     return {'search_status': {'state': state, 'stop_reason': 'time_limit' if timed_out else 'trial_limit',
                               'limit_s': budget.limit, 'attempted_trials': attempted},
             'method': 'optuna_tpe', 'objective': goal.objective, 'reference': reference, 'target': target,
-            'target_pct': goal.target_pct, 'cash_floor': goal.cash_floor, 'risk_ceiling': goal.risk_ceiling,
+            'direction': goal.direction, 'target_pct': goal.target_pct, 'cash_floor': goal.cash_floor,
+            'risk_ceiling': goal.risk_ceiling,
             'trials': goal.trials, 'evaluated_trials': len(evaluated), 'recommendations': recommendations}
 
 

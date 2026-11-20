@@ -5,6 +5,7 @@ from graphlib import CycleError, TopologicalSorter
 
 import numpy as np
 
+from app.enterprise.edge_contracts import TIME_IN_DAYS, contract_unit
 from app.enterprise.schema import Edge, EdgeRule
 from app.intelligence.analysis import history
 
@@ -118,14 +119,19 @@ def proposals(model):
                        lags=(0,) if target in model.causal.upstream else range(MAX_LAG + 1))
         if not fit:
             continue
+        left, right = nodes[source].unit, nodes[target].unit
+        unit_factor = TIME_IN_DAYS[left] / TIME_IN_DAYS[right] if left in TIME_IN_DAYS and right in TIME_IN_DAYS else 1
+        fit['multiplier'] /= unit_factor
         rule = EdgeRule(multiplier=fit['multiplier'], lag_weeks=fit['lag_weeks'],
                         minimum=old.rule.minimum if old and old.rule else None,
                         maximum=old.rule.maximum if old and old.rule else None)
-        link = Edge(source=source, target=target, rule=rule,
+        method = 'pc_fisher_z_bounded_regression' if pair in discovered else 'bounded_lagged_regression'
+        link = Edge(source=source, target=target, rule=rule, status='draft',
+                    unit=contract_unit(left, right, rule), evidence=method,
                     name_ar=old.name_ar if old else f'{nodes[source].name_ar} → {nodes[target].name_ar}'[:160])
         confidence = min(0.9, fit['holdout_skill'], fit['n'] / 80)
         output.append({'edge': link.model_dump(mode='json'), 'before': old.model_dump(mode='json') if old else None,
-                       'method': 'pc_fisher_z_bounded_regression' if pair in discovered else 'bounded_lagged_regression',
+                       'method': method,
                        'confidence': round(confidence, 3), **fit})
         known.add(pair)
     return output

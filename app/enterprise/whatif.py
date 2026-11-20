@@ -5,12 +5,13 @@ from math import isfinite
 
 import numpy as np
 
-from app.enterprise.result_context import ENDING_CASH_LABEL
 from app.enterprise.arms import Arms, contracting_ledger, production_ledger, start_date
 from app.enterprise.client_plans import ledger_edges
 from app.enterprise.demo import demo_template
 from app.enterprise.finance import Ledger
 from app.enterprise.impact_graph import CausalGraph, ImpactError, reference
+from app.enterprise.outcome_context import scenario_context
+from app.enterprise.result_context import ENDING_CASH_LABEL
 from app.enterprise.schema import Engine, EngineLink
 from app.forecasting.methods import quantiles
 from app.onboarding import projection
@@ -61,6 +62,7 @@ def standard_graph(graph):
                   and all(arm.input_source == 'v1_demo' for arm in graph.arms)) and all(
         key in nodes and nodes[key].type == expected[key].type
         and nodes[key].definition == expected[key].definition
+        and nodes[key].unit == expected[key].unit
         for key in legacy_ids - {'pnl.result'}
     ) and 'pnl.result' in nodes
     if compatible:
@@ -93,6 +95,24 @@ def edge_methods(graph, template, bound):
     return methods
 
 
+def compilation_inputs(graph):
+    template = standard_graph(graph) if graph.arms else None
+    links = {node.id: node.definition for node in graph.nodes if isinstance(node.definition, EngineLink)}
+    keys = {node.id for node in graph.nodes}
+    bound, drivers = set(links), set()
+    if template:
+        bound |= FINANCE | {'sales.production', 'risk.delay', 'risk.storage'}
+        drivers = {key for key in keys if any(is_driver(key, arm.sector) for arm in graph.arms)}
+        bound -= drivers - {'cash'}
+    client_plan = any(arm.input_source == 'client_plan' for arm in graph.arms)
+    if client_plan:
+        drivers = {key for key in keys - bound if is_driver(key, 'production') or key == 'cash.opening'}
+    methods = (projection.projection_edges(graph) if graph.onboarding else edge_methods(graph, template, bound))
+    if client_plan:
+        methods.update(ledger_edges(graph, links, drivers))
+    return template, links, bound & keys, drivers, methods
+
+
 @dataclass
 class Evaluation:
     values: dict
@@ -120,25 +140,11 @@ class ImpactModel:
     def __init__(self, graph, *, weeks, time_limit=15, forecast_engine='stat', foundation=None):
         self.weeks = weeks
         self.graph = graph
-        self.template = standard_graph(graph) if graph.arms else None
+        self.template, links, bound, drivers, built_in = compilation_inputs(graph)
         self.arms = Arms(graph.arms, graph._client_sources, time_limit=time_limit,
                          forecast_engine=forecast_engine, foundation=foundation)
-        links = {node.id: node.definition for node in graph.nodes if isinstance(node.definition, EngineLink)}
-        keys = {node.id for node in graph.nodes}
-        bound = set(links)
-        drivers = set()
-        if self.template:
-            bound |= FINANCE | {'sales.production', 'risk.delay', 'risk.storage'}
-            drivers = {key for key in keys if any(is_driver(key, sector) for sector in self.arms.datasets)}
-            bound -= drivers - {'cash'}
-        if self.arms.sources:
-            drivers = {key for key in keys - bound if is_driver(key, 'production') or key == 'cash.opening'}
-        built_in = (projection.projection_edges(graph) if graph.onboarding
-                    else edge_methods(graph, self.template, bound))
-        if self.arms.sources:
-            built_in.update(ledger_edges(graph, links, drivers))
-        self.causal = CausalGraph(graph, built_in_edges=built_in,
-                                  bound=bound & keys, drivers=drivers)
+        self.causal = CausalGraph(graph, built_in_edges=built_in, bound=bound, drivers=drivers)
+        keys = self.causal.nodes.keys()
         self.links = links
         self.legacy_paths = []
         if self.template and not ({'pnl.expenses', 'supplier.payment_lag'} & keys):
@@ -148,7 +154,12 @@ class ImpactModel:
             missing = [edge for edge in self.template.edges if edge.source in keys and edge.target in keys
                        and (edge.source, edge.target) not in existing]
             methods = edge_methods(graph.model_copy(update={'edges': missing}), self.template, bound)
-            self.legacy_paths = [(edge, methods[edge.source, edge.target]) for edge in missing]
+            from app.enterprise.edge_workflow import DEMO_STAMP, materialize
+
+            packaged = materialize(self.template, DEMO_STAMP).edges
+            contracts = {(edge.source, edge.target): edge for edge in packaged}
+            self.legacy_paths = [(contracts[edge.source, edge.target], methods[edge.source, edge.target])
+                                 for edge in missing]
 
     def adjustable(self, key):
         return self.causal.adjustable(key) and (not self.graph.onboarding or key in ONBOARDING_INPUTS)
@@ -362,6 +373,7 @@ class ImpactModel:
                                     for value in bands.get(key, {}).values())),
             })
         return {
+            'outcome_context': scenario_context(self, request, central, central_plans, FINANCE, any(spreads.values())),
             'nodes': rows, 'assumptions': [dict(node_id=key, before=reference_values[key], after=value,
                                                uncertainty=spreads[key]) for key, value in centers.items()],
             'paths': [edge for incoming in paths.values() for edge in incoming],

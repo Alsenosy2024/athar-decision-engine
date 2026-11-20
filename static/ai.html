@@ -251,7 +251,7 @@
                             <div class="stack" x-show="payload.relations.length">
                                 <h3>العلاقات المقترحة</h3>
                                 <ul class="change-summary"><template x-for="(item, index) in payload.relations" :key="index">
-                                    <li x-text="item.edge.name_ar + ' · معامل ' + number(item.edge.rule.multiplier) + ' · AI ' + percent(item.confidence)"></li>
+                                    <li x-text="item.edge.name_ar + ' · معامل ' + number(item.edge.rule.multiplier) + ' · ' + item.edge.unit + ' · مسودة · AI ' + percent(item.confidence)"></li>
                                 </template></ul>
                             </div>
                             <div class="stack" x-show="payload.estimates.length">
@@ -351,6 +351,7 @@
                                 <div class="ai-detail stack">
                                     <div class="actions"><strong x-text="item.edge.name_ar"></strong><span class="ai-tag" x-text="'AI · ' + percent(item.confidence)"></span></div>
                                     <p x-text="'المعامل المقترح ' + number(item.multiplier) + ' · تأخير بالأسابيع ' + number(item.lag_weeks) + ' · نقاط ' + number(item.n)"></p>
+                                    <small x-show="item.edge.unit"><bdi x-text="item.edge.unit"></bdi> · مسودة للمراجعة</small>
                                     <small x-text="'تحسن على الاختبار ' + percent(item.holdout_skill) + ' · ' + item.method"></small>
                                 </div>
                             </template>
@@ -359,6 +360,7 @@
                     <template x-if="review.kind === 'decision'">
                         <div class="stack">
                             <p x-text="'المرجع ' + number(payload.reference) + ' · الهدف ' + number(payload.target) + ' · حالات قابلة للحساب ' + number(payload.evaluated_trials)"></p>
+                            <p x-show="payload.context" x-text="payload.context?.source + ' · إصدار ' + number(payload.context?.model_version)"></p>
                             <p class="empty" x-show="!payload.recommendations.length">مفيش حالة قابلة للحساب في الحدود المدخلة.</p>
                             <template x-for="(item, index) in payload.recommendations" :key="index">
                                 <div class="ai-detail stack">
@@ -368,9 +370,17 @@
                                         <span class="status neutral" x-show="item.target_met !== null" x-text="item.target_met ? 'بلغت الهدف' : 'أقل من التحسن المطلوب'"></span>
                                     </div>
                                     <dl class="risk-grid">
-                                        <div><dt>المؤشر المستهدف</dt><dd x-text="number(item.objective)"></dd></div>
+                                        <div>
+                                            <dt>المؤشر المستهدف
+                                                <small x-show="item.outcome_context?.indicators[payload.objective]">
+                                                    · أفق <bdi x-text="number(item.outcome_context?.indicators[payload.objective]?.weeks)"></bdi> أسبوع
+                                                </small>
+                                            </dt>
+                                            <dd><bdi x-text="number(item.objective)"></bdi>
+                                                <span x-text="units[item.outcome_context?.indicators[payload.objective]?.unit] || ''"></span></dd>
+                                        </div>
                                         <div><dt>أقل سيولة</dt><dd x-text="number(item.cash)"></dd></div>
-                                        <div><dt>تجاوز الائتمان</dt><dd x-text="item.risk === null ? '—' : number(item.risk) + '%'"></dd></div>
+                                        <div><dt x-text="item.outcome_context?.risk?.kind === 'sampled_frequency' ? 'تكرار التجاوز في المحاكاة' : 'مؤشر تجاوز الائتمان'"></dt><dd x-text="item.risk === null ? '—' : number(item.risk) + '%'"></dd></div>
                                         <div><dt>القيود</dt><dd class="ai-small-value" x-text="item.violations.length ? 'فيه قيد متجاوز' : 'مستوفاة'"></dd></div>
                                     </dl>
                                     <ul class="change-summary"><template x-for="change in item.assumptions" :key="change.node_id">
@@ -383,14 +393,15 @@
                                     </details>
                                     <div class="actions">
                                         <button type="button" class="button secondary" :disabled="busy || !allowed" @click="drillInto(index)">افتح مسار الأثر</button>
-                                        <button type="button" class="button primary" x-show="review.status === 'pending' && allowed"
-                                                :disabled="busy || item.violations.length > 0" @click="decide('accepted', index)">اقبل واحفظ السيناريو</button>
+                                        <button type="button" class="button primary" x-show="review.status === 'pending' && mayResolve"
+                                                :disabled="busy || item.violations.length > 0" @click="decide('accepted', index)"
+                                                x-text="item.disposition === 'eligible_decision' ? 'احفظ السيناريو ومسودة القرار' : 'اقبل واحفظ السيناريو'"></button>
                                     </div>
                                 </div>
                             </template>
                         </div>
                     </template>
-                    <div class="actions" x-show="review.status === 'pending' && allowed">
+                    <div class="actions" x-show="review.status === 'pending' && mayResolve">
                         <button type="button" class="button primary" x-show="review.kind !== 'decision'" :disabled="busy || !canAccept" @click="decide('accepted')">اقبل المقترح</button>
                         <button type="button" class="button secondary" :disabled="busy" @click="decide('rejected')">ارفض المقترح</button>
                     </div>

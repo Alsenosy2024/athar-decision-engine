@@ -151,15 +151,19 @@ def authorize(request):
     method = request.method
     decision = route in {
         '/api/plans/{pid}/decide',
+        '/api/enterprise/models/{model_id}/edges/{source}/{target}/approve',
+        '/api/enterprise/models/{model_id}/prescriptive/calibration',
         '/api/enterprise/models/{model_id}/prescriptive/decisions/{decision_id}/decide',
     }
     if method not in READ_METHODS or route == '/api/plans/{pid}/export.{fmt}':
         supplied = request.headers.get('X-CSRF-Token', '').encode()
         if not compare_digest(supplied, principal.csrf_token.encode()):
             raise api_error(403, 'invalid_csrf', 'الجلسة أو رمز الحماية اتغيّر. حدّث الصفحة.')
-    if decision:
+    if decision and method not in READ_METHODS:
         require_role(principal, 'approver')
-    elif method not in READ_METHODS and not route.startswith('/api/auth/') and route != '/api/enterprise/chat':
+    elif method not in READ_METHODS and not route.startswith('/api/auth/') and route not in {
+        '/api/enterprise/chat', '/api/companies/{cid}/ai/reviews/{review_id}/decide',
+    }:
         if route == '/api/companies' or route.startswith('/api/users'):
             require_role(principal)
         else:

@@ -110,7 +110,7 @@ def evaluate(model, base, actions):
     return {
         'actions': actions, 'kpis': metrics, 'assumptions': result['assumptions'],
         'impact': [node for node in result['nodes'] if node['affected']],
-        'solver_status': result['solver_status'],
+        'solver_status': result['solver_status'], 'outcome_context': result['outcome_context'],
     }
 
 
@@ -176,4 +176,5 @@ def validate_draft(model, draft):
     if not assess(result, target, draft.goal.cash_minimum):
         raise ImpactError('الإجراءات دي ما حققتش هدف الربح والسيولة في الحساب الحالي.')
     return {**result, 'baseline': metrics, 'profit_minimum': target,
-            'cash_minimum': draft.goal.cash_minimum, 'weeks': model.weeks}
+            'cash_minimum': draft.goal.cash_minimum, 'weeks': model.weeks,
+            'control_bounds': [item.model_dump(mode='json') for item in draft.goal.controls]}

@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, model_validator
 
+from app.enterprise.edge_contracts import EdgeProvenance, EdgeStatus, EdgeUnit
 from app.onboarding.records import OnboardingData
 
 NodeId = Annotated[str, StringConstraints(pattern=r'^[A-Za-z][A-Za-z0-9_.-]{0,79}$')]
@@ -137,6 +138,10 @@ class Edge(StrictFields):
     target: NodeId
     name_ar: Label
     rule: EdgeRule | None = None
+    unit: EdgeUnit | None = None
+    status: EdgeStatus | None = None
+    provenance: EdgeProvenance | None = None
+    evidence: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=600)] | None = None
 
 
 class Arm(StrictFields):

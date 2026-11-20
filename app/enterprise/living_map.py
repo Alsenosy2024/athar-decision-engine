@@ -2,6 +2,7 @@
 from collections import defaultdict
 from math import log1p
 
+from app.enterprise.edge_contracts import contract_unit, needs_coefficient
 from app.enterprise.impact_graph import ImpactError, reference
 from app.enterprise.scenarios import KPI_NODES, kpi_specs
 from app.enterprise.schema import NodeType, Series, Unit
@@ -72,6 +73,7 @@ def map_payload(snapshot, company, models, *, demo=False):
             maxima[node['unit']] = max(maxima[node['unit']], abs(node['baseline']))
 
     edges = []
+    nodes_by_id = {node.id: node for node in graph.nodes}
     for edge in [*graph.edges, *legacy_edges]:
         left, right = nodes[edge.source], nodes[edge.target]
         unit = left['unit']
@@ -81,6 +83,10 @@ def map_payload(snapshot, company, models, *, demo=False):
             'source': edge.source, 'target': edge.target, 'name_ar': edge.name_ar,
             'from_department': left['department'], 'to_department': right['department'],
             'lag_weeks': edge.rule.lag_weeks if edge.rule else 0,
+            'unit': edge.unit or contract_unit(unit, right['unit'], edge.rule, 'built_in'),
+            'status': edge.status or 'approved',
+            'provenance': edge.provenance.model_dump(mode='json') if edge.provenance else None,
+            'can_approve': edge.status == 'draft' and not needs_coefficient(edge, nodes_by_id, None),
             'baseline_volume': volume, 'volume_unit': unit if volume is not None else None,
             'weight': log1p(volume) / log1p(maximum) if volume and maximum else 0,
         })
