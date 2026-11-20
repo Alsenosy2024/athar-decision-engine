@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>المستخدمين والصلاحيات · أثر</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/access.css">
+    <script defer src="/static/js/users.js"></script>
+</head>
+<body class="access-shell">
+    <main class="card access-card access-admin stack">
+        <header class="access-heading">
+            <a href="/">ارجع لمساحة العمل</a>
+            <h1>المستخدمين والصلاحيات</h1>
+        </header>
+        <p id="user-error" class="notice error" role="alert" hidden></p>
+        <p id="user-success" class="notice success" role="status" hidden></p>
+        <form id="user-form" method="post" class="stack" hidden>
+            <label class="field">الحساب
+                <select name="account"><option value="">مستخدم جديد</option></select>
+            </label>
+            <label class="field">اسم المستخدم
+                <input name="username" maxlength="80" required dir="auto" autocomplete="off">
+            </label>
+            <label class="field">الدور
+                <select name="role" required>
+                    <option value="viewer">مشاهد</option>
+                    <option value="planner">مخطّط</option>
+                    <option value="approver">مراجع</option>
+                    <option value="admin">أدمن</option>
+                </select>
+            </label>
+            <fieldset class="access-company-list">
+                <legend>الشركات المتاحة للحساب</legend>
+                <div id="company-options" class="account-controls"></div>
+            </fieldset>
+            <label class="field">كلمة السر <span id="password-hint"></span>
+                <input name="password" type="password" minlength="12" maxlength="256" required dir="auto" autocomplete="new-password">
+            </label>
+            <button class="button primary" type="submit">احفظ الحساب</button>
+        </form>
+    </main>
+</body>
+</html>

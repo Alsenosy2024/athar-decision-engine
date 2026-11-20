@@ -1,0 +1,34 @@
+.athar-embed {
+    max-width: 1060px;
+    margin-inline: auto;
+    padding: clamp(12px, 3vw, 28px);
+}
+.athar-embed-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-block-end: 16px;
+}
+.athar-embed h1 {
+    font: 900 clamp(1.35rem, 3vw, 2rem)/1.2 "Thmanyah Serif Display";
+}
+.athar-embed-header button { flex: none; }
+.athar-embed #embed-company { margin-block-start: 4px; overflow-wrap: anywhere; }
+.athar-embed #embed-error:empty { display: none; }
+.athar-embed-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+    gap: 8px;
+    margin: 0 0 12px;
+}
+.athar-embed-kpis > div {
+    padding: 8px 10px;
+    border: 1px solid var(--lm-border);
+    border-radius: 10px;
+    background: var(--lm-card);
+}
+.athar-embed-kpis dt { color: var(--lm-dim); font-size: .8rem; }
+.athar-embed-kpis dd { margin: 0; overflow-wrap: anywhere; }
+.athar-embed .lm-stage { border: 1px solid var(--lm-border); border-radius: 14px; }
+.athar-embed .lm-department { --lm-enter: 0; cursor: default; }

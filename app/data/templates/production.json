@@ -1,0 +1,381 @@
+{
+  "template_id": "production",
+  "name_ar": "الإنتاج (أغذية مبردة)",
+  "name_en": "Production",
+  "time_unit": "day",
+  "horizon_key": "horizon_days",
+  "entities": {
+    "lines": {
+      "name_ar": "خطوط الإنتاج",
+      "key": "id",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المعرّف"
+        },
+        {
+          "name": "name_ar",
+          "type": "str",
+          "required": true,
+          "name_ar": "الاسم"
+        },
+        {
+          "name": "changeover_cost",
+          "type": "int",
+          "required": true,
+          "name_ar": "تكلفة تغيير المنتج"
+        },
+        {
+          "name": "changeover_loss_units",
+          "type": "int",
+          "required": true,
+          "name_ar": "فاقد وحدات التغيير"
+        }
+      ]
+    },
+    "skus": {
+      "name_ar": "المنتجات",
+      "key": "id",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المعرّف"
+        },
+        {
+          "name": "name_ar",
+          "type": "str",
+          "required": true,
+          "name_ar": "الاسم"
+        },
+        {
+          "name": "unit_cost",
+          "type": "int",
+          "required": true,
+          "name_ar": "تكلفة الوحدة"
+        },
+        {
+          "name": "unit_price",
+          "type": "int",
+          "required": true,
+          "name_ar": "سعر الوحدة"
+        },
+        {
+          "name": "volume",
+          "type": "int",
+          "required": true,
+          "name_ar": "الحجم التخزيني"
+        },
+        {
+          "name": "holding_cost_per_day",
+          "type": "int",
+          "required": true,
+          "name_ar": "تكلفة التخزين اليومية بالهللة"
+        },
+        {
+          "name": "initial_inventory",
+          "type": "int",
+          "required": true,
+          "name_ar": "المخزون الأولي"
+        }
+      ]
+    },
+    "rates": {
+      "name_ar": "معدلات الإنتاج",
+      "key": [
+        "line_id",
+        "sku_id"
+      ],
+      "fields": [
+        {
+          "name": "line_id",
+          "type": "str",
+          "required": true,
+          "name_ar": "خط الإنتاج"
+        },
+        {
+          "name": "sku_id",
+          "type": "str",
+          "required": true,
+          "name_ar": "رمز المنتج"
+        },
+        {
+          "name": "units_per_day",
+          "type": "int",
+          "required": true,
+          "name_ar": "وحدات في اليوم"
+        }
+      ]
+    },
+    "orders": {
+      "name_ar": "الطلبات",
+      "key": "id",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المعرّف"
+        },
+        {
+          "name": "customer_ar",
+          "type": "str",
+          "required": true,
+          "name_ar": "العميل"
+        },
+        {
+          "name": "sku_id",
+          "type": "str",
+          "required": true,
+          "name_ar": "رمز المنتج"
+        },
+        {
+          "name": "qty",
+          "type": "int",
+          "required": true,
+          "name_ar": "الكمية"
+        },
+        {
+          "name": "due_day",
+          "type": "int",
+          "required": true,
+          "name_ar": "يوم التسليم"
+        },
+        {
+          "name": "penalty_per_day",
+          "type": "int",
+          "required": true,
+          "name_ar": "غرامة التأخير اليومية"
+        },
+        {
+          "name": "is_export",
+          "type": "bool",
+          "required": true,
+          "name_ar": "طلب تصدير"
+        }
+      ]
+    },
+    "demand_history": {
+      "name_ar": "سجل الطلب",
+      "key": [
+        "sku_id",
+        "week"
+      ],
+      "fields": [
+        {
+          "name": "sku_id",
+          "type": "str",
+          "required": true,
+          "name_ar": "رمز المنتج"
+        },
+        {
+          "name": "week",
+          "type": "int",
+          "required": true,
+          "name_ar": "الأسبوع"
+        },
+        {
+          "name": "qty",
+          "type": "int",
+          "required": true,
+          "name_ar": "الكمية"
+        }
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "rates.line_id",
+      "to": "lines.id"
+    },
+    {
+      "from": "rates.sku_id",
+      "to": "skus.id"
+    },
+    {
+      "from": "orders.sku_id",
+      "to": "skus.id"
+    },
+    {
+      "from": "demand_history.sku_id",
+      "to": "skus.id"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "horizon_days",
+      "name_ar": "أفق التخطيط بالأيام",
+      "type": "int",
+      "default": 14,
+      "min": 1
+    },
+    {
+      "id": "cold_capacity",
+      "name_ar": "سعة التخزين المبرد",
+      "type": "int",
+      "default": 25000,
+      "min": 0
+    },
+    {
+      "id": "credit_limit",
+      "name_ar": "حد الائتمان (ريال)",
+      "type": "int",
+      "default": 150000,
+      "min": 0
+    },
+    {
+      "id": "opening_cash",
+      "name_ar": "السيولة في بداية الخطة",
+      "type": "int",
+      "default": 20000,
+      "min": 0
+    },
+    {
+      "id": "payment_lag_days",
+      "name_ar": "مهلة التحصيل بالأيام",
+      "type": "int",
+      "default": 7,
+      "min": 0
+    },
+    {
+      "id": "weekly_interest",
+      "name_ar": "الفائدة الأسبوعية",
+      "type": "float",
+      "default": 0.004,
+      "min": 0
+    },
+    {
+      "id": "plan_start_date",
+      "name_ar": "تاريخ بدء التخطيط",
+      "type": "date",
+      "default": "2026-02-02"
+    },
+    {
+      "id": "line_down",
+      "name_ar": "أيام توقف الخطوط",
+      "type": "dict",
+      "default": {}
+    }
+  ],
+  "constraints": [
+    {
+      "id": "line_capacity",
+      "name_ar": "سعة خط الإنتاج",
+      "kind": "hard",
+      "editable": true,
+      "param": "line_down"
+    },
+    {
+      "id": "inventory_balance",
+      "name_ar": "توازن المخزون",
+      "kind": "hard",
+      "editable": false
+    },
+    {
+      "id": "cold_capacity",
+      "name_ar": "سعة التخزين المبرد",
+      "kind": "hard",
+      "editable": true,
+      "param": "cold_capacity"
+    },
+    {
+      "id": "credit_limit",
+      "name_ar": "حد الائتمان",
+      "kind": "hard_soft",
+      "editable": true,
+      "param": "credit_limit"
+    }
+  ],
+  "objective_weights": [
+    {
+      "id": "lateness",
+      "name_ar": "غرامات التأخير",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "id": "changeover",
+      "name_ar": "تكلفة تغيير المنتج",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "id": "holding",
+      "name_ar": "تكلفة التخزين",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "id": "financing",
+      "name_ar": "تكلفة التمويل",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "id": "unshipped",
+      "name_ar": "الطلبات غير المشحونة",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    }
+  ],
+  "upload_sheets": {
+    "lines": [
+      "id",
+      "name_ar",
+      "changeover_cost",
+      "changeover_loss_units"
+    ],
+    "skus": [
+      "id",
+      "name_ar",
+      "unit_cost",
+      "unit_price",
+      "volume",
+      "holding_cost_per_day",
+      "initial_inventory"
+    ],
+    "rates": [
+      "line_id",
+      "sku_id",
+      "units_per_day"
+    ],
+    "orders": [
+      "id",
+      "customer_ar",
+      "sku_id",
+      "qty",
+      "due_day",
+      "penalty_per_day",
+      "is_export"
+    ],
+    "demand_history": [
+      "sku_id",
+      "week",
+      "qty"
+    ]
+  },
+  "whatif_changes": [
+    "demand_pct",
+    "line_down",
+    "storage_pct",
+    "order_due_shift",
+    "changeover_cost_pct",
+    "credit_limit_pct",
+    "credit_limit_abs",
+    "payment_lag",
+    "weight_change"
+  ]
+}

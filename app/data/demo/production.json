@@ -1,0 +1,1806 @@
+{
+  "lines": [
+    {
+      "id": "L1",
+      "name_ar": "خط العصائر",
+      "changeover_cost": 1500,
+      "changeover_loss_units": 600
+    },
+    {
+      "id": "L2",
+      "name_ar": "خط الألبان",
+      "changeover_cost": 2000,
+      "changeover_loss_units": 600
+    }
+  ],
+  "skus": [
+    {
+      "id": "S1",
+      "name_ar": "عصير برتقال 1ل",
+      "unit_cost": 5,
+      "unit_price": 9,
+      "volume": 2,
+      "holding_cost_per_day": 2,
+      "initial_inventory": 1500
+    },
+    {
+      "id": "S2",
+      "name_ar": "عصير مانجو 1ل",
+      "unit_cost": 6,
+      "unit_price": 11,
+      "volume": 2,
+      "holding_cost_per_day": 2,
+      "initial_inventory": 1000
+    },
+    {
+      "id": "S3",
+      "name_ar": "عصير تفاح",
+      "unit_cost": 4,
+      "unit_price": 7,
+      "volume": 1,
+      "holding_cost_per_day": 2,
+      "initial_inventory": 500
+    },
+    {
+      "id": "S4",
+      "name_ar": "حليب طازج",
+      "unit_cost": 7,
+      "unit_price": 12,
+      "volume": 2,
+      "holding_cost_per_day": 2,
+      "initial_inventory": 1000
+    },
+    {
+      "id": "S5",
+      "name_ar": "زبادي سادة",
+      "unit_cost": 8,
+      "unit_price": 13,
+      "volume": 1,
+      "holding_cost_per_day": 2,
+      "initial_inventory": 500
+    },
+    {
+      "id": "S6",
+      "name_ar": "زبادي فراولة",
+      "unit_cost": 9,
+      "unit_price": 15,
+      "volume": 1,
+      "holding_cost_per_day": 2,
+      "initial_inventory": 0
+    }
+  ],
+  "rates": [
+    {
+      "line_id": "L1",
+      "sku_id": "S1",
+      "units_per_day": 5000
+    },
+    {
+      "line_id": "L1",
+      "sku_id": "S2",
+      "units_per_day": 4500
+    },
+    {
+      "line_id": "L1",
+      "sku_id": "S3",
+      "units_per_day": 4000
+    },
+    {
+      "line_id": "L1",
+      "sku_id": "S4",
+      "units_per_day": 3000
+    },
+    {
+      "line_id": "L1",
+      "sku_id": "S5",
+      "units_per_day": 3000
+    },
+    {
+      "line_id": "L1",
+      "sku_id": "S6",
+      "units_per_day": 0
+    },
+    {
+      "line_id": "L2",
+      "sku_id": "S1",
+      "units_per_day": 0
+    },
+    {
+      "line_id": "L2",
+      "sku_id": "S2",
+      "units_per_day": 0
+    },
+    {
+      "line_id": "L2",
+      "sku_id": "S3",
+      "units_per_day": 3500
+    },
+    {
+      "line_id": "L2",
+      "sku_id": "S4",
+      "units_per_day": 5000
+    },
+    {
+      "line_id": "L2",
+      "sku_id": "S5",
+      "units_per_day": 4500
+    },
+    {
+      "line_id": "L2",
+      "sku_id": "S6",
+      "units_per_day": 4200
+    }
+  ],
+  "orders": [
+    {
+      "id": "O1",
+      "customer_ar": "عميل 1",
+      "sku_id": "S1",
+      "qty": 7000,
+      "due_day": 3,
+      "penalty_per_day": 2000,
+      "is_export": true
+    },
+    {
+      "id": "O2",
+      "customer_ar": "عميل 2",
+      "sku_id": "S2",
+      "qty": 6500,
+      "due_day": 4,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O3",
+      "customer_ar": "عميل 3",
+      "sku_id": "S3",
+      "qty": 5000,
+      "due_day": 5,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O4",
+      "customer_ar": "عميل 4",
+      "sku_id": "S4",
+      "qty": 7500,
+      "due_day": 6,
+      "penalty_per_day": 2000,
+      "is_export": true
+    },
+    {
+      "id": "O5",
+      "customer_ar": "عميل 5",
+      "sku_id": "S5",
+      "qty": 5000,
+      "due_day": 7,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O6",
+      "customer_ar": "عميل 6",
+      "sku_id": "S6",
+      "qty": 3500,
+      "due_day": 8,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O7",
+      "customer_ar": "عميل 7",
+      "sku_id": "S1",
+      "qty": 8000,
+      "due_day": 9,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O8",
+      "customer_ar": "عميل 8",
+      "sku_id": "S2",
+      "qty": 6500,
+      "due_day": 10,
+      "penalty_per_day": 2000,
+      "is_export": true
+    },
+    {
+      "id": "O9",
+      "customer_ar": "عميل 9",
+      "sku_id": "S3",
+      "qty": 5800,
+      "due_day": 11,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O10",
+      "customer_ar": "عميل 10",
+      "sku_id": "S4",
+      "qty": 7200,
+      "due_day": 12,
+      "penalty_per_day": 2000,
+      "is_export": true
+    },
+    {
+      "id": "O11",
+      "customer_ar": "عميل 11",
+      "sku_id": "S5",
+      "qty": 5000,
+      "due_day": 13,
+      "penalty_per_day": 500,
+      "is_export": false
+    },
+    {
+      "id": "O12",
+      "customer_ar": "عميل 12",
+      "sku_id": "S6",
+      "qty": 3500,
+      "due_day": 13,
+      "penalty_per_day": 500,
+      "is_export": false
+    }
+  ],
+  "demand_history": [
+    {
+      "sku_id": "S1",
+      "week": 1,
+      "qty": 5457
+    },
+    {
+      "sku_id": "S1",
+      "week": 2,
+      "qty": 5062
+    },
+    {
+      "sku_id": "S1",
+      "week": 3,
+      "qty": 6010
+    },
+    {
+      "sku_id": "S1",
+      "week": 4,
+      "qty": 5953
+    },
+    {
+      "sku_id": "S1",
+      "week": 5,
+      "qty": 5126
+    },
+    {
+      "sku_id": "S1",
+      "week": 6,
+      "qty": 5289
+    },
+    {
+      "sku_id": "S1",
+      "week": 7,
+      "qty": 4421
+    },
+    {
+      "sku_id": "S1",
+      "week": 8,
+      "qty": 4307
+    },
+    {
+      "sku_id": "S1",
+      "week": 9,
+      "qty": 4445
+    },
+    {
+      "sku_id": "S1",
+      "week": 10,
+      "qty": 4513
+    },
+    {
+      "sku_id": "S1",
+      "week": 11,
+      "qty": 4845
+    },
+    {
+      "sku_id": "S1",
+      "week": 12,
+      "qty": 4973
+    },
+    {
+      "sku_id": "S1",
+      "week": 13,
+      "qty": 5583
+    },
+    {
+      "sku_id": "S1",
+      "week": 14,
+      "qty": 4775
+    },
+    {
+      "sku_id": "S1",
+      "week": 15,
+      "qty": 5786
+    },
+    {
+      "sku_id": "S1",
+      "week": 16,
+      "qty": 6186
+    },
+    {
+      "sku_id": "S1",
+      "week": 17,
+      "qty": 5546
+    },
+    {
+      "sku_id": "S1",
+      "week": 18,
+      "qty": 6120
+    },
+    {
+      "sku_id": "S1",
+      "week": 19,
+      "qty": 5090
+    },
+    {
+      "sku_id": "S1",
+      "week": 20,
+      "qty": 5225
+    },
+    {
+      "sku_id": "S1",
+      "week": 21,
+      "qty": 4795
+    },
+    {
+      "sku_id": "S1",
+      "week": 22,
+      "qty": 4586
+    },
+    {
+      "sku_id": "S1",
+      "week": 23,
+      "qty": 5005
+    },
+    {
+      "sku_id": "S1",
+      "week": 24,
+      "qty": 5042
+    },
+    {
+      "sku_id": "S1",
+      "week": 25,
+      "qty": 5139
+    },
+    {
+      "sku_id": "S1",
+      "week": 26,
+      "qty": 6403
+    },
+    {
+      "sku_id": "S1",
+      "week": 27,
+      "qty": 6643
+    },
+    {
+      "sku_id": "S1",
+      "week": 28,
+      "qty": 6415
+    },
+    {
+      "sku_id": "S1",
+      "week": 29,
+      "qty": 6908
+    },
+    {
+      "sku_id": "S1",
+      "week": 30,
+      "qty": 6582
+    },
+    {
+      "sku_id": "S1",
+      "week": 31,
+      "qty": 6446
+    },
+    {
+      "sku_id": "S1",
+      "week": 32,
+      "qty": 6402
+    },
+    {
+      "sku_id": "S1",
+      "week": 33,
+      "qty": 5909
+    },
+    {
+      "sku_id": "S1",
+      "week": 34,
+      "qty": 5612
+    },
+    {
+      "sku_id": "S1",
+      "week": 35,
+      "qty": 6021
+    },
+    {
+      "sku_id": "S1",
+      "week": 36,
+      "qty": 5230
+    },
+    {
+      "sku_id": "S1",
+      "week": 37,
+      "qty": 5151
+    },
+    {
+      "sku_id": "S1",
+      "week": 38,
+      "qty": 5309
+    },
+    {
+      "sku_id": "S1",
+      "week": 39,
+      "qty": 6975
+    },
+    {
+      "sku_id": "S1",
+      "week": 40,
+      "qty": 6612
+    },
+    {
+      "sku_id": "S1",
+      "week": 41,
+      "qty": 7179
+    },
+    {
+      "sku_id": "S1",
+      "week": 42,
+      "qty": 7211
+    },
+    {
+      "sku_id": "S1",
+      "week": 43,
+      "qty": 7621
+    },
+    {
+      "sku_id": "S1",
+      "week": 44,
+      "qty": 7067
+    },
+    {
+      "sku_id": "S1",
+      "week": 45,
+      "qty": 6383
+    },
+    {
+      "sku_id": "S1",
+      "week": 46,
+      "qty": 6992
+    },
+    {
+      "sku_id": "S1",
+      "week": 47,
+      "qty": 6654
+    },
+    {
+      "sku_id": "S1",
+      "week": 48,
+      "qty": 6349
+    },
+    {
+      "sku_id": "S1",
+      "week": 49,
+      "qty": 5682
+    },
+    {
+      "sku_id": "S1",
+      "week": 50,
+      "qty": 5680
+    },
+    {
+      "sku_id": "S1",
+      "week": 51,
+      "qty": 6332
+    },
+    {
+      "sku_id": "S1",
+      "week": 52,
+      "qty": 6386
+    },
+    {
+      "sku_id": "S2",
+      "week": 1,
+      "qty": 5030
+    },
+    {
+      "sku_id": "S2",
+      "week": 2,
+      "qty": 5564
+    },
+    {
+      "sku_id": "S2",
+      "week": 3,
+      "qty": 5439
+    },
+    {
+      "sku_id": "S2",
+      "week": 4,
+      "qty": 5132
+    },
+    {
+      "sku_id": "S2",
+      "week": 5,
+      "qty": 5264
+    },
+    {
+      "sku_id": "S2",
+      "week": 6,
+      "qty": 5331
+    },
+    {
+      "sku_id": "S2",
+      "week": 7,
+      "qty": 5035
+    },
+    {
+      "sku_id": "S2",
+      "week": 8,
+      "qty": 4739
+    },
+    {
+      "sku_id": "S2",
+      "week": 9,
+      "qty": 4426
+    },
+    {
+      "sku_id": "S2",
+      "week": 10,
+      "qty": 3996
+    },
+    {
+      "sku_id": "S2",
+      "week": 11,
+      "qty": 4884
+    },
+    {
+      "sku_id": "S2",
+      "week": 12,
+      "qty": 5195
+    },
+    {
+      "sku_id": "S2",
+      "week": 13,
+      "qty": 5523
+    },
+    {
+      "sku_id": "S2",
+      "week": 14,
+      "qty": 5716
+    },
+    {
+      "sku_id": "S2",
+      "week": 15,
+      "qty": 5983
+    },
+    {
+      "sku_id": "S2",
+      "week": 16,
+      "qty": 5384
+    },
+    {
+      "sku_id": "S2",
+      "week": 17,
+      "qty": 6139
+    },
+    {
+      "sku_id": "S2",
+      "week": 18,
+      "qty": 6035
+    },
+    {
+      "sku_id": "S2",
+      "week": 19,
+      "qty": 6208
+    },
+    {
+      "sku_id": "S2",
+      "week": 20,
+      "qty": 5743
+    },
+    {
+      "sku_id": "S2",
+      "week": 21,
+      "qty": 5398
+    },
+    {
+      "sku_id": "S2",
+      "week": 22,
+      "qty": 5467
+    },
+    {
+      "sku_id": "S2",
+      "week": 23,
+      "qty": 4683
+    },
+    {
+      "sku_id": "S2",
+      "week": 24,
+      "qty": 5275
+    },
+    {
+      "sku_id": "S2",
+      "week": 25,
+      "qty": 5521
+    },
+    {
+      "sku_id": "S2",
+      "week": 26,
+      "qty": 6138
+    },
+    {
+      "sku_id": "S2",
+      "week": 27,
+      "qty": 6566
+    },
+    {
+      "sku_id": "S2",
+      "week": 28,
+      "qty": 7043
+    },
+    {
+      "sku_id": "S2",
+      "week": 29,
+      "qty": 6871
+    },
+    {
+      "sku_id": "S2",
+      "week": 30,
+      "qty": 6750
+    },
+    {
+      "sku_id": "S2",
+      "week": 31,
+      "qty": 5207
+    },
+    {
+      "sku_id": "S2",
+      "week": 32,
+      "qty": 6233
+    },
+    {
+      "sku_id": "S2",
+      "week": 33,
+      "qty": 6189
+    },
+    {
+      "sku_id": "S2",
+      "week": 34,
+      "qty": 6554
+    },
+    {
+      "sku_id": "S2",
+      "week": 35,
+      "qty": 5042
+    },
+    {
+      "sku_id": "S2",
+      "week": 36,
+      "qty": 5967
+    },
+    {
+      "sku_id": "S2",
+      "week": 37,
+      "qty": 5475
+    },
+    {
+      "sku_id": "S2",
+      "week": 38,
+      "qty": 5737
+    },
+    {
+      "sku_id": "S2",
+      "week": 39,
+      "qty": 6320
+    },
+    {
+      "sku_id": "S2",
+      "week": 40,
+      "qty": 6752
+    },
+    {
+      "sku_id": "S2",
+      "week": 41,
+      "qty": 6436
+    },
+    {
+      "sku_id": "S2",
+      "week": 42,
+      "qty": 6830
+    },
+    {
+      "sku_id": "S2",
+      "week": 43,
+      "qty": 7216
+    },
+    {
+      "sku_id": "S2",
+      "week": 44,
+      "qty": 7688
+    },
+    {
+      "sku_id": "S2",
+      "week": 45,
+      "qty": 6972
+    },
+    {
+      "sku_id": "S2",
+      "week": 46,
+      "qty": 6893
+    },
+    {
+      "sku_id": "S2",
+      "week": 47,
+      "qty": 6264
+    },
+    {
+      "sku_id": "S2",
+      "week": 48,
+      "qty": 6531
+    },
+    {
+      "sku_id": "S2",
+      "week": 49,
+      "qty": 5729
+    },
+    {
+      "sku_id": "S2",
+      "week": 50,
+      "qty": 6752
+    },
+    {
+      "sku_id": "S2",
+      "week": 51,
+      "qty": 6184
+    },
+    {
+      "sku_id": "S2",
+      "week": 52,
+      "qty": 6955
+    },
+    {
+      "sku_id": "S3",
+      "week": 1,
+      "qty": 5067
+    },
+    {
+      "sku_id": "S3",
+      "week": 2,
+      "qty": 4642
+    },
+    {
+      "sku_id": "S3",
+      "week": 3,
+      "qty": 4835
+    },
+    {
+      "sku_id": "S3",
+      "week": 4,
+      "qty": 5061
+    },
+    {
+      "sku_id": "S3",
+      "week": 5,
+      "qty": 4637
+    },
+    {
+      "sku_id": "S3",
+      "week": 6,
+      "qty": 4750
+    },
+    {
+      "sku_id": "S3",
+      "week": 7,
+      "qty": 5045
+    },
+    {
+      "sku_id": "S3",
+      "week": 8,
+      "qty": 4721
+    },
+    {
+      "sku_id": "S3",
+      "week": 9,
+      "qty": 4641
+    },
+    {
+      "sku_id": "S3",
+      "week": 10,
+      "qty": 4927
+    },
+    {
+      "sku_id": "S3",
+      "week": 11,
+      "qty": 4773
+    },
+    {
+      "sku_id": "S3",
+      "week": 12,
+      "qty": 5347
+    },
+    {
+      "sku_id": "S3",
+      "week": 13,
+      "qty": 5342
+    },
+    {
+      "sku_id": "S3",
+      "week": 14,
+      "qty": 4816
+    },
+    {
+      "sku_id": "S3",
+      "week": 15,
+      "qty": 5976
+    },
+    {
+      "sku_id": "S3",
+      "week": 16,
+      "qty": 4490
+    },
+    {
+      "sku_id": "S3",
+      "week": 17,
+      "qty": 5039
+    },
+    {
+      "sku_id": "S3",
+      "week": 18,
+      "qty": 4026
+    },
+    {
+      "sku_id": "S3",
+      "week": 19,
+      "qty": 4366
+    },
+    {
+      "sku_id": "S3",
+      "week": 20,
+      "qty": 4599
+    },
+    {
+      "sku_id": "S3",
+      "week": 21,
+      "qty": 4781
+    },
+    {
+      "sku_id": "S3",
+      "week": 22,
+      "qty": 5220
+    },
+    {
+      "sku_id": "S3",
+      "week": 23,
+      "qty": 5147
+    },
+    {
+      "sku_id": "S3",
+      "week": 24,
+      "qty": 5059
+    },
+    {
+      "sku_id": "S3",
+      "week": 25,
+      "qty": 4865
+    },
+    {
+      "sku_id": "S3",
+      "week": 26,
+      "qty": 5136
+    },
+    {
+      "sku_id": "S3",
+      "week": 27,
+      "qty": 4910
+    },
+    {
+      "sku_id": "S3",
+      "week": 28,
+      "qty": 4335
+    },
+    {
+      "sku_id": "S3",
+      "week": 29,
+      "qty": 5123
+    },
+    {
+      "sku_id": "S3",
+      "week": 30,
+      "qty": 4338
+    },
+    {
+      "sku_id": "S3",
+      "week": 31,
+      "qty": 5107
+    },
+    {
+      "sku_id": "S3",
+      "week": 32,
+      "qty": 4548
+    },
+    {
+      "sku_id": "S3",
+      "week": 33,
+      "qty": 5465
+    },
+    {
+      "sku_id": "S3",
+      "week": 34,
+      "qty": 4875
+    },
+    {
+      "sku_id": "S3",
+      "week": 35,
+      "qty": 5018
+    },
+    {
+      "sku_id": "S3",
+      "week": 36,
+      "qty": 5065
+    },
+    {
+      "sku_id": "S3",
+      "week": 37,
+      "qty": 4420
+    },
+    {
+      "sku_id": "S3",
+      "week": 38,
+      "qty": 5121
+    },
+    {
+      "sku_id": "S3",
+      "week": 39,
+      "qty": 4815
+    },
+    {
+      "sku_id": "S3",
+      "week": 40,
+      "qty": 4819
+    },
+    {
+      "sku_id": "S3",
+      "week": 41,
+      "qty": 5132
+    },
+    {
+      "sku_id": "S3",
+      "week": 42,
+      "qty": 4657
+    },
+    {
+      "sku_id": "S3",
+      "week": 43,
+      "qty": 5004
+    },
+    {
+      "sku_id": "S3",
+      "week": 44,
+      "qty": 5038
+    },
+    {
+      "sku_id": "S3",
+      "week": 45,
+      "qty": 4513
+    },
+    {
+      "sku_id": "S3",
+      "week": 46,
+      "qty": 4752
+    },
+    {
+      "sku_id": "S3",
+      "week": 47,
+      "qty": 5442
+    },
+    {
+      "sku_id": "S3",
+      "week": 48,
+      "qty": 4834
+    },
+    {
+      "sku_id": "S3",
+      "week": 49,
+      "qty": 4948
+    },
+    {
+      "sku_id": "S3",
+      "week": 50,
+      "qty": 4977
+    },
+    {
+      "sku_id": "S3",
+      "week": 51,
+      "qty": 4943
+    },
+    {
+      "sku_id": "S3",
+      "week": 52,
+      "qty": 5128
+    },
+    {
+      "sku_id": "S4",
+      "week": 1,
+      "qty": 5069
+    },
+    {
+      "sku_id": "S4",
+      "week": 2,
+      "qty": 5027
+    },
+    {
+      "sku_id": "S4",
+      "week": 3,
+      "qty": 5878
+    },
+    {
+      "sku_id": "S4",
+      "week": 4,
+      "qty": 4816
+    },
+    {
+      "sku_id": "S4",
+      "week": 5,
+      "qty": 5503
+    },
+    {
+      "sku_id": "S4",
+      "week": 6,
+      "qty": 5250
+    },
+    {
+      "sku_id": "S4",
+      "week": 7,
+      "qty": 5653
+    },
+    {
+      "sku_id": "S4",
+      "week": 8,
+      "qty": 5543
+    },
+    {
+      "sku_id": "S4",
+      "week": 9,
+      "qty": 4801
+    },
+    {
+      "sku_id": "S4",
+      "week": 10,
+      "qty": 4906
+    },
+    {
+      "sku_id": "S4",
+      "week": 11,
+      "qty": 5055
+    },
+    {
+      "sku_id": "S4",
+      "week": 12,
+      "qty": 5291
+    },
+    {
+      "sku_id": "S4",
+      "week": 13,
+      "qty": 5173
+    },
+    {
+      "sku_id": "S4",
+      "week": 14,
+      "qty": 5302
+    },
+    {
+      "sku_id": "S4",
+      "week": 15,
+      "qty": 5481
+    },
+    {
+      "sku_id": "S4",
+      "week": 16,
+      "qty": 5389
+    },
+    {
+      "sku_id": "S4",
+      "week": 17,
+      "qty": 4390
+    },
+    {
+      "sku_id": "S4",
+      "week": 18,
+      "qty": 4629
+    },
+    {
+      "sku_id": "S4",
+      "week": 19,
+      "qty": 5338
+    },
+    {
+      "sku_id": "S4",
+      "week": 20,
+      "qty": 5174
+    },
+    {
+      "sku_id": "S4",
+      "week": 21,
+      "qty": 4994
+    },
+    {
+      "sku_id": "S4",
+      "week": 22,
+      "qty": 4420
+    },
+    {
+      "sku_id": "S4",
+      "week": 23,
+      "qty": 5351
+    },
+    {
+      "sku_id": "S4",
+      "week": 24,
+      "qty": 5304
+    },
+    {
+      "sku_id": "S4",
+      "week": 25,
+      "qty": 5456
+    },
+    {
+      "sku_id": "S4",
+      "week": 26,
+      "qty": 4574
+    },
+    {
+      "sku_id": "S4",
+      "week": 27,
+      "qty": 4726
+    },
+    {
+      "sku_id": "S4",
+      "week": 28,
+      "qty": 5178
+    },
+    {
+      "sku_id": "S4",
+      "week": 29,
+      "qty": 5335
+    },
+    {
+      "sku_id": "S4",
+      "week": 30,
+      "qty": 5434
+    },
+    {
+      "sku_id": "S4",
+      "week": 31,
+      "qty": 5063
+    },
+    {
+      "sku_id": "S4",
+      "week": 32,
+      "qty": 5450
+    },
+    {
+      "sku_id": "S4",
+      "week": 33,
+      "qty": 4796
+    },
+    {
+      "sku_id": "S4",
+      "week": 34,
+      "qty": 4647
+    },
+    {
+      "sku_id": "S4",
+      "week": 35,
+      "qty": 5340
+    },
+    {
+      "sku_id": "S4",
+      "week": 36,
+      "qty": 5314
+    },
+    {
+      "sku_id": "S4",
+      "week": 37,
+      "qty": 5913
+    },
+    {
+      "sku_id": "S4",
+      "week": 38,
+      "qty": 5594
+    },
+    {
+      "sku_id": "S4",
+      "week": 39,
+      "qty": 5116
+    },
+    {
+      "sku_id": "S4",
+      "week": 40,
+      "qty": 5221
+    },
+    {
+      "sku_id": "S4",
+      "week": 41,
+      "qty": 4413
+    },
+    {
+      "sku_id": "S4",
+      "week": 42,
+      "qty": 5239
+    },
+    {
+      "sku_id": "S4",
+      "week": 43,
+      "qty": 5554
+    },
+    {
+      "sku_id": "S4",
+      "week": 44,
+      "qty": 5034
+    },
+    {
+      "sku_id": "S4",
+      "week": 45,
+      "qty": 5696
+    },
+    {
+      "sku_id": "S4",
+      "week": 46,
+      "qty": 5827
+    },
+    {
+      "sku_id": "S4",
+      "week": 47,
+      "qty": 5561
+    },
+    {
+      "sku_id": "S4",
+      "week": 48,
+      "qty": 4600
+    },
+    {
+      "sku_id": "S4",
+      "week": 49,
+      "qty": 5302
+    },
+    {
+      "sku_id": "S4",
+      "week": 50,
+      "qty": 4623
+    },
+    {
+      "sku_id": "S4",
+      "week": 51,
+      "qty": 5361
+    },
+    {
+      "sku_id": "S4",
+      "week": 52,
+      "qty": 5313
+    },
+    {
+      "sku_id": "S5",
+      "week": 1,
+      "qty": 5952
+    },
+    {
+      "sku_id": "S5",
+      "week": 2,
+      "qty": 5635
+    },
+    {
+      "sku_id": "S5",
+      "week": 3,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 4,
+      "qty": 5295
+    },
+    {
+      "sku_id": "S5",
+      "week": 5,
+      "qty": 4830
+    },
+    {
+      "sku_id": "S5",
+      "week": 6,
+      "qty": 4811
+    },
+    {
+      "sku_id": "S5",
+      "week": 7,
+      "qty": 5313
+    },
+    {
+      "sku_id": "S5",
+      "week": 8,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 9,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 10,
+      "qty": 5177
+    },
+    {
+      "sku_id": "S5",
+      "week": 11,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 12,
+      "qty": 5355
+    },
+    {
+      "sku_id": "S5",
+      "week": 13,
+      "qty": 5514
+    },
+    {
+      "sku_id": "S5",
+      "week": 14,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 15,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 16,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 17,
+      "qty": 5603
+    },
+    {
+      "sku_id": "S5",
+      "week": 18,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 19,
+      "qty": 5203
+    },
+    {
+      "sku_id": "S5",
+      "week": 20,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 21,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 22,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 23,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 24,
+      "qty": 5880
+    },
+    {
+      "sku_id": "S5",
+      "week": 25,
+      "qty": 5729
+    },
+    {
+      "sku_id": "S5",
+      "week": 26,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 27,
+      "qty": 5333
+    },
+    {
+      "sku_id": "S5",
+      "week": 28,
+      "qty": 5337
+    },
+    {
+      "sku_id": "S5",
+      "week": 29,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 30,
+      "qty": 4836
+    },
+    {
+      "sku_id": "S5",
+      "week": 31,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 32,
+      "qty": 5646
+    },
+    {
+      "sku_id": "S5",
+      "week": 33,
+      "qty": 5583
+    },
+    {
+      "sku_id": "S5",
+      "week": 34,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 35,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 36,
+      "qty": 6087
+    },
+    {
+      "sku_id": "S5",
+      "week": 37,
+      "qty": 5509
+    },
+    {
+      "sku_id": "S5",
+      "week": 38,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 39,
+      "qty": 5986
+    },
+    {
+      "sku_id": "S5",
+      "week": 40,
+      "qty": 5593
+    },
+    {
+      "sku_id": "S5",
+      "week": 41,
+      "qty": 4940
+    },
+    {
+      "sku_id": "S5",
+      "week": 42,
+      "qty": 4839
+    },
+    {
+      "sku_id": "S5",
+      "week": 43,
+      "qty": 5234
+    },
+    {
+      "sku_id": "S5",
+      "week": 44,
+      "qty": 5622
+    },
+    {
+      "sku_id": "S5",
+      "week": 45,
+      "qty": 5151
+    },
+    {
+      "sku_id": "S5",
+      "week": 46,
+      "qty": 0
+    },
+    {
+      "sku_id": "S5",
+      "week": 47,
+      "qty": 5760
+    },
+    {
+      "sku_id": "S5",
+      "week": 48,
+      "qty": 5810
+    },
+    {
+      "sku_id": "S5",
+      "week": 49,
+      "qty": 4768
+    },
+    {
+      "sku_id": "S5",
+      "week": 50,
+      "qty": 5256
+    },
+    {
+      "sku_id": "S5",
+      "week": 51,
+      "qty": 5460
+    },
+    {
+      "sku_id": "S5",
+      "week": 52,
+      "qty": 5449
+    },
+    {
+      "sku_id": "S6",
+      "week": 1,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 2,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 3,
+      "qty": 5973
+    },
+    {
+      "sku_id": "S6",
+      "week": 4,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 5,
+      "qty": 6068
+    },
+    {
+      "sku_id": "S6",
+      "week": 6,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 7,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 8,
+      "qty": 5580
+    },
+    {
+      "sku_id": "S6",
+      "week": 9,
+      "qty": 5782
+    },
+    {
+      "sku_id": "S6",
+      "week": 10,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 11,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 12,
+      "qty": 5735
+    },
+    {
+      "sku_id": "S6",
+      "week": 13,
+      "qty": 6347
+    },
+    {
+      "sku_id": "S6",
+      "week": 14,
+      "qty": 5453
+    },
+    {
+      "sku_id": "S6",
+      "week": 15,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 16,
+      "qty": 6188
+    },
+    {
+      "sku_id": "S6",
+      "week": 17,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 18,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 19,
+      "qty": 6000
+    },
+    {
+      "sku_id": "S6",
+      "week": 20,
+      "qty": 5435
+    },
+    {
+      "sku_id": "S6",
+      "week": 21,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 22,
+      "qty": 5972
+    },
+    {
+      "sku_id": "S6",
+      "week": 23,
+      "qty": 6448
+    },
+    {
+      "sku_id": "S6",
+      "week": 24,
+      "qty": 5652
+    },
+    {
+      "sku_id": "S6",
+      "week": 25,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 26,
+      "qty": 6390
+    },
+    {
+      "sku_id": "S6",
+      "week": 27,
+      "qty": 6219
+    },
+    {
+      "sku_id": "S6",
+      "week": 28,
+      "qty": 5005
+    },
+    {
+      "sku_id": "S6",
+      "week": 29,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 30,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 31,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 32,
+      "qty": 5263
+    },
+    {
+      "sku_id": "S6",
+      "week": 33,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 34,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 35,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 36,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 37,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 38,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 39,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 40,
+      "qty": 6143
+    },
+    {
+      "sku_id": "S6",
+      "week": 41,
+      "qty": 5799
+    },
+    {
+      "sku_id": "S6",
+      "week": 42,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 43,
+      "qty": 5648
+    },
+    {
+      "sku_id": "S6",
+      "week": 44,
+      "qty": 0
+    },
+    {
+      "sku_id": "S6",
+      "week": 45,
+      "qty": 5366
+    },
+    {
+      "sku_id": "S6",
+      "week": 46,
+      "qty": 5467
+    },
+    {
+      "sku_id": "S6",
+      "week": 47,
+      "qty": 5620
+    },
+    {
+      "sku_id": "S6",
+      "week": 48,
+      "qty": 5753
+    },
+    {
+      "sku_id": "S6",
+      "week": 49,
+      "qty": 5220
+    },
+    {
+      "sku_id": "S6",
+      "week": 50,
+      "qty": 5955
+    },
+    {
+      "sku_id": "S6",
+      "week": 51,
+      "qty": 5143
+    },
+    {
+      "sku_id": "S6",
+      "week": 52,
+      "qty": 0
+    }
+  ]
+}

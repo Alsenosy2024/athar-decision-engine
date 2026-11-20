@@ -1,0 +1,190 @@
+<header class="page-title">
+    <div><h1>تجهيز الشركة</h1><p>كوّن نموذج الشركة على مراحل أو ارفع بيانات الأقسام في ملف واحد.</p></div>
+</header>
+<p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل تجهيز الشركة…</p>
+<p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+<p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+<template x-if="(creating || !model) && busy !== 'load'">
+    <article class="card">
+        <h2>شركة جديدة</h2>
+        <form class="stack" x-show="admin" @submit.prevent="create()">
+            <label>اسم الشركة <input required maxlength="150" x-model="name"></label>
+            <label>قالب القطاع
+                <select x-model="sector">
+                    <template x-for="item in sectors" :key="item.id">
+                        <option :value="item.id" x-text="item.name"></option>
+                    </template>
+                </select>
+            </label>
+            <div class="actions">
+                <button class="button primary" type="submit" :disabled="!!busy">أنشئ الشركة</button>
+                <button class="button secondary" type="button" x-show="model" :disabled="!!busy" @click="creating = false">إلغاء</button>
+            </div>
+        </form>
+        <p x-show="!admin">اختار شركة بتستخدم نموذج التجهيز من الشريط العلوي. الأدمن يقدر ينشئ شركة جديدة.</p>
+    </article>
+</template>
+<template x-if="model && !creating">
+    <div class="stack onboarding-layout">
+        <article class="snapshot">
+            <div class="snapshot-info">
+                <h2 x-text="model.name"></h2>
+                <p><span x-text="sectors.find(item => item.id === model.sector)?.name"></span> · إصدار <bdi x-text="model.version"></bdi></p>
+            </div>
+            <div class="actions">
+                <button type="button" class="button secondary" x-show="admin" :disabled="!!busy" @click="creating = true">شركة جديدة</button>
+                <a class="button secondary" href="#/impact" @click="openImpact()">افتح أثر الفرضية</a>
+                <button type="button" class="button secondary" x-show="editable" :disabled="!!busy" @click="selectMode('full')">رفع شامل</button>
+                <button type="button" class="button secondary" x-show="editable && model.sector === 'custom'" :disabled="!!busy" @click="selectMode('rules')">عدّل معاملات المرونة</button>
+            </div>
+        </article>
+
+        <article class="card onboarding-readiness">
+            <div class="card-heading">
+                <div><h2>جاهزية البيانات <bdi x-text="model.readiness.score + '%'"></bdi></h2><p>الدرجة حسب الحقول المتوفرة. راجع مصدر كل قيمة قبل تشغيل التحليل.</p></div>
+            </div>
+            <progress aria-label="جاهزية بيانات الشركة" max="100" :value="model.readiness.score"></progress>
+            <ol class="onboarding-steps" aria-label="أقسام التجهيز">
+                <template x-for="(item, index) in model.readiness.sections" :key="item.id">
+                    <li><button type="button" class="button secondary" :disabled="!!busy"
+                        :aria-current="sectionIndex === index && !['full', 'rules'].includes(mode) ? 'step' : null"
+                        @click="selectSection(index)">
+                        <span x-text="item.name"></span><bdi x-text="item.score == null ? 'اختياري' : item.score + '%'"></bdi>
+                    </button></li>
+                </template>
+            </ol>
+        </article>
+
+        <article class="card stack" x-show="!['full', 'rules'].includes(mode)">
+            <div>
+                <h2 x-text="section?.name"></h2>
+                <p x-show="section?.missing.length" data-testid="onboarding-missing"
+                    x-text="'ناقص: ' + section?.missing.map(item => item.label).join('، ')"></p>
+                <template x-for="block in (section?.blocks || [])" :key="block.feature">
+                    <p class="notice" x-text="block.feature + ' محتاج ' + block.fields.map(key => nodeLabel(key)).join('، ')"></p>
+                </template>
+                <template x-for="note in (section?.notes || [])" :key="note"><p x-text="note"></p></template>
+            </div>
+            <div class="actions" x-show="editable">
+                <button class="button secondary" type="button" :aria-pressed="mode === 'manual'" :disabled="!!busy" @click="selectMode('manual')">إدخال يدوي</button>
+                <button class="button secondary" type="button" :aria-pressed="mode === 'excel'" :disabled="!!busy" @click="selectMode('excel')">Excel للقسم</button>
+                <button class="button secondary" type="button" x-show="admin" :aria-pressed="mode === 'erp'" :disabled="!!busy" @click="selectMode('erp')">موصل ERP</button>
+            </div>
+            <form class="stack" x-show="mode === 'manual'" @submit.prevent="previewManual()">
+                <p x-show="fields?.fields.length">التاريخ اختياري. لو فيه أكتر من قراءة، النموذج بيستخدم أحدث تاريخ.</p>
+                <fieldset :disabled="!editable || !!busy || !!review?.token" class="onboarding-fields">
+                    <template x-for="(row, index) in rows" :key="section.id + '-' + index">
+                        <div class="onboarding-field">
+                            <label x-show="row.entry">معرّف السجل
+                                <input dir="ltr" x-model="row.key" :readonly="!!row.stored" maxlength="60" placeholder="sales">
+                            </label>
+                            <label>
+                                <span x-text="row.label"></span>
+                                <small x-show="row.unit" dir="ltr" x-text="row.unit"></small>
+                                <input x-model="row.value" :inputmode="row.entry ? 'text' : 'decimal'"
+                                    :aria-label="row.label" :readonly="!editable" maxlength="160">
+                            </label>
+                            <label x-show="!row.entry">تاريخ القراءة <input type="date" x-model="row.date"></label>
+                            <label>مصدر القيمة
+                                <select x-model="row.source">
+                                    <option value="actual">فعلي</option><option value="estimated">مقدّر</option>
+                                </select>
+                            </label>
+                            <button class="button secondary" type="button" x-show="row.entry && !row.stored" @click="rows.splice(index, 1)">شيل السطر</button>
+                        </div>
+                    </template>
+                </fieldset>
+                <div class="actions" x-show="editable">
+                    <button class="button secondary" type="button" x-show="fields?.item" :disabled="!!busy" @click="addItem()">ضيف سجل</button>
+                    <button class="button primary" type="submit" :disabled="busy || !validRows.length">راجع الإدخال</button>
+                </div>
+            </form>
+            <form class="stack" x-show="mode === 'erp'" @submit.prevent="previewConnector()">
+                <label>الموصل المحفوظ
+                    <select x-model="connectorId" :disabled="!!busy">
+                        <option value="">اختار الموصل</option>
+                        <template x-for="connector in connectors" :key="connector.id">
+                            <option :value="connector.id" x-text="connector.name"></option>
+                        </template>
+                    </select>
+                </label>
+                <p>اربط أعمدة معرّف الحقل والقيمة والتاريخ من صفحة ربط البيانات. القالب فيه المعرّفات المطلوبة.</p>
+                <div class="actions">
+                    <a class="button secondary" href="#/connectors">إعداد الموصلات</a>
+                    <a class="button secondary" :href="templateUrl">نزّل قالب القسم</a>
+                    <button class="button primary" type="submit" :disabled="busy || !connectorId">اسحب وراجع</button>
+                </div>
+            </form>
+            <div class="actions onboarding-step-nav">
+                <button type="button" class="button secondary" :disabled="busy || sectionIndex === 0"
+                    @click="selectSection(sectionIndex - 1)">القسم السابق</button>
+                <button type="button" class="button secondary" :disabled="busy || sectionIndex === model.readiness.sections.length - 1"
+                    @click="selectSection(sectionIndex + 1)">القسم التالي</button>
+            </div>
+        </article>
+
+        <form class="card stack" x-show="['excel', 'full'].includes(mode)" @submit.prevent="previewExcel()">
+            <div>
+                <h2 x-text="mode === 'full' ? 'رفع شامل' : 'Excel للقسم'"></h2>
+                <p>نزّل القالب وسيب أسماء الأوراق والأعمدة زي ما هي. القيم اللي هتسيبها فاضية هتفضل محفوظة.</p>
+            </div>
+            <div class="actions">
+                <a class="button secondary" :href="templateUrl" x-text="mode === 'full' ? 'نزّل قالب الشركة' : 'نزّل قالب القسم'"></a>
+                <button class="button secondary" type="button" :disabled="!!busy" @click="selectMode('manual')">ارجع للقسم</button>
+            </div>
+            <label>ملف Excel <input type="file" accept=".xlsx" x-ref="file" :disabled="!!busy" @change="file = $event.target.files[0]; review = null"></label>
+            <div class="actions"><button class="button primary" type="submit" :disabled="busy || !file">راجع ملف Excel</button></div>
+        </form>
+
+        <form class="card stack" x-show="mode === 'rules'" @submit.prevent="previewRules()">
+            <div><h2>معاملات المرونة</h2><p>المعامل بيحدد استجابة المتغير المستهدف للتغير النسبي في المصدر. القيم الأولية تقديرية.</p></div>
+            <fieldset class="onboarding-fields" :disabled="!!busy">
+                <template x-for="edge in model.edges" :key="edge.source + ':' + edge.target">
+                    <label><span x-text="nodeLabel(edge.source) + ' ← ' + nodeLabel(edge.target)"></span>
+                        <input type="number" required min="-10" max="10" step="any" x-model.number="rules[edge.source + ':' + edge.target]">
+                    </label>
+                </template>
+            </fieldset>
+            <div class="actions">
+                <button class="button primary" type="submit" :disabled="!!busy">راجع المعاملات</button>
+                <button class="button secondary" type="button" :disabled="!!busy" @click="selectMode('manual')">ارجع للقسم</button>
+            </div>
+        </form>
+
+        <template x-if="review">
+            <article class="card stack" x-ref="review" tabindex="-1" data-testid="onboarding-review">
+                <h2>مراجعة التغييرات</h2>
+                <p x-show="!review.validation.ok">راجع الأخطاء واعمل معاينة جديدة قبل الحفظ.</p>
+                <ul x-show="!review.validation.ok">
+                    <template x-for="(issue, index) in review.validation.errors" :key="index">
+                        <li x-text="issue.sheet + ' · صف ' + issue.row + ' · ' + issue.column + ' · ' + issue.msg_ar"></li>
+                    </template>
+                </ul>
+                <div class="table-scroll" x-show="review.token">
+                    <table>
+                        <thead><tr><th>الحقل</th><th>الحالي</th><th>المقترح</th></tr></thead>
+                        <tbody>
+                            <template x-for="change in review.diff" :key="change.key + ':' + change.date">
+                                <tr><th scope="row"><bdi x-text="nodeLabel(change.key)"></bdi>
+                                        <small x-show="change.date" x-text="change.date" dir="ltr"></small></th>
+                                    <td><bdi x-text="number(change.before?.value)"></bdi>
+                                        <small x-show="change.before" x-text="source(change.before?.source)"></small></td>
+                                    <td><bdi x-text="number(change.after.value)"></bdi>
+                                        <small x-text="source(change.after.source)"></small></td></tr>
+                            </template>
+                            <template x-for="change in review.rule_diff" :key="change.key">
+                                <tr><th scope="row" x-text="change.key.split(':').map(key => nodeLabel(key)).join(' ← ')"></th>
+                                    <td><bdi x-text="number(change.before)"></bdi></td>
+                                    <td><bdi x-text="number(change.after)"></bdi><small>مقدّر</small></td></tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="actions" x-show="review.token">
+                    <button type="button" class="button primary" :disabled="!!busy" @click="commit()">احفظ إصدار جديد</button>
+                    <button type="button" class="button secondary" :disabled="!!busy" @click="review = null">الغي المعاينة</button>
+                </div>
+            </article>
+        </template>
+    </div>
+</template>

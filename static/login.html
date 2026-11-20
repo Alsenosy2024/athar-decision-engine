@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>تسجيل الدخول · أثر | Athar</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/access.css">
+    <script defer src="/static/js/login.js"></script>
+</head>
+<body class="access-shell">
+    <main class="card access-card stack">
+        <div class="access-heading">
+            <p class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span> أثر | Athar</p>
+            <p class="brand-tagline">كل قرار.. وأثره على شركتك كلها</p>
+            <h1>تسجيل الدخول</h1>
+        </div>
+        <form id="login-form" method="post" class="stack">
+            <label class="field" for="username">اسم المستخدم
+                <input id="username" name="username" autocomplete="username" maxlength="80" required dir="auto">
+            </label>
+            <label class="field" for="password">كلمة السر
+                <input id="password" name="password" type="password" autocomplete="current-password" maxlength="256" required dir="auto">
+            </label>
+            <p class="notice error" id="login-error" role="alert" hidden></p>
+            <button class="button primary" type="submit">ادخل</button>
+        </form>
+    </main>
+</body>
+</html>

@@ -1,0 +1,28 @@
+[data-testid="page-prescriptive"] .card > :is(.actions, .field-group, .table-scroll, details, form) {
+    margin-block-start: var(--space-3);
+}
+
+[data-testid="page-prescriptive"] .prescriptive-bounds {
+    grid-template-columns: minmax(12rem, 2fr) repeat(2, minmax(0, 1fr)) auto;
+    align-items: start;
+    border-block-start: 1px solid var(--line);
+    padding-block-start: var(--space-3);
+}
+
+[data-testid="page-prescriptive"] .prescriptive-bounds .actions {
+    align-self: center;
+}
+
+[data-testid="page-prescriptive"] .prescriptive-accuracy th {
+    white-space: normal;
+}
+
+@media (max-width: 720px) {
+    [data-testid="page-prescriptive"] .prescriptive-bounds {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    [data-testid="page-prescriptive"] .prescriptive-bounds .field:first-child {
+        grid-column: 1 / -1;
+    }
+}

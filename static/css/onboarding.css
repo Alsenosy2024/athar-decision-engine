@@ -1,0 +1,37 @@
+.onboarding-layout { min-width: 0; }
+.onboarding-readiness progress { width: 100%; accent-color: var(--accent); }
+.onboarding-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 11rem), 1fr));
+    gap: var(--space-2);
+    list-style: none;
+    padding: 0;
+    margin-block-end: 0;
+}
+.onboarding-steps .button {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    width: 100%;
+    text-align: start;
+}
+.onboarding-layout :is([aria-current="step"], [aria-pressed="true"]) {
+    border-color: currentColor;
+    box-shadow: inset 0 -2px currentColor;
+}
+.onboarding-fields { display: grid; gap: var(--space-3); border: 0; padding: 0; margin: 0; min-width: 0; }
+.onboarding-field {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    align-items: end;
+    gap: var(--space-2);
+    border-block-end: 1px solid var(--line);
+    padding-block-end: var(--space-3);
+}
+.onboarding-field label, .onboarding-field input { min-width: 0; width: 100%; }
+.onboarding-field small { display: inline; color: var(--muted); }
+.onboarding-step-nav { justify-content: space-between; }
+[data-testid="onboarding-review"] table { table-layout: fixed; }
+[data-testid="onboarding-review"] th:first-child { width: 50%; }
+[data-testid="onboarding-review"] :is(th, td) { white-space: normal; overflow-wrap: anywhere; }
+[data-testid="onboarding-review"] small { display: block; color: var(--muted); }

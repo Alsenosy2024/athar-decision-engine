@@ -1,0 +1,376 @@
+<template x-if="map">
+  <div class="lm-shell">
+    <header class="lm-brief">
+      <div class="lm-identity">
+        <span class="lm-brand-glyph" aria-hidden="true">◈</span>
+        <div>
+          <h1>خريطة الشركة</h1>
+          <p x-text="map.model.name"></p>
+        </div>
+      </div>
+      <div class="lm-brief-status">
+        <div>
+          <span x-text="map.process_only ? 'خريطة من سجل الأحداث' : map.is_demo ? 'نموذج تجريبي' : 'إصدار النموذج ' + number(map.model.version)"></span>
+          <p x-show="map.is_demo && company">المعروض ديمو روافد. <a href="#/enterprise">اربط نموذج بشركتك</a></p>
+        </div>
+        <div x-show="map.readiness != null">
+          <span>جاهزية البيانات</span>
+          <strong x-text="number(map.readiness) + '%'"></strong>
+        </div>
+        <button class="lm-action lm-baseline-button" type="button"
+                x-show="editable && map.has_engines && !result && !baselineKpis && !map.analysis_error"
+                :disabled="!!busy" @click="loadBaseline()"
+                x-text="busy === 'baseline' ? 'بنحسب المؤشرات…' : 'احسب خط الأساس'"></button>
+        <label x-show="models.length > 1">النموذج
+          <select :value="selectedModel" @change="chooseModel($event.target.value)" :disabled="!!busy">
+            <template x-for="model in models" :key="model.id">
+              <option :value="String(model.id)" :selected="String(model.id) === selectedModel" x-text="model.name"></option>
+            </template>
+          </select>
+        </label>
+      </div>
+    </header>
+
+    <section class="lm-briefing" x-show="!map.process_only" aria-labelledby="lm-briefing-title" data-testid="map-briefing">
+      <div class="lm-briefing-copy" aria-live="polite">
+        <div class="lm-briefing-heading">
+          <h2 id="lm-briefing-title">موجز الشركة</h2>
+          <span class="lm-pill" x-show="briefing"
+                x-text="briefing?.provider === 'codex' ? 'Codex' : 'قواعد محلية'"></span>
+          <span class="lm-pill" x-show="briefing?.alerts.length"
+                x-text="number(briefing?.alerts.length ?? 0) + ' · إشارات على الخريطة'"></span>
+        </div>
+        <p x-show="briefingLoading && !briefing">بنراجع آخر بيانات الشركة…</p>
+        <p x-show="briefing" x-text="briefing?.reply_ar"></p>
+        <p class="lm-briefing-warning" x-show="briefing?.warning" x-text="briefing?.warning"></p>
+        <p class="lm-briefing-warning" x-show="briefing?.unavailable.length">
+          فيه حدود متابعة لسه مفيش مؤشرات كفاية لتقييمها.
+        </p>
+        <p class="lm-briefing-warning" x-show="briefingError" x-text="briefingError"></p>
+      </div>
+      <button class="lm-action" type="button" :disabled="!!busy || briefingLoading"
+              @click="load($store.app.companyId, selectedModel, { refresh: true })">حدّث الموجز</button>
+    </section>
+
+    <div class="lm-ribbon" aria-label="مؤشرات الشركة" x-show="metrics.length" data-testid="map-kpis">
+      <template x-for="metric in metrics" :key="metric.id">
+        <article>
+          <h2 x-text="ribbonLabel(metric)"></h2>
+          <div class="lm-ribbon-value">
+            <bdi x-text="mapValue(ribbonValue(metric), metric.unit)"></bdi>
+            <svg x-show="metric.history.length > 1" viewBox="0 0 80 24" aria-hidden="true">
+              <polyline :points="spark(metric.history)" fill="none" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </div>
+          <small x-text="ribbonCaption(metric)"></small>
+        </article>
+      </template>
+    </div>
+
+    <div class="lm-layout" :class="{ 'lm-process-only': map.process_only }">
+      <aside class="lm-panel lm-input" x-show="!map.process_only" x-ref="inputPanel" aria-labelledby="lm-input-title">
+        <header class="lm-panel-head">
+          <h2 id="lm-input-title">اسأل أثر</h2>
+          <span class="lm-pill" x-show="provider" x-text="provider === 'codex' ? 'Codex' : 'قواعد محلية'"></span>
+        </header>
+        <template x-if="editable && !map.analysis_error">
+          <div class="lm-stack">
+            <form class="lm-stack" @submit.prevent="ask()">
+              <label class="visually-hidden" for="lm-question">اكتب الفرضية لأثر</label>
+              <textarea id="lm-question" x-model="question" rows="3" maxlength="2000"
+                placeholder="لو خفّضنا حد الائتمان 15%، إيه الأثر؟"
+                data-testid="map-question" :disabled="!!busy"></textarea>
+              <button class="lm-action lm-primary" :disabled="!!busy || !question.trim()"
+                data-testid="map-ask" x-text="busy === 'ask' ? 'بنفهم الفرضية…' : 'حضّر الفرضيات'"></button>
+            </form>
+            <p role="status" class="lm-feedback" x-show="feedback" x-text="feedback"></p>
+
+            <div class="lm-divider">
+              <h3>راجع الفرضيات</h3>
+              <p x-show="!edits.length">اكتب فرضية أو اختار مدخل للتعديل.</p>
+              <template x-for="row in edits" :key="row.node_id">
+                <fieldset class="lm-edit" :disabled="!!busy">
+                  <legend x-text="driverLabel(row.node_id)"></legend>
+                  <div class="lm-edit-top">
+                    <select aria-label="نوع التغيير" :value="row.operation"
+                            @change="setOperation(row, $event.target.value)">
+                      <option value="set" :selected="row.operation === 'set'">قيمة جديدة</option>
+                      <option value="add" :selected="row.operation === 'add'">فرق بالقيمة</option>
+                      <option value="pct" :selected="row.operation === 'pct'">فرق %</option>
+                    </select>
+                    <button class="lm-action lm-remove" type="button"
+                      :aria-label="'احذف ' + driverLabel(row.node_id)"
+                      @click="edits = edits.filter(item => item.node_id !== row.node_id)">×</button>
+                  </div>
+                  <label class="lm-value-label">
+                    <span x-text="'التغيير (' + unitLabel(operationUnit(row)) + ')'"></span>
+                    <input type="number" step="any" x-model="row.value" data-testid="map-assumption-value">
+                  </label>
+                  <input type="range" :min="slider(row).min" :max="slider(row).max" :step="slider(row).step"
+                    :value="row.value" @input="row.value = Number($event.target.value)"
+                    :aria-label="'منزلق ' + driverLabel(row.node_id)">
+                  <details>
+                    <summary>عدم اليقين</summary>
+                    <label class="lm-value-label"><span x-text="'هامش ± (' + unitLabel(unit(row.node_id)) + ')'"></span>
+                      <input type="number" min="0" step="any" x-model="row.uncertainty">
+                    </label>
+                  </details>
+                </fieldset>
+              </template>
+              <div class="lm-add">
+                <select aria-label="مدخل للتعديل" x-model="driverId" :disabled="!!busy || !availableDrivers.length">
+                  <option value="">اختار مدخل</option>
+                  <template x-for="driver in availableDrivers" :key="driver.id">
+                    <option :value="driver.id" x-text="driver.name_ar"></option>
+                  </template>
+                </select>
+                <button type="button" class="lm-action" @click="addDriver()" :disabled="!driverId || !!busy || edits.length >= 50">ضيف</button>
+              </div>
+              <label class="lm-horizon">أفق الحساب
+                <select x-model.number="weeks" @change="baselineKpis = null" :disabled="!!busy">
+                  <option value="1">أسبوع</option><option value="4">4 أسابيع</option>
+                  <option value="13">13 أسبوع</option><option value="26">26 أسبوع</option>
+                  <option value="52">52 أسبوع</option><option value="104">104 أسبوع</option>
+                </select>
+              </label>
+              <button type="button" class="lm-action lm-primary lm-run" @click="run()"
+                :disabled="!canRun" data-testid="map-run" x-text="busy === 'run' ? 'بنحسب الأثر…' : 'أكّد واحسب الأثر'"></button>
+            </div>
+          </div>
+        </template>
+        <p x-show="editable && !map.analysis_error && !map.drivers.length">مفيش قيم مرجعية قابلة للتعديل لسه. <a href="#/onboarding">كمّل تجهيز الشركة</a>.</p>
+        <p x-show="!editable">تقدر تستعرض الخريطة ومؤشراتها. تشغيل الفرضيات متاح للمخطّط والأدمن.</p>
+        <p x-show="map.analysis_error" x-text="map.analysis_error"></p>
+      </aside>
+
+      <section class="lm-map-panel" aria-labelledby="lm-network-title">
+        <header class="lm-network-head">
+          <div>
+            <h2 id="lm-network-title">شبكة الأقسام</h2>
+            <span class="lm-pill" data-testid="process-flow-source" x-text="flowSourceLabel"></span>
+            <p><bdi x-text="map.departments.length"></bdi> قسم · <bdi x-text="showsCausalRoads ? map?.edges.length : observedRoads.length"></bdi> طريق</p>
+          </div>
+          <select aria-label="تركيز على قسم" x-model="focus" @change="selectAlert('')">
+            <option value="">كل الأقسام</option>
+            <template x-for="dept in map.departments" :key="dept.id">
+              <option :value="dept.id" x-text="dept.name_ar"></option>
+            </template>
+          </select>
+        </header>
+        <div class="lm-stage" x-ref="livingStage" data-testid="map-stage"
+             x-effect="paint($store.app.theme)" :data-ripple="playing ? 'running' : (result || simulation) ? 'complete' : 'idle'"
+             :data-active-flows="processFrame ? processFrame.flows.filter(row => row.from_department !== row.to_department).length : 0">
+          <canvas aria-hidden="true"></canvas>
+          <div class="lm-departments">
+            <template x-for="(dept, index) in map.departments" :key="dept.id">
+              <button class="lm-department" type="button" :data-department="dept.id"
+                      :data-tone="deptTone(dept)" :data-traced="String(traced(dept.id))" :aria-pressed="focus === dept.id"
+                      :style="'--lm-enter:' + index" @click="openDepartment(dept.id)">
+                <span class="lm-node-label"><i aria-hidden="true"></i><span x-text="dept.name_ar"></span></span>
+                <span class="lm-node-measure" x-show="dept.headline_id" x-text="label(dept.headline_id)"></span>
+                <bdi class="lm-node-value" x-show="dept.headline_id" x-text="mapValue(nodeAtWeek(dept.headline_id)?.value, unit(dept.headline_id))"></bdi>
+                <span class="lm-node-meta" x-show="dept.headline_id" x-text="source(nodeAtWeek(dept.headline_id)?.source)"></span>
+                <span class="lm-alert-pin" x-show="alertsFor(dept.id).length" data-testid="map-alert-pin">
+                  <i aria-hidden="true"></i><span>تنبيهات</span><bdi x-text="number(alertsFor(dept.id).length)"></bdi>
+                </span>
+              </button>
+            </template>
+          </div>
+        </div>
+        <div class="lm-time" data-testid="map-timeline">
+          <button type="button" class="lm-action" :disabled="!hasPlayback" @click="playing ? stop() : replay()"
+                x-text="playing ? 'وقّف' : isSimulating ? 'شغّل الأسابيع' : 'شغّل الأثر'"></button>
+          <label>
+            <span x-text="isSimulating ? 'المحاكاة · الأسبوع ' + number(week) : week === 0 ? 'قبل الفرضية' : 'وصول الأثر · الأسبوع ' + number(week)"></span>
+            <input type="range" :aria-label="isSimulating ? 'أسبوع المحاكاة' : 'أسبوع وصول الأثر'" :min="isSimulating ? 1 : 0"
+                :max="lastWeek" step="1" :value="week" @input="scrub($event.target.value)" :disabled="!hasPlayback">
+          </label>
+        </div>
+        <div class="lm-map-key">
+          <p x-show="showsCausalRoads">سمك الطريق حسب قيمة العنصر عند المصدر. <span>الأحمر أثر سلبي أكبر.</span></p>
+          <p x-show="!showsCausalRoads">سمك الطريق حسب عدد الانتقالات في السجل.
+            <span x-show="isSimulating">الأحمر انتقال لقسم فيه طابور.</span>
+          </p>
+          <button type="button" class="lm-action" x-show="processReport && result && flowMode !== 'impact'" @click="showImpact()">اعرض أثر الفرضية</button>
+          <button type="button" class="lm-action" x-show="processReport && flowMode === 'impact'" @click="showFlows()">ارجع لتدفقات السجل</button>
+        </div>
+        <template x-if="activeAlert">
+          <section class="lm-detail lm-alert-trace" data-testid="map-alert-trace" aria-label="تتبّع التنبيه">
+            <div class="lm-row">
+              <h3>تتبّع التنبيه</h3>
+              <button class="lm-action" type="button" @click="selectAlert('')">اقفل التتبّع</button>
+            </div>
+            <label x-show="alertsFor(focus).length > 1">تنبيه القسم
+              <select :value="alertId" @change="selectAlert($event.target.value)">
+                <template x-for="alert in alertsFor(focus)" :key="alert.id">
+                  <option :value="alert.id" :selected="alertId === alert.id" x-text="alert.label"></option>
+                </template>
+              </select>
+            </label>
+            <p x-text="activeAlert.text"></p>
+            <p x-text="activeAlert.action"></p>
+            <small x-show="activeAlert.confidence != null" x-text="'ثقة فحص الشذوذ · ' + number(activeAlert.confidence * 100) + '%'"></small>
+            <p x-show="alertTrace.path.length">العلاقات المظلّلة بتحدد فين تبدأ الفحص. إثبات السبب محتاج اختبار فرضية.</p>
+            <p x-show="!alertTrace.path.length">مفيش علاقة واردة للمؤشر ده في النموذج الحالي.</p>
+            <ol x-show="alertTrace.path.length">
+              <template x-for="(edge, index) in alertTrace.path" :key="index">
+                <li x-text="label(edge.source) + ' ← ' + label(edge.target) + ' · ' + edge.name_ar"></li>
+              </template>
+            </ol>
+            <p x-show="alertTrace.coincident_changes.length">تغيّرات مرصودة في الفترات المرتبطة</p>
+            <ul class="lm-list" x-show="alertTrace.coincident_changes.length">
+              <template x-for="change in alertTrace.coincident_changes" :key="change.id">
+                <li><span x-text="change.name_ar"></span>
+                  <span>من <bdi x-text="mapValue(change.before, change.unit)"></bdi>
+                    إلى <bdi x-text="mapValue(change.after, change.unit)"></bdi></span></li>
+              </template>
+            </ul>
+          </section>
+        </template>
+        <div x-show="company" x-html="processMarkup"></div>
+        <template x-if="focusedDepartment?.node_ids.length && map">
+          <section class="lm-detail" data-testid="map-department-detail">
+            <h3 x-text="focusedDepartment.name_ar"></h3>
+            <ul class="lm-list">
+              <template x-for="row in focusedNodes" :key="row.id">
+                <li><span x-text="row.name_ar"></span>
+                  <span><bdi x-text="mapValue(row.value, row.unit)"></bdi>
+                    <small class="lm-pill" x-text="source(row.source)"></small></span>
+                </li>
+              </template>
+            </ul>
+          </section>
+        </template>
+      </section>
+
+      <aside class="lm-panel lm-output" x-show="!map.process_only" aria-labelledby="lm-output-title">
+        <header class="lm-panel-head"><h2 id="lm-output-title">نتائج الأثر</h2></header>
+        <p x-show="!result">نتيجة الحساب وسلسلة الأثر هتظهر هنا بعد تأكيد الفرضيات.</p>
+        <template x-if="result">
+          <div class="lm-stack">
+            <p class="lm-result-caption">المؤشرات بتلخّص أفق الحساب. شريط الزمن بيعرض وصول الأثر.</p>
+            <div class="lm-kpi-list" data-testid="map-impact-kpis">
+              <template x-for="metric in metrics" :key="metric.id">
+                <article>
+                  <div class="lm-row">
+                    <h3 x-text="metric.label"></h3>
+                    <small class="lm-pill" x-text="source(metric.source)"></small>
+                  </div>
+                  <div class="lm-row lm-kpi-v"><span>قبل <bdi x-text="mapValue(metric.baseline, metric.unit)"></bdi></span>
+                    <span>بعد <bdi x-text="mapValue(metric.after, metric.unit)"></bdi></span></div>
+                  <dl class="lm-bands" dir="ltr" aria-label="نطاق المحاكاة">
+                    <template x-for="band in ['p10', 'p50', 'p90']" :key="band">
+                      <div><dt x-text="band.toUpperCase()"></dt><dd x-text="number(metric.bands?.[band])"></dd></div>
+                    </template>
+                  </dl>
+                </article>
+              </template>
+            </div>
+            <details open>
+              <summary>الأقسام حسب الأثر</summary>
+              <p x-show="!affected.length">القيم اتساوت مع خط الأساس.</p>
+              <ol class="lm-ranked" data-testid="map-ranked">
+                <template x-for="row in affected" :key="row.id">
+                  <li><button type="button" class="lm-text-action" @click="focus = row.id" x-text="row.name_ar"></button>
+                    <small x-text="row.lead.name_ar"></small>
+                    <bdi :data-tone="tone(row.lead)" x-text="deltaText(row.lead)"></bdi>
+                  </li>
+                </template>
+              </ol>
+            </details>
+            <details :open="waves.length > 0">
+              <summary>سلسلة الأثر</summary>
+              <p x-show="!waves.length">الحساب مرّ من غير علاقات ناقلة للأثر.</p>
+              <p x-show="waves.length && !visibleWaves.length">حرّك الأسبوع عشان تشوف العلاقات اللي وصلها الأثر.</p>
+              <ol class="lm-chain" data-testid="map-chain">
+                <template x-for="edge in visibleWaves" :key="edge.source + ':' + edge.target">
+                  <li>
+                    <div><span x-text="label(edge.source)"></span><span aria-hidden="true"> ← </span>
+                      <span x-text="label(edge.target)"></span></div>
+                    <small x-text="edge.name_ar + ' · الأسبوع ' + number(edge.arrival + 1) + (edge.lag ? ' · تأخير ' + number(edge.lag) + ' أسبوع' : '')"></small>
+                  </li>
+                </template>
+              </ol>
+            </details>
+          </div>
+        </template>
+
+        <details class="lm-divider" x-show="canSeek">
+          <summary>توصيات لهدف الربح</summary>
+          <form class="lm-stack lm-mini-form" @submit.prevent="seek()">
+            <label>المدخل القابل للتحكم
+              <select :value="goalDriver" @change="chooseGoalDriver($event.target.value)" :disabled="!!busy">
+                <option value="">اختار مدخل</option>
+                <template x-for="driver in map.goal_drivers" :key="driver.id">
+                  <option :value="driver.id" x-text="driver.name_ar"></option>
+                </template>
+              </select>
+            </label>
+            <div class="lm-twin">
+              <label>من<input type="number" step="any" x-model="goalLow" required :disabled="!!busy"></label>
+              <label>إلى<input type="number" step="any" x-model="goalHigh" required :disabled="!!busy"></label>
+            </div>
+            <label>زيادة الربح المطلوبة (%)<input type="number" min="0.01" step="any" x-model="goalProfit" :disabled="!!busy"></label>
+            <label>أقل سيولة مقبولة (ريال)<input type="number" step="any" x-model="goalCash" :disabled="!!busy"></label>
+            <button class="lm-action" :disabled="!!busy || !goalDriver"
+                x-text="busy === 'goal' ? 'بندور على بدائل…' : 'دور على توصيات'"></button>
+          </form>
+          <template x-if="recommendations">
+            <div class="lm-stack" data-testid="map-recommendations">
+              <p x-show="!recommendations.recommendations.length">مفيش بديل قابل للحساب جوه النطاق ده.</p>
+              <template x-for="(item, index) in recommendations.recommendations" :key="index">
+                <article class="lm-recommendation">
+                  <template x-for="row in item.assumptions" :key="row.node_id">
+                    <p><span x-text="label(row.node_id)"></span> <bdi x-text="mapValue(row.value, unit(row.node_id))"></bdi></p>
+                  </template>
+                  <p>الربح <bdi x-text="mapValue(item.objective, 'SAR')"></bdi></p>
+                  <p>أقل سيولة <bdi x-text="mapValue(item.cash, 'SAR')"></bdi></p>
+                  <p x-show="item.risk != null">تجاوز الائتمان <bdi x-text="mapValue(item.risk, '%')"></bdi></p>
+                  <p x-text="item.violations.length ? 'السيولة أقل من الحد المطلوب' : item.target_met === false ? 'البديل أقل من هدف الربح' : item.target_met ? 'البديل حقّق الهدف' : 'بديل محسوب'"></p>
+                  <h3>محامي الشيطان</h3><p x-text="item.critique.reply_ar"></p>
+                  <button class="lm-action" type="button" @click="useRecommendation(item)" :disabled="!!busy">راجع الفرضيات دي</button>
+                </article>
+              </template>
+            </div>
+          </template>
+        </details>
+
+        <details class="lm-divider">
+          <summary>مقارنة السيناريوهات</summary>
+          <form class="lm-stack lm-mini-form" x-show="editable && result && ($store.app.companyId || map.model.id || $store.app.user?.role === 'admin')"
+                @submit.prevent="save()">
+            <label>اسم آخر سيناريو اتحسب
+              <input type="text" x-model="scenarioName" maxlength="120" required :disabled="!!busy">
+            </label>
+            <button class="lm-action" :disabled="!!busy || !scenarioName.trim()">احفظ للمقارنة</button>
+          </form>
+          <p x-show="saved.length < 2">المقارنة محتاجة سيناريوهين محفوظين من نفس الإصدار.</p>
+          <form class="lm-stack lm-mini-form" x-show="editable && saved.length >= 2" @submit.prevent="compare()">
+            <template x-for="row in saved" :key="row.id">
+              <label class="lm-check">
+                <input type="checkbox" x-model="compareIds" :value="String(row.id)" :disabled="!!busy">
+                <span x-text="row.name"></span>
+              </label>
+            </template>
+            <button class="lm-action" :disabled="!!busy || compareIds.length < 2 || compareIds.length > 4">قارن المختار</button>
+          </form>
+          <template x-if="comparison">
+            <ul class="lm-list" data-testid="map-comparison">
+              <template x-for="row in comparison.scenarios" :key="row.id">
+                <li class="lm-compare-row">
+                  <h3 x-text="row.name"></h3>
+                  <dl>
+                    <template x-for="[key, info] in Object.entries(comparison.kpis)" :key="key">
+                      <div><dt x-text="info.label"></dt><dd><bdi x-text="mapValue(row.kpis[key], key === 'delays' ? 'weeks' : info.unit)"></bdi></dd></div>
+                    </template>
+                  </dl>
+                </li>
+              </template>
+            </ul>
+          </template>
+          <a href="#/scenarios">افتح صفحة المقارنة والتصدير</a>
+        </details>
+      </aside>
+    </div>
+  </div>
+</template>

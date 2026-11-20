@@ -1,0 +1,183 @@
+<header class="page-title"><div><h1>ربط البيانات</h1><p>راجع البيانات المستوردة قبل الحفظ.</p></div></header>
+<div class="actions page-feedback" role="group" aria-label="مصدر البيانات">
+    <button class="button" :class="mode === 'file' ? 'primary' : 'secondary'" :aria-pressed="mode === 'file'" :disabled="!!busy" @click="setMode('file')">Excel أو CSV</button>
+    <button class="button" :class="mode === 'erp' ? 'primary' : 'secondary'" :aria-pressed="mode === 'erp'" :disabled="!!busy" @click="setMode('erp')">موصل ERP</button>
+    <button class="button" :class="mode === 'p6' ? 'primary' : 'secondary'" :aria-pressed="mode === 'p6'" :disabled="!!busy" @click="setMode('p6')">Primavera P6</button>
+</div>
+<p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+<p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+<p class="page-feedback" role="status" x-show="busy">جارٍ تنفيذ الطلب…</p>
+<div class="stack page-feedback" x-show="mode !== 'p6'">
+    <article class="card">
+        <h2>النموذج المؤسسي</h2>
+        <p x-show="!models.length">احفظ نموذج مؤسسي الأول عشان تختاره هنا. <a href="#/enterprise">افتح النموذج المؤسسي</a></p>
+        <label class="field" x-show="models.length">النموذج
+            <select :value="modelId" :disabled="!!busy" @change="selectModel($event.target.value)" data-testid="import-model">
+                <template x-for="item in models" :key="item.id"><option :value="String(item.id)" :selected="String(item.id) === modelId" x-text="item.name"></option></template>
+            </select>
+        </label>
+        <details x-show="model">
+            <summary>معرّفات العناصر ووحداتها</summary>
+            <div class="table-scroll"><table><thead><tr><th>العنصر</th><th>المعرّف</th><th>الوحدة</th><th>النوع</th></tr></thead>
+                <tbody><template x-for="item in model?.graph.nodes ?? []" :key="item.id"><tr>
+                    <td x-text="item.name_ar"></td><td><bdi x-text="item.id"></bdi></td><td><bdi x-text="item.unit"></bdi></td>
+                    <td x-text="item.baseline.kind === 'scalar' ? 'قيمة واحدة' : 'سلسلة زمنية'"></td>
+                </tr></template></tbody></table></div>
+        </details>
+    </article>
+    <form class="card" x-show="mode === 'file' && model" @submit.prevent="previewFile()">
+        <h2>اختار الملف واربط الأعمدة</h2>
+        <p>استخدم صف للعناوين، والقيم بوحدة العنصر. السلاسل الزمنية محتاجة تاريخ لكل صف.</p>
+        <div class="field-group">
+            <label class="field">ملف Excel أو CSV
+                <span class="file-picker">
+                    <bdi class="file-label" x-text="file?.name || 'اختار ملف'"></bdi>
+                    <input type="file" accept=".xlsx,.csv" :disabled="!!busy" aria-label="ملف Excel أو CSV"
+                           @change="inspect($event.target.files[0])" data-testid="mapped-file">
+                </span>
+            </label>
+            <label class="field" x-show="sheets.length">ورقة البيانات
+                <select :disabled="!!busy" :value="sheet" @change="selectSheet($event.target.value)">
+                    <template x-for="item in sheets" :key="item.name"><option :value="item.name" :selected="item.name === sheet" x-text="item.name"></option></template>
+                </select>
+            </label>
+        </div>
+        <div class="field-group" x-show="sheet">
+            <template x-for="[key, label] in [['node', 'معرّف العنصر'], ['value', 'القيمة'], ['date', 'التاريخ للسلاسل الزمنية']]" :key="key">
+                <label class="field"><span x-text="label"></span>
+                    <select x-model="fileMapping[key]" :disabled="!!busy" @change="result = null" :data-testid="'map-' + key">
+                        <option value="">اختار عمود</option>
+                        <template x-for="column in columns" :key="column"><option :value="column" x-text="column"></option></template>
+                    </select>
+                </label>
+            </template>
+        </div>
+        <div class="actions" x-show="sheet"><button class="button primary" :disabled="!!busy || !fileMapping.node || !fileMapping.value">راجع البيانات</button></div>
+    </form>
+    <form class="card" x-show="mode === 'erp'" @submit.prevent="saveConnector()">
+        <h2>إعداد موصل ERP</h2>
+        <p>اكتب أسماء متغيرات البيئة اللي بتبدأ بـ <bdi>ATHAR_ERP_</bdi>. عنوان الاتصال والتوثيق بيتحددوا على الخادم.</p>
+        <div class="field-group">
+            <label class="field">الموصل المحفوظ
+                <select :value="connectorId" :disabled="!!busy" @change="selectConnector($event.target.value)">
+                    <option value="" :selected="!connectorId">موصل جديد</option>
+                    <template x-for="item in connectors" :key="item.id"><option :value="String(item.id)" :selected="String(item.id) === connectorId" x-text="item.name"></option></template>
+                </select>
+            </label>
+            <label class="field">نوع الاتصال
+                <select x-model="config.kind" :disabled="!!busy" @change="result = null"><option value="rest">REST / JSON</option><option value="sql">SQL</option></select>
+            </label>
+            <label class="field">اسم الموصل<input x-model.trim="config.name" :disabled="!!busy" maxlength="160" required></label>
+            <label class="field">متغير عنوان الاتصال<input x-model.trim="config.url_env" :disabled="!!busy" dir="ltr" pattern="ATHAR_ERP_[A-Z0-9_]{1,75}" required></label>
+            <template x-if="config.kind === 'rest'">
+                <label class="field">متغير رمز التوثيق (اختياري)<input x-model.trim="config.token_env" :disabled="!!busy" dir="ltr" pattern="ATHAR_ERP_[A-Z0-9_]{1,75}"></label>
+            </template>
+            <label class="field" x-show="config.kind === 'rest'">مسار قائمة السجلات داخل JSON (اختياري)<input x-model.trim="config.rows_path" :disabled="!!busy" dir="ltr" placeholder="data.rows"></label>
+            <label class="field" x-show="config.kind === 'sql'">اسم الجدول أو العرض<input x-model.trim="config.table" :disabled="!!busy" :required="config.kind === 'sql'" dir="ltr"></label>
+            <label class="field" x-show="config.kind === 'sql'">اسم المخطط (اختياري)<input x-model.trim="config.schema_name" :disabled="!!busy" dir="ltr"></label>
+            <template x-for="[key, label] in [['node', 'حقل معرّف العنصر'], ['value', 'حقل القيمة'], ['date', 'حقل التاريخ للسلاسل الزمنية']]" :key="key">
+                <label class="field"><span x-text="label"></span><input x-model.trim="config.mapping[key]" :disabled="!!busy" :required="key !== 'date'" maxlength="200" dir="ltr"></label>
+            </template>
+        </div>
+        <div class="actions">
+            <button class="button secondary" :disabled="!!busy">احفظ إعداد الموصل</button>
+            <button class="button primary" type="button" :disabled="!!busy || !model || !connectorId" @click="previewErp()">اسحب بالإعداد المحفوظ وراجع</button>
+        </div>
+    </form>
+    <article class="card" x-show="result" data-testid="mapping-report">
+        <h2>تقرير التحقق</h2>
+        <p x-text="result ? 'إصدار ' + result.version + ' · ' + result.validation.summary.rows + ' صف' : ''"></p>
+        <p x-show="result?.validation.ok && !result.updates.length">البيانات مطابقة للإصدار الحالي.</p>
+        <div class="table-scroll" x-show="result?.validation.errors.length">
+            <table><thead><tr><th>المصدر</th><th>الصف</th><th>العمود</th><th>المشكلة</th></tr></thead>
+                <tbody><template x-for="(issue, index) in result?.validation.errors ?? []" :key="index"><tr>
+                    <td x-text="issue.sheet"></td><td x-text="issue.row || '—'"></td><td><bdi x-text="issue.column || '—'"></bdi></td><td x-text="issue.msg_ar"></td>
+                </tr></template></tbody></table>
+        </div>
+        <div class="table-scroll" x-show="result?.updates.length" data-testid="import-diff">
+            <table><thead><tr><th>العنصر</th><th>الوحدة</th><th>حاليًا</th><th>بعد الاستيراد</th></tr></thead>
+                <tbody><template x-for="item in result?.updates ?? []" :key="item.node_id"><tr>
+                    <td x-text="node(item.node_id)?.name_ar ?? item.node_id"></td><td><bdi x-text="node(item.node_id)?.unit"></bdi></td>
+                    <td><bdi class="import-number" x-text="item.baseline.kind === 'scalar' ? number(node(item.node_id)?.baseline.value) : number(node(item.node_id)?.baseline.points.length) + ' نقطة'"></bdi></td>
+                    <td><bdi class="import-number" x-show="item.baseline.kind === 'scalar'" x-text="number(item.baseline.value)"></bdi>
+                        <template x-if="item.baseline.kind === 'series'"><details>
+                            <summary x-text="'استبدال السلسلة بـ ' + item.baseline.points.length + ' نقطة'"></summary>
+                            <ul><template x-for="point in item.baseline.points" :key="point.date"><li><bdi x-text="point.date"></bdi> · <bdi x-text="number(point.value)"></bdi></li></template></ul>
+                        </details></template>
+                    </td>
+                </tr></template></tbody></table>
+        </div>
+        <div class="actions" x-show="result?.validation.ok && result.updates.length">
+            <button class="button primary" type="button" :disabled="!!busy" @click="apply()">احفظ إصدار جديد</button>
+        </div>
+    </article>
+</div>
+<div class="stack page-feedback" x-show="mode === 'p6'">
+    <article class="card">
+        <h2>جداول Primavera للمقاولات</h2>
+        <p>الجدول بيتحفظ مع الشركة كمرجع للمراجعة وإعادة التنزيل.</p>
+        <div class="field-group">
+            <label class="field">شركة المقاولات
+                <select :value="p6CompanyId" :disabled="!!busy" @change="p6CompanyId = $event.target.value; loadP6()">
+                    <template x-for="item in contracting" :key="item.id"><option :value="String(item.id)" :selected="String(item.id) === p6CompanyId" x-text="item.name"></option></template>
+                </select>
+            </label>
+            <label class="field">ملف P6 XML
+                <span class="file-picker">
+                    <bdi class="file-label" x-text="p6File?.name || 'اختار ملف'"></bdi>
+                    <input type="file" accept=".xml" x-ref="p6File" aria-label="ملف P6 XML" :disabled="!!busy || !p6CompanyId"
+                           @change="p6File = $event.target.files[0]; p6Result = null; p6Selection = ''">
+                </span>
+            </label>
+            <label class="field" x-show="p6Imports.length">جدول محفوظ
+                <select :value="p6Selection" :disabled="!!busy" @change="openP6($event.target.value)">
+                    <option value="" :selected="!p6Selection">اختار جدول</option>
+                    <template x-for="item in p6Imports" :key="item.id"><option :value="String(item.id)" :selected="String(item.id) === p6Selection" x-text="item.filename"></option></template>
+                </select>
+            </label>
+        </div>
+        <div class="actions"><button class="button primary" :disabled="!!busy || !p6File" @click="sendP6(false)">راجع جدول P6</button></div>
+    </article>
+    <article class="card" x-show="p6Result">
+        <h2>جدول Primavera</h2>
+        <p x-text="p6Result ? p6Result.schedule.projects.length + ' مشروع · ' + p6Result.schedule.activities.length + ' نشاط · ' + p6Result.schedule.relationships.length + ' علاقة' : ''"></p>
+        <div class="table-scroll" x-show="p6Result?.validation?.errors.length"><table>
+            <thead><tr><th>السجل</th><th>الصف</th><th>الحقل</th><th>المشكلة</th></tr></thead>
+            <tbody><template x-for="(issue, index) in p6Result?.validation?.errors ?? []" :key="index"><tr>
+                <td x-text="issue.sheet"></td><td x-text="issue.row || '—'"></td><td><bdi x-text="issue.column"></bdi></td><td x-text="issue.msg_ar"></td>
+            </tr></template></tbody>
+        </table></div>
+        <details x-show="p6Result?.schedule.projects.length && p6Result?.validation?.ok !== false">
+            <summary>المشاريع في الملف</summary>
+            <div class="table-scroll"><table><thead><tr><th>المشروع</th><th>معرّف الربط</th><th>الاسم</th></tr></thead>
+                <tbody><template x-for="item in p6Result?.schedule.projects ?? []" :key="item.object_id"><tr>
+                    <td><bdi x-text="item.id"></bdi></td><td><bdi x-text="item.object_id"></bdi></td><td x-text="item.name || '—'"></td>
+                </tr></template></tbody></table></div>
+        </details>
+        <div class="table-scroll" x-show="p6Result?.validation?.ok !== false" data-testid="p6-activities"><table>
+            <thead><tr><th>النشاط</th><th>المدة (ساعة)</th><th>التكلفة</th></tr></thead>
+            <tbody><template x-for="item in p6Result?.schedule.activities ?? []" :key="item.object_id"><tr>
+                <td><bdi x-text="item.id"></bdi>
+                    <div class="secondary-text" x-show="item.name" x-text="item.name"></div>
+                    <div class="secondary-text">معرّف الربط <bdi x-text="item.object_id"></bdi></div>
+                </td>
+                <td><bdi x-text="number(item.duration_hours)"></bdi></td>
+                <td>
+                    <div>مخططة <bdi class="import-number" x-text="number(item.planned_cost)"></bdi></div>
+                    <div>فعلية <bdi class="import-number" x-text="number(item.actual_cost)"></bdi></div>
+                </td>
+            </tr></template></tbody>
+        </table></div>
+        <details x-show="p6Result?.schedule.relationships.length && p6Result?.validation?.ok !== false"><summary>علاقات الأنشطة</summary>
+            <div class="table-scroll"><table><thead><tr><th>السابق</th><th>التالي</th><th>نوع العلاقة</th><th>الفاصل (ساعة)</th></tr></thead>
+                <tbody><template x-for="(item, index) in p6Result?.schedule.relationships ?? []" :key="index"><tr>
+                    <td><bdi x-text="item.predecessor_object_id"></bdi></td><td><bdi x-text="item.successor_object_id"></bdi></td>
+                    <td><bdi x-text="item.type"></bdi></td><td x-text="number(item.lag_hours)"></td>
+                </tr></template></tbody></table></div>
+        </details>
+        <div class="actions">
+            <button class="button primary" type="button" :disabled="!!busy" x-show="p6Result?.validation?.ok && !p6Result?.id" @click="sendP6(true)">احفظ جدول P6</button>
+            <a class="button secondary" x-show="p6Result?.id" :href="p6Result?.id ? '/api' + p6Path() + '/' + p6Result.id + '/export.p6.xml' : null">نزّل ملف P6 XML</a>
+        </div>
+    </article>
+</div>

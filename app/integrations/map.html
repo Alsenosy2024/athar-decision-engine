@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>خريطة الشركة | أثر</title>
+    <link rel="stylesheet" href="../static/css/app.css">
+    <link rel="stylesheet" href="../static/css/living-map.css">
+    <link rel="stylesheet" href="../static/css/embed-map.css">
+    <script defer src="../static/js/living-map-canvas.js"></script>
+    <script defer src="../static/js/embed-map.js"></script>
+</head>
+<body>
+    <main class="living-map athar-embed">
+        <header class="athar-embed-header">
+            <div>
+                <h1>خريطة الشركة</h1>
+                <p id="embed-company"></p>
+            </div>
+            <button type="button" class="lm-action" id="embed-theme" hidden>الوضع الليلي</button>
+        </header>
+        <p id="embed-error"><!-- ERROR --></p>
+        <div id="embed-content" hidden>
+            <dl class="athar-embed-kpis" id="embed-kpis"></dl>
+            <div class="lm-stage" id="embed-stage">
+                <canvas aria-hidden="true"></canvas>
+                <div class="lm-departments" id="embed-departments"></div>
+            </div>
+        </div>
+    </main>
+    <script id="embed-data" type="application/json"><!-- PAYLOAD --></script>
+</body>
+</html>

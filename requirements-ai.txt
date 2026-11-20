@@ -1,0 +1,9 @@
+pypdf==6.7.1
+xlrd==2.0.2
+scikit-learn==1.8.0
+mapie==1.6.0
+causal-learn==0.1.4.3
+optuna==4.7.0
+tesserocr==2.13.0
+pypdfium2==5.15.2
+pillow==13.0.0

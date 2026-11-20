@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>مختبر الذكاء الاصطناعي | أثر</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/ai.css">
+    <script defer src="/static/vendor/chart.umd.js"></script>
+    <script defer src="/static/js/charts.js"></script>
+    <script defer src="/static/js/app.js"></script>
+    <script defer src="/static/js/pages/ai.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+</head>
+<body class="ai-workspace" x-data="aiWorkspace" x-cloak x-effect="boot($store.app.companies)">
+<a class="skip-link" href="#main">انتقل للمحتوى</a>
+<header class="ai-topbar">
+    <div class="ai-brand">
+        <a href="/" class="ai-logo">أثر | Athar</a>
+        <span>كل قرار.. وأثره على شركتك كلها</span>
+    </div>
+    <div class="actions">
+        <a class="button secondary" href="/">مساحة العمل</a>
+        <button class="theme-button" type="button" @click="$store.app.toggleTheme()" x-text="$store.app.theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></button>
+    </div>
+</header>
+<main id="main" class="ai-main">
+    <header class="page-title">
+        <div><h1>مختبر الذكاء الاصطناعي</h1><p>استخرج البيانات وراجع الأدلة قبل ما تحدّث النموذج أو تحفظ قرار.</p></div>
+    </header>
+    <p class="notice error" role="alert" x-show="error || $store.app.error" x-text="error || $store.app.error"></p>
+    <p class="notice success" role="status" x-show="message" x-text="message"></p>
+    <p class="empty" x-show="!$store.app.loading && !$store.app.companies.length">مفيش شركات متاحة للحساب.</p>
+    <div class="ai-layout" x-show="companyId">
+        <section class="stack">
+            <div class="snapshot">
+                <div class="field-group ai-scope">
+                    <label class="field">الشركة
+                        <select aria-label="الشركة" :value="companyId" :disabled="busy" @change="changeCompany($event.target.value)">
+                            <template x-for="item in $store.app.companies" :key="item.id">
+                                <option :value="item.id" :selected="String(item.id) === companyId" x-text="item.name"></option>
+                            </template>
+                        </select>
+                    </label>
+                    <label class="field">النموذج المؤسسي
+                        <select aria-label="النموذج المؤسسي" :value="modelId" :disabled="busy" @change="changeModel($event.target.value)">
+                            <option value="">نموذج جديد</option>
+                            <template x-for="item in data?.models || []" :key="item.id">
+                                <option :value="item.id" :selected="String(item.id) === modelId" x-text="item.name + ' · إصدار ' + number(item.version)"></option>
+                            </template>
+                        </select>
+                    </label>
+                </div>
+            </div>
+            <div class="card stack" x-show="allowed">
+                <nav class="actions ai-actions" aria-label="وظائف مختبر الذكاء الاصطناعي">
+                    <template x-for="[key, title] in sections" :key="key">
+                        <button class="button" :class="section === key ? 'primary' : 'secondary'" :aria-pressed="section === key"
+                                type="button" :disabled="busy" @click="changeSection(key)" x-text="title"></button>
+                    </template>
+                </nav>
+                <form class="stack" x-show="section === 'entry'" @submit.prevent="submitEntry()">
+                    <label class="ai-drop field" @dragover.prevent @drop.prevent="setFiles($event)">
+                        <strong>اسحب الملفات هنا أو اختارها</strong>
+                        <small>Excel، CSV، PDF، Word، صور، Primavera P6، أو بريد محفوظ</small>
+                        <span class="button secondary ai-file-button">اختار الملفات</span>
+                        <input aria-label="ملفات الشركة" class="visually-hidden" type="file" multiple :disabled="busy"
+                               accept=".xlsx,.xlsm,.xls,.csv,.tsv,.pdf,.docx,.doc,.png,.jpg,.jpeg,.tif,.tiff,.heic,.webp,.bmp,.xml,.eml,.mbox,.txt,.md"
+                               @change="setFiles($event)">
+                        <small x-show="files.length" dir="auto" x-text="files.map(file => file.name).join('، ')"></small>
+                    </label>
+                    <label class="field" x-show="!modelId">اسم النموذج
+                        <input type="text" maxlength="160" x-model="modelName" placeholder="اسم الشركة أو الوحدة">
+                    </label>
+                    <label class="field">احكي لي عن شركتك
+                        <textarea rows="3" maxlength="8000" x-model="description" placeholder="مثلاً السيولة 200 ألف ريال، والمخزون 1,000 وحدة"></textarea>
+                    </label>
+                    <details>
+                        <summary>تحويل عملة للريال السعودي</summary>
+                        <div class="field-group spaced">
+                            <label class="field">عملة المصدر
+                                <select x-model="fxCurrency">
+                                    <option>USD</option><option>EUR</option><option>AED</option><option>GBP</option>
+                                    <option>EGP</option><option>KWD</option><option>QAR</option>
+                                </select>
+                            </label>
+                            <label class="field">ريال لكل وحدة من عملة المصدر
+                                <input type="number" min="0.000001" step="any" x-model="fxRate">
+                            </label>
+                        </div>
+                    </details>
+                    <label class="ai-check"><input type="checkbox" x-model="remote"> استخدم Codex لمطابقة الحقول الغامضة</label>
+                    <small x-show="remote">المطابقة ممكن تبعت مقتطفات من النص المقروء وأسماء بنود النموذج لـCodex.</small>
+                    <div><button type="submit" class="button primary" :disabled="busy || (!files.length && !description.trim())">اعرض الفرق للمراجعة</button></div>
+                </form>
+                <div class="stack" x-show="section === 'analysis'">
+                    <h2>إشارات البيانات ومعايرة العلاقات</h2>
+                    <p>راجع القيم الشاذة من أحدث إصدار، واقترح معاملات للعلاقات اللي ليها سجل أسبوعي كفاية.</p>
+                    <div class="stack" x-show="data?.signals.length">
+                        <template x-for="(signal, index) in data?.signals || []" :key="index">
+                            <div class="notice">
+                                <p x-text="signal.text"></p>
+                                <small x-text="'AI · ثقة الإشارة ' + percent(signal.confidence)"></small>
+                            </div>
+                        </template>
+                    </div>
+                    <label class="ai-check"><input type="checkbox" x-model="remote"> استخدم Codex لترتيب الإشارات المحسوبة</label>
+                    <div class="actions">
+                        <button type="button" class="button primary" :disabled="busy || !modelId" @click="runAnalysis('/refresh')">حلّل البيانات الحالية</button>
+                        <button type="button" class="button secondary" :disabled="busy || !modelId" @click="runAnalysis('/calibrate')">اقترح معايرة</button>
+                    </div>
+                    <small x-show="!modelId">اختار نموذج محفوظ عشان تشغّل التحليل.</small>
+                </div>
+                <form class="stack" x-show="section === 'forecast'" @submit.prevent="runForecast()">
+                    <h2>توقع مؤشر زمني</h2>
+                    <div class="field-group">
+                        <label class="field">مصدر السجل
+                            <select x-model="forecastSource" @change="forecastNode = forecastOptions[0]?.id || ''">
+                                <option value="model">النموذج المؤسسي</option>
+                                <option value="operations" :disabled="!data?.operations.length">طلب الإنتاج النشط</option>
+                            </select>
+                        </label>
+                        <label class="field">المؤشر
+                            <select x-model="forecastNode" aria-label="مؤشر التوقع">
+                                <option value="">اختار مؤشر</option>
+                                <template x-for="node in forecastOptions" :key="node.id">
+                                    <option :value="node.id" :selected="node.id === forecastNode" x-text="node.name_ar"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <label class="field">عدد الفترات
+                            <select x-model="horizon"><option>1</option><option>2</option><option>3</option><option>4</option></select>
+                        </label>
+                    </div>
+                    <div><button class="button primary" :disabled="busy || !forecastNode">احسب التوقع</button></div>
+                </form>
+                <form class="stack" x-show="section === 'decision'" @submit.prevent="runDecision()">
+                    <h2>اختبر قرار وحدوده</h2>
+                    <div class="actions ai-compose">
+                        <textarea rows="2" x-model="goalText" maxlength="1600" aria-label="وصف هدف القرار"
+                                  placeholder="عايز أرفع الربح 10% والسيولة ما تنزلش عن 100000"></textarea>
+                        <button type="button" class="button secondary" :disabled="busy || !modelId || !goalText.trim()" @click="readGoal()">استخرج الهدف</button>
+                    </div>
+                    <div class="field-group">
+                        <label class="field">المؤشر المستهدف
+                            <select :value="objective" @change="setObjective($event.target.value)">
+                                <template x-for="node in modelNodes" :key="node.id">
+                                    <option :value="node.id" :selected="node.id === objective" x-text="node.name_ar"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <label class="field">اتجاه التحسين
+                            <select x-model="direction"><option value="maximize">زيادة</option><option value="minimize">خفض</option></select>
+                        </label>
+                        <label class="field">التحسّن المطلوب (%، اختياري)
+                            <input type="number" min="0.01" max="1000" step="any" x-model="targetPct">
+                        </label>
+                        <label class="field">حد السيولة الأدنى (ريال، اختياري)
+                            <input type="number" step="any" x-model="cashFloor">
+                        </label>
+                        <label class="field">سقف تجاوز الائتمان (%، اختياري)
+                            <input type="number" min="0" max="100" step="any" x-model="riskCeiling">
+                        </label>
+                    </div>
+                    <template x-for="(control, index) in controls" :key="index">
+                        <fieldset class="change-fields field-group">
+                            <legend>مدخل قابل للتغيير</legend>
+                            <label class="field">المدخل
+                                <select aria-label="المدخل" :value="control.node_id" @change="replaceControl(control, $event.target.value)">
+                                    <template x-for="driver in goalDrivers" :key="driver.id">
+                                        <option :value="driver.id" :selected="driver.id === control.node_id"
+                                                :disabled="controls.some(item => item !== control && item.node_id === driver.id)"
+                                                x-text="driver.name_ar + ' · ' + number(driver.value)"></option>
+                                    </template>
+                                </select>
+                            </label>
+                            <label class="field">حد أدنى<input type="number" step="any" required x-model="control.low"></label>
+                            <label class="field">حد أعلى<input type="number" step="any" required x-model="control.high"></label>
+                            <label class="field">عدم يقين ± (اختياري)<input type="number" min="0" step="any" x-model="control.uncertainty"></label>
+                            <button type="button" class="text-button" @click="controls.splice(index, 1)">احذف المدخل</button>
+                        </fieldset>
+                    </template>
+                    <div class="actions">
+                        <button type="button" class="button secondary" :disabled="busy || !goalDrivers.length || controls.length >= (data?.max_controls || 5)"
+                                @click="addControl()">ضيف مدخل</button>
+                        <button class="button primary" :disabled="busy || !modelId || !controls.length">رتّب التوصيات</button>
+                    </div>
+                </form>
+                <form class="stack" x-show="section === 'question'" @submit.prevent="ask()">
+                    <h2>اسأل عن رقم أو مسار أثر</h2>
+                    <label class="field">سؤالك
+                        <textarea maxlength="1600" rows="3" x-model="topic" placeholder="ليه الكاش نزل؟"></textarea>
+                    </label>
+                    <label class="field">مؤشر للتركيز (اختياري)
+                        <select x-model="focusNode">
+                            <option value="">يتحدد من السؤال</option>
+                            <template x-for="node in modelNodes" :key="node.id">
+                                <option :value="node.id" :selected="node.id === focusNode" x-text="node.name_ar"></option>
+                            </template>
+                        </select>
+                    </label>
+                    <label class="ai-check"><input type="checkbox" x-model="remote"> استخدم Codex لاختيار الأدلة المحسوبة</label>
+                    <div class="actions">
+                        <button class="button primary" :disabled="busy || !modelId || !topic.trim()">اسأل أثر</button>
+                        <button type="button" class="button secondary" x-show="drill" @click="drill = null">افصل السؤال عن التوصية</button>
+                    </div>
+                </form>
+                <p class="notice" role="status" x-show="busy">شغّال على الطلب…</p>
+            </div>
+            <p class="empty" x-show="!allowed && $store.app.user">تقدر تفتح المقترحات السابقة من سجل المراجعة.</p>
+
+            <template x-if="review">
+                <article class="card stack ai-review" x-ref="review" aria-label="تفاصيل المراجعة">
+                    <div class="snapshot">
+                        <div>
+                            <h2 x-text="reviewTitle"></h2>
+                            <p x-text="review.model_version ? 'إصدار النموذج ' + number(review.model_version) : 'مراجعة على مستوى الشركة'"></p>
+                        </div>
+                        <span class="status neutral" x-text="statuses[review.status]"></span>
+                    </div>
+                    <template x-if="review.kind === 'entry'">
+                        <div class="stack">
+                            <div class="actions">
+                                <span class="ai-tag" x-text="'AI · ' + labelOf(payload.provider)"></span>
+                                <span class="ai-tag" x-text="number(payload.diff.length) + ' بنود في الفرق'"></span>
+                                <span class="ai-tag" x-show="payload.duplicates" x-text="number(payload.duplicates) + ' تكرارات اتشالت'"></span>
+                            </div>
+                            <div class="table-scroll" x-show="payload.diff.length">
+                                <table class="ai-table">
+                                    <thead><tr><th>البند</th><th>قبل</th><th>بعد</th><th>ثقة المطابقة</th><th>المصدر</th></tr></thead>
+                                    <tbody>
+                                        <template x-for="(item, index) in payload.diff" :key="index">
+                                            <tr>
+                                                <th scope="row"><span x-text="item.name_ar"></span><small x-show="item.date" x-text="item.date"></small></th>
+                                                <td><bdi x-text="number(item.before)"></bdi></td>
+                                                <td><bdi x-text="item.value === null ? 'محتاج بيانات' : number(item.value) + ' ' + unitOf(item.unit)"></bdi></td>
+                                                <td><span class="ai-tag" x-text="'AI · ' + percent(item.confidence)"></span></td>
+                                                <td><details><summary dir="auto" x-text="item.source"></summary><small dir="auto" x-text="item.evidence"></small></details></td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="stack" x-show="payload.relations.length">
+                                <h3>العلاقات المقترحة</h3>
+                                <ul class="change-summary"><template x-for="(item, index) in payload.relations" :key="index">
+                                    <li x-text="item.edge.name_ar + ' · معامل ' + number(item.edge.rule.multiplier) + ' · AI ' + percent(item.confidence)"></li>
+                                </template></ul>
+                            </div>
+                            <div class="stack" x-show="payload.estimates.length">
+                                <h3>فجوات وقيم مقدّرة</h3>
+                                <template x-for="(item, index) in payload.estimates" :key="index">
+                                    <label class="ai-check ai-estimate">
+                                        <input type="checkbox" :value="String(index)" x-model="estimates"
+                                               :disabled="!allowed || busy || item.value === null || review.status !== 'pending'">
+                                        <span x-text="item.name_ar + ' · ' + (item.date || item.source)"></span>
+                                        <span class="ai-tag" x-text="item.value === null ? 'محتاج بيانات' : 'مقدّر · ' + number(item.value) + ' ' + unitOf(item.unit) + ' · AI ' + percent(item.confidence)"></span>
+                                    </label>
+                                </template>
+                            </div>
+                            <div x-show="payload.schedules.length" class="stack">
+                                <h3>جداول Primavera P6</h3>
+                                <template x-for="(schedule, index) in payload.schedules" :key="index">
+                                    <details>
+                                        <summary dir="auto" x-text="schedule.source"></summary>
+                                        <p x-text="number(schedule.records.projects.length) + ' مشروعات · ' + number(schedule.records.activities.length) + ' أنشطة · ' + number(schedule.records.relationships.length) + ' علاقات'"></p>
+                                        <div class="table-scroll"><table class="ai-table">
+                                            <thead><tr><th>النشاط</th><th>المدة بالساعات</th><th>التكلفة المخططة</th></tr></thead>
+                                            <tbody><template x-for="item in schedule.records.activities" :key="item.object_id">
+                                                <tr><th scope="row" dir="auto" x-text="item.name || item.id"></th><td x-text="number(item.duration_hours)"></td><td x-text="number(item.planned_cost)"></td></tr>
+                                            </template></tbody>
+                                        </table></div>
+                                    </details>
+                                </template>
+                            </div>
+                            <details x-show="payload.unmapped.length || payload.issues.length">
+                                <summary x-text="'بنود محتاجة مراجعة · ' + number(payload.unmapped.length + payload.issues.length)"></summary>
+                                <ul class="change-summary">
+                                    <template x-for="(item, index) in [...payload.issues, ...payload.unmapped]" :key="index">
+                                        <li dir="auto" x-text="item.source + ' · ' + (item.message_ar || item.evidence)"></li>
+                                    </template>
+                                </ul>
+                            </details>
+                            <div class="notice" x-show="payload.analysis?.insight" x-text="payload.analysis?.insight.reply_ar"></div>
+                        </div>
+                    </template>
+                    <template x-if="review.kind === 'refresh' || review.kind === 'answer'">
+                        <div class="stack">
+                            <div><span class="ai-tag" x-text="'AI · ' + labelOf(payload.provider || payload.insight.provider)"></span></div>
+                            <p class="ai-paragraph" dir="auto" x-text="payload.reply_ar || payload.insight?.reply_ar"></p>
+                            <template x-for="(item, index) in questionFacts" :key="index">
+                                <details class="ai-detail">
+                                    <summary x-text="nameOf(item.node_id) + ' · AI ' + percent(item.confidence)"></summary>
+                                    <p x-text="item.text"></p>
+                                    <ol class="change-summary" x-show="item.evidence.path?.length">
+                                        <template x-for="(edge, edgeIndex) in item.evidence.path || []" :key="edgeIndex">
+                                            <li><span x-text="nameOf(edge.source) + ' ← ' + nameOf(edge.target)"></span><small x-text="edge.name_ar"></small></li>
+                                        </template>
+                                    </ol>
+                                </details>
+                            </template>
+                            <details x-show="payload.anomalies?.length">
+                                <summary x-text="'كل الإشارات · ' + number(payload.anomalies?.length)"></summary>
+                                <ul class="change-summary">
+                                    <template x-for="(item, index) in payload.anomalies || []" :key="index">
+                                        <li x-text="item.name_ar + ' · ' + item.date + ' · ' + number(item.value) + ' مقابل ' + number(item.reference) + ' · AI ' + percent(item.confidence)"></li>
+                                    </template>
+                                </ul>
+                            </details>
+                        </div>
+                    </template>
+                    <template x-if="review.kind === 'forecast'">
+                        <div class="stack">
+                            <h3 x-text="payload.name_ar"></h3>
+                            <div class="actions">
+                                <span class="ai-tag" x-text="'AI · ' + labelOf(payload.engine)"></span>
+                                <span class="ai-tag" x-text="payload.confidence === null ? 'نطاق غير معاير' : 'تغطية مستهدفة ' + percent(payload.confidence)"></span>
+                                <small x-show="payload.calibration_n" x-text="number(payload.calibration_n) + ' فترات معايرة'"></small>
+                            </div>
+                            <div class="table-scroll">
+                                <table class="ai-table">
+                                    <thead><tr><th>الفترة</th><th>P10</th><th>P50</th><th>P90</th><th>التغطية المرصودة</th></tr></thead>
+                                    <tbody>
+                                        <template x-for="(point, index) in payload.points" :key="index">
+                                            <tr><th scope="row" x-text="point.date || 'أسبوع ' + number(point.week)"></th>
+                                                <td x-text="number(point.p10)"></td><td x-text="number(point.p50)"></td><td x-text="number(point.p90)"></td>
+                                                <td x-text="percent(payload.evaluation_coverage[index])"></td></tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <details x-show="Object.keys(payload.backtests).length">
+                                <summary>أخطاء الاختبار حسب المحرك</summary>
+                                <ul class="change-summary"><template x-for="[engine, score] in Object.entries(payload.backtests)" :key="engine">
+                                    <li x-text="labelOf(engine) + ' · MAE ' + number(score.mae) + ' · MAPE ' + number(score.mape) + '%'"></li>
+                                </template></ul>
+                            </details>
+                        </div>
+                    </template>
+                    <template x-if="review.kind === 'calibration'">
+                        <div class="stack">
+                            <p class="empty" x-show="!payload.edges.length">مفيش علاقات عندها دليل كفاية من سجل أسبوعي.</p>
+                            <template x-for="item in payload.edges" :key="item.edge.source + item.edge.target">
+                                <div class="ai-detail stack">
+                                    <div class="actions"><strong x-text="item.edge.name_ar"></strong><span class="ai-tag" x-text="'AI · ' + percent(item.confidence)"></span></div>
+                                    <p x-text="'المعامل المقترح ' + number(item.multiplier) + ' · تأخير بالأسابيع ' + number(item.lag_weeks) + ' · نقاط ' + number(item.n)"></p>
+                                    <small x-text="'تحسن على الاختبار ' + percent(item.holdout_skill) + ' · ' + item.method"></small>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <template x-if="review.kind === 'decision'">
+                        <div class="stack">
+                            <p x-text="'المرجع ' + number(payload.reference) + ' · الهدف ' + number(payload.target) + ' · حالات قابلة للحساب ' + number(payload.evaluated_trials)"></p>
+                            <p class="empty" x-show="!payload.recommendations.length">مفيش حالة قابلة للحساب في الحدود المدخلة.</p>
+                            <template x-for="(item, index) in payload.recommendations" :key="index">
+                                <div class="ai-detail stack">
+                                    <div class="actions">
+                                        <strong x-text="'توصية ' + number(index + 1)"></strong>
+                                        <span class="ai-tag" x-text="'AI · ' + (item.model_basis === 'propagation' ? 'محاكاة الأثر' : 'الأثر وCP-SAT')"></span>
+                                        <span class="status neutral" x-show="item.target_met !== null" x-text="item.target_met ? 'بلغت الهدف' : 'أقل من التحسن المطلوب'"></span>
+                                    </div>
+                                    <dl class="risk-grid">
+                                        <div><dt>المؤشر المستهدف</dt><dd x-text="number(item.objective)"></dd></div>
+                                        <div><dt>أقل سيولة</dt><dd x-text="number(item.cash)"></dd></div>
+                                        <div><dt>تجاوز الائتمان</dt><dd x-text="item.risk === null ? '—' : number(item.risk) + '%'"></dd></div>
+                                        <div><dt>القيود</dt><dd class="ai-small-value" x-text="item.violations.length ? 'فيه قيد متجاوز' : 'مستوفاة'"></dd></div>
+                                    </dl>
+                                    <ul class="change-summary"><template x-for="change in item.assumptions" :key="change.node_id">
+                                        <li x-text="nameOf(change.node_id) + ' · ' + number(change.value) + (change.uncertainty ? ' ± ' + number(change.uncertainty) : '')"></li>
+                                    </template></ul>
+                                    <details>
+                                        <summary>محامي الشيطان</summary>
+                                        <p x-text="item.critique.reply_ar"></p>
+                                        <small x-text="'AI · نسبة الحالات اللي حافظت على النتيجة والقيود ' + percent(item.critique.stress_pass_rate)"></small>
+                                    </details>
+                                    <div class="actions">
+                                        <button type="button" class="button secondary" :disabled="busy || !allowed" @click="drillInto(index)">افتح مسار الأثر</button>
+                                        <button type="button" class="button primary" x-show="review.status === 'pending' && allowed"
+                                                :disabled="busy || item.violations.length > 0" @click="decide('accepted', index)">اقبل واحفظ السيناريو</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <div class="actions" x-show="review.status === 'pending' && allowed">
+                        <button type="button" class="button primary" x-show="review.kind !== 'decision'" :disabled="busy || !canAccept" @click="decide('accepted')">اقبل المقترح</button>
+                        <button type="button" class="button secondary" :disabled="busy" @click="decide('rejected')">ارفض المقترح</button>
+                    </div>
+                    <p class="notice success" x-show="review.outcome?.scenario_id" x-text="'اتحفظ السيناريو رقم ' + number(review.outcome?.scenario_id)"></p>
+                </article>
+            </template>
+        </section>
+        <aside class="card ai-audit stack" aria-label="سجل مراجعات الذكاء الاصطناعي">
+            <h2>سجل المراجعة</h2>
+            <p class="secondary-text" x-show="!records.length">مفيش مقترحات مسجلة للشركة.</p>
+            <template x-for="row in records" :key="row.id">
+                <button type="button" class="ai-audit-row" :disabled="busy" @click="openReview(row.id)" :aria-current="review?.id === row.id ? 'true' : null">
+                    <strong x-text="kinds[row.kind]"></strong><span class="ai-tag" x-text="statuses[row.status]"></span>
+                    <small dir="auto" x-text="row.created_by + ' · ' + timestamp(row.created_at)"></small>
+                    <small x-show="row.decided_by" dir="auto" x-text="'راجعها ' + row.decided_by"></small>
+                </button>
+            </template>
+            <button class="button secondary" type="button" x-show="moreRecords" :disabled="busy" @click="work(() => loadReviews(true))">اعرض مقترحات أقدم</button>
+        </aside>
+    </div>
+</main>
+</body>
+</html>

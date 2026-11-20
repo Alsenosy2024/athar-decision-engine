@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>أصحاب البيانات · أثر | Athar</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/department-owners.css">
+    <script defer src="/static/js/pages/department-owners.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+</head>
+<body>
+<main class="department-shell stack" x-data="departmentOwners" x-cloak>
+    <header class="department-header">
+        <div>
+            <p class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span> أثر | Athar</p>
+            <p class="brand-tagline">كل قرار.. وأثره على شركتك كلها</p>
+            <h1 x-text="admin ? 'أصحاب البيانات' : 'بيانات أقسامي'"></h1>
+        </div>
+        <div class="department-actions">
+            <a class="button secondary" href="/" x-show="admin">خريطة الشركة</a>
+            <button class="button secondary" type="button" @click="toggleTheme()"
+                    x-text="theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></button>
+            <button class="button secondary" type="button" @click="logout()" :disabled="busy">خروج</button>
+        </div>
+    </header>
+
+    <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+    <p class="notice success" role="status" x-show="message" x-text="message"></p>
+    <p role="status" x-show="busy">جارٍ تحديث البيانات…</p>
+    <div class="card stack" x-show="work">
+        <div class="department-actions">
+            <label class="field department-picker">
+                <span id="department-picker-label" x-text="admin ? 'الشركة' : 'القسم المكلّف بيه'"></span>
+                <select aria-labelledby="department-picker-label" x-model="selected" @change="run(() => load())" :disabled="busy || !choices.length">
+                    <template x-for="choice in choices" :key="choice.value">
+                        <option :value="choice.value" x-text="choice.title"></option>
+                    </template>
+                </select>
+            </label>
+            <button type="button" class="button secondary" @click="run(() => refreshWorkspace())" :disabled="busy">تحديث</button>
+            <a class="button secondary" href="#department-reviews" x-show="admin && hasPending">طلبات الاعتماد</a>
+        </div>
+        <p class="muted" x-show="!choices.length" x-text="admin
+            ? 'جهّز شركة من صفحة تجهيز الشركة عشان توزّع أقسامها.'
+            : 'مفيش قسم مكلّف بيه دلوقتي. راجع أدمن الشركة.'"></p>
+    </div>
+
+    <template x-if="detail && admin">
+        <div class="stack">
+            <section class="card stack">
+                <h2>تكليف الأقسام</h2>
+                <p class="muted">التكليف بيخصّص حساب المخطّط للأقسام المسندة إليه. لو شلت آخر تكليف، الحساب يفضل محدود.</p>
+                <div class="department-grid">
+                    <template x-for="section in detail.sections" :key="section.id">
+                        <article class="department-tile stack">
+                            <h3 x-text="section.name"></h3>
+                            <div class="department-meta">
+                                <strong x-text="score(section)"></strong>
+                                <span x-text="updated(section)"></span>
+                            </div>
+                            <form class="department-actions" @submit.prevent="assign(section)">
+                                <label class="field grow">
+                                    المخطّط
+                                    <select aria-label="المخطّط" x-model="assignees[section.id]" :disabled="busy">
+                                        <option value="" :selected="!assignees[section.id]">من غير تكليف</option>
+                                        <template x-if="section.owner && !section.owner.eligible">
+                                            <option :value="String(section.owner.user_id)" :selected="assignees[section.id] === String(section.owner.user_id)" x-text="section.owner.username + ' · الصلاحية اتغيّرت'"></option>
+                                        </template>
+                                        <template x-for="planner in detail.planners" :key="planner.id">
+                                            <option :value="String(planner.id)" :selected="assignees[section.id] === String(planner.id)" x-text="planner.username"></option>
+                                        </template>
+                                    </select>
+                                </label>
+                                <button type="submit" class="button secondary" :disabled="busy || assignees[section.id] === ownerId(section)">حفظ التكليف</button>
+                            </form>
+                        </article>
+                    </template>
+                </div>
+            </section>
+            <section class="card stack">
+                <h2>تذكيرات التحديث</h2>
+                <p class="muted" x-show="!detail.reminders.length">مفيش أقسام محتاجة تذكير دلوقتي.</p>
+                <ul class="department-reminders">
+                    <template x-for="reminder in detail.reminders" :key="reminder.section">
+                        <li><strong x-text="sectionName(reminder.section)"></strong> <span x-text="reminderText(reminder.reason)"></span></li>
+                    </template>
+                </ul>
+            </section>
+        </div>
+    </template>
+
+    <template x-if="detail && !admin">
+        <div class="stack">
+            <section class="card stack">
+                <h2 x-text="detail.spec.name"></h2>
+                <div class="department-meta">
+                    <strong x-text="score(detail.readiness)"></strong>
+                    <span x-text="updated(detail.readiness)"></span>
+                </div>
+                <p class="notice" x-show="detail.readiness.reminder" x-text="reminderText(detail.readiness.reminder)"></p>
+                <p class="muted" x-show="detail.readiness.missing.length"
+                   x-text="'ناقص: ' + detail.readiness.missing.map(item => item.label).join('، ')"></p>
+                <details x-show="detail.records.length">
+                    <summary>البيانات المحفوظة</summary>
+                    <div class="department-table">
+                        <table>
+                            <thead><tr><th>الحقل</th><th>التاريخ</th><th>القيمة</th><th>المصدر</th></tr></thead>
+                            <tbody>
+                                <template x-for="row in detail.records" :key="row.key + (row.date || '')">
+                                    <tr><td x-text="fieldName(row.key)"></td><td x-text="row.date || '—'"></td>
+                                        <td><bdi x-text="row.value"></bdi></td><td x-text="row.source === 'estimated' ? 'مقدّر' : 'فعلي'"></td></tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+            </section>
+
+            <section class="card stack">
+                <h2>تحديث البيانات</h2>
+                <p class="notice" x-show="hasPending">فيه تحديث للقسم مستني اعتماد الأدمن.</p>
+                <div class="department-actions" role="group" aria-label="طريقة الإدخال">
+                    <template x-for="[id, label] in methods" :key="id">
+                        <button type="button" class="button secondary" :aria-pressed="mode === id" :disabled="busy"
+                                @click="changeMode(id)" x-text="label"></button>
+                    </template>
+                </div>
+
+                <form class="stack" x-show="mode === 'manual'" @submit.prevent="previewManual()">
+                    <template x-for="(row, index) in rows" :key="row.id">
+                        <div class="department-row">
+                            <label class="field">الحقل
+                                <select x-model="row.key" :disabled="busy" @change="row.value = ''; row.date = ''">
+                                    <template x-for="field in detail.spec.fields" :key="field.key">
+                                        <option :value="field.key" :selected="row.key === field.key" x-text="field.label + ' · ' + field.unit"></option>
+                                    </template>
+                                    <template x-if="detail.spec.item">
+                                        <option value="item" :selected="row.key === 'item'" x-text="detail.spec.item[1]"></option>
+                                    </template>
+                                </select>
+                            </label>
+                            <label class="field" x-show="row.key === 'item'">معرّف مختصر بالإنجليزي
+                                <input x-model="row.suffix" dir="ltr" maxlength="60" :required="row.key === 'item' && !!row.value">
+                            </label>
+                            <label class="field">القيمة
+                                <input x-model="row.value" :inputmode="row.key === 'item' ? 'text' : 'decimal'" maxlength="160" dir="auto">
+                            </label>
+                            <label class="field" x-show="row.key !== 'item'">التاريخ (اختياري)
+                                <input x-model="row.date" type="date" dir="ltr">
+                            </label>
+                            <label class="field">المصدر
+                                <select x-model="row.source">
+                                    <option value="actual">فعلي</option><option value="estimated">مقدّر</option>
+                                </select>
+                            </label>
+                            <button class="button secondary" type="button" @click="rows.splice(index, 1)"
+                                    :disabled="busy || rows.length < 2">احذف الصف</button>
+                        </div>
+                    </template>
+                    <div class="department-actions">
+                        <button class="button secondary" type="button" @click="addRow()" :disabled="busy">ضيف صف</button>
+                        <button class="button primary" type="submit" :disabled="busy || hasPending">راجع الفرق</button>
+                    </div>
+                </form>
+
+                <form class="stack" x-show="mode !== 'manual'" @submit.prevent="previewFile($event)">
+                    <a class="button secondary department-download" :href="base + '/workbook'" x-show="mode === 'excel'">نزّل قالب القسم</a>
+                    <label class="field">ملف القسم
+                        <input name="file" type="file" :accept="mode === 'excel' ? '.xlsx' : null" :required="mode !== 'manual'">
+                    </label>
+                    <label class="department-checkbox" x-show="mode === 'extract'">
+                        <input name="remote" type="checkbox" value="true">
+                        استخدم Codex لمطابقة الحقول المبهمة من مقتطفات الملف
+                    </label>
+                    <button type="submit" class="button primary department-download" :disabled="busy || hasPending">راجع الفرق</button>
+                </form>
+            </section>
+
+            <template x-if="preview">
+                <section class="card stack">
+                    <h2>راجع الفرق قبل الإرسال</h2>
+                    <p class="muted" x-show="!preview.diff.length && preview.validation.ok">القيم زي الإصدار المعتمد.</p>
+                    <ul x-show="preview.validation.errors.length || preview.issues.length">
+                        <template x-for="(item, index) in preview.validation.errors" :key="'error-' + index">
+                            <li x-text="item.msg_ar + (item.row ? ' · صف ' + item.row : '')"></li>
+                        </template>
+                        <template x-for="(item, index) in preview.issues" :key="'issue-' + index">
+                            <li x-text="item.message_ar + ' · ' + item.source"></li>
+                        </template>
+                    </ul>
+                    <div class="department-table" x-show="preview.diff.length">
+                        <table>
+                            <thead><tr><th>الحقل والتاريخ</th><th>قبل</th><th>بعد</th><th>المصدر</th></tr></thead>
+                            <tbody>
+                                <template x-for="row in preview.diff" :key="row.after.key + (row.after.date || '')">
+                                    <tr>
+                                        <td x-text="rowName(row.after)"></td>
+                                        <td><bdi x-text="row.before?.value ?? '—'"></bdi></td>
+                                        <td><bdi x-text="row.after.value"></bdi></td>
+                                        <td x-text="sourceText(row)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="department-actions">
+                        <button type="button" class="button primary" @click="submit()" x-show="preview.token" :disabled="busy">ابعته لاعتماد الأدمن</button>
+                        <button type="button" class="button secondary" @click="preview = null" :disabled="busy">الرجوع للتعديل</button>
+                    </div>
+                </section>
+            </template>
+        </div>
+    </template>
+
+    <template x-if="detail">
+        <section class="card stack" id="department-reviews">
+            <h2 x-text="admin ? 'طلبات الاعتماد' : 'سجل تحديثات القسم'"></h2>
+            <p class="muted" x-show="!detail.submissions.length">لسه مفيش طلبات تحديث.</p>
+            <template x-for="item in detail.submissions" :key="item.id">
+                <details class="department-review stack" :open="item.status === 'pending'">
+                    <summary>
+                        <strong x-text="statusLabel(item.status)"></strong>
+                        <span x-text="sectionName(item.section)"></span>
+                        <span x-text="admin ? item.username + ' · ' + formatDate(item.submitted_at) : formatDate(item.submitted_at)"></span>
+                    </summary>
+                    <p class="muted" x-show="item.decided_at" x-text="reviewText(item)"></p>
+                    <p x-show="item.comment" x-text="item.comment"></p>
+                    <div class="department-table">
+                        <table>
+                            <thead><tr><th>الحقل والتاريخ</th><th>قبل</th><th>بعد</th><th>المصدر</th></tr></thead>
+                            <tbody>
+                                <template x-for="row in item.diff" :key="row.after.key + (row.after.date || '')">
+                                    <tr>
+                                        <td x-text="rowName(row.after)"></td>
+                                        <td><bdi x-text="row.before?.value ?? '—'"></bdi></td>
+                                        <td><bdi x-text="row.after.value"></bdi></td>
+                                        <td x-text="sourceText(row)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="department-actions" x-show="admin && item.status === 'pending'">
+                        <label class="field grow">ملاحظة المراجعة
+                            <input x-model="comments[item.id]" maxlength="500">
+                        </label>
+                        <button type="button" class="button primary" @click="decide(item, 'approved')" :disabled="busy">اعتمد واحفظ إصدار</button>
+                        <button type="button" class="button secondary" @click="decide(item, 'rejected')" :disabled="busy">ارفض</button>
+                    </div>
+                </details>
+            </template>
+        </section>
+    </template>
+</main>
+</body>
+</html>

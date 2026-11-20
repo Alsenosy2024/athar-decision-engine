@@ -1,0 +1,103 @@
+<section class="lm-process" aria-labelledby="lm-process-title">
+  <h3 id="lm-process-title">سجل العمليات والمحاكاة</h3>
+  <template x-if="processFrame">
+    <div class="lm-stack" data-testid="process-week">
+      <h4 x-text="'نتيجة الأسبوع ' + number(processFrame.week)"></h4>
+      <dl class="lm-process-kpis">
+        <div><dt>حالات مفتوحة</dt><dd><bdi x-text="number(processFrame.backlog)"></bdi></dd></div>
+        <div><dt>حالات اكتملت</dt><dd><bdi x-text="number(processFrame.completed)"></bdi></dd></div>
+        <div><dt>وسيط زمن الإنجاز</dt><dd><bdi x-text="mapValue(processFrame.lead_time_days, 'days')"></bdi></dd></div>
+        <div><dt>إشغال الموارد</dt><dd><bdi x-text="number(processFrame.utilization_pct) + '%'"></bdi></dd></div>
+      </dl>
+      <details>
+        <summary>انتقالات الأسبوع بين الأقسام</summary>
+        <p x-show="!processFrame.flows.some(row => row.from_department !== row.to_department)">مفيش انتقالات بين الأقسام في الأسبوع ده.</p>
+        <ul class="lm-list lm-process-rows">
+          <template x-for="row in processFrame.flows.filter(row => row.from_department !== row.to_department)"
+                    :key="processRoadKey(row.from_department, row.to_department)">
+            <li>
+              <span x-text="deptLabel(row.from_department) + ' ← ' + deptLabel(row.to_department)"></span>
+              <bdi x-text="number(row.volume)"></bdi>
+            </li>
+          </template>
+        </ul>
+      </details>
+      <ul class="lm-list lm-process-rows" aria-label="طوابير الأقسام في الأسبوع">
+        <template x-for="row in processFrame.departments" :key="row.id">
+          <li x-show="!focus || focus === row.id">
+            <span x-text="deptLabel(row.id)"></span>
+            <small x-text="number(row.waiting) + ' في الطابور · ' + number(row.utilization_pct) + '% إشغال'"></small>
+          </li>
+        </template>
+      </ul>
+    </div>
+  </template>
+  <div class="lm-process-import" x-show="editable">
+    <label class="lm-action lm-process-file">
+      <span x-text="busy === 'load' ? 'جارٍ تحليل السجل…' : 'ارفع سجل أحداث (CSV أو XES)'"></span>
+      <input class="visually-hidden" type="file" accept=".csv,.xes" @change="uploadProcessLog($event)"
+        :disabled="!!busy" data-testid="process-file">
+    </label>
+    <button type="button" class="lm-action" x-show="!processReport" :disabled="!!busy" @click="seedProcessLog()">حمّل سجل تجريبي</button>
+  </div>
+  <p x-show="!processReport">ارفع سجل عشان تظهر الانتقالات والاختناقات على الخريطة.</p>
+  <template x-if="processReport">
+    <div class="lm-stack">
+      <p data-testid="process-summary"><bdi x-text="number(processReport.case_count)"></bdi> حالة ·
+        <bdi x-text="number(processReport.event_count)"></bdi> حدث ·
+        <bdi x-text="number(processReport.observed_weeks)"></bdi> أسبوع في السجل</p>
+      <details>
+        <summary>الانتقالات وإعادة العمل</summary>
+        <p x-show="!processReport.transitions.length">مفيش انتقالات متتالية في الحالات المسجلة.</p>
+        <ul class="lm-list lm-process-rows">
+          <template x-for="row in processReport.transitions" :key="processRoadKey(row.from_department, row.to_department)">
+            <li>
+              <strong x-text="deptLabel(row.from_department) + ' ← ' + deptLabel(row.to_department)"></strong>
+              <small x-text="number(row.volume) + ' انتقال · ' + number(row.median_duration_days) + ' يوم وسيط · ' + number(row.rework_count) + ' إعادة'"></small>
+            </li>
+          </template>
+        </ul>
+      </details>
+      <details>
+        <summary>الأقسام حسب الحمل المقدّر</summary>
+        <ul class="lm-list">
+          <template x-for="row in processReport.bottlenecks" :key="row.id">
+            <li>
+              <span x-text="row.name_ar"></span>
+              <bdi x-text="number(row.estimated_load * 100) + '%'"></bdi>
+            </li>
+          </template>
+        </ul>
+        <p>الحمل تقديري حسب الفواصل بين الأحداث وعدد الموارد المسجّلة.</p>
+      </details>
+      <form class="lm-stack lm-mini-form" x-show="editable" @submit.prevent="runSimulation()">
+        <div class="lm-twin">
+          <label>عدد أسابيع المحاكاة
+            <input type="number" min="1" max="104" step="1" required x-model.number="simulationWeeks" :disabled="!!busy">
+          </label>
+          <label>تغيّر الطلب (%)
+            <input type="number" min="-100" max="900" step="any" required x-model.number="demandChange" :disabled="!!busy">
+          </label>
+        </div>
+        <details>
+          <summary>عدّل موارد الأقسام ومدد الخدمة</summary>
+          <template x-for="row in processReport.departments" :key="row.id">
+            <fieldset class="lm-edit" :disabled="!!busy">
+              <legend x-text="row.name_ar"></legend>
+              <div class="lm-twin">
+                <label>عدد الموارد
+                  <input type="number" min="1" max="20000" step="1" required x-model.number="departmentOverrides[row.id].capacity">
+                </label>
+                <label>تغيّر مدة الخدمة (%)
+                  <input type="number" min="-90" max="900" step="any" required x-model.number="departmentOverrides[row.id].service">
+                </label>
+              </div>
+            </fieldset>
+          </template>
+        </details>
+        <button type="submit" class="lm-action lm-primary" :disabled="!!busy"
+          data-testid="process-simulate" x-text="busy === 'simulate' ? 'بنحسب طوابير الأقسام…' : 'شغّل محاكاة العمليات'"></button>
+      </form>
+    </div>
+  </template>
+</section>

@@ -1,0 +1,294 @@
+{
+  "template_id": "contracting",
+  "name_ar": "المقاولات (عدة مشاريع)",
+  "name_en": "Contracting",
+  "time_unit": "week",
+  "horizon_key": "horizon_weeks",
+  "entities": {
+    "projects": {
+      "name_ar": "المشاريع",
+      "key": "id",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المعرّف"
+        },
+        {
+          "name": "name_ar",
+          "type": "str",
+          "required": true,
+          "name_ar": "الاسم"
+        },
+        {
+          "name": "nta_week",
+          "type": "int",
+          "required": true,
+          "name_ar": "أول أسبوع للبدء"
+        },
+        {
+          "name": "deadline_week",
+          "type": "int",
+          "required": true,
+          "name_ar": "أسبوع التسليم"
+        },
+        {
+          "name": "ld_per_week",
+          "type": "int",
+          "required": true,
+          "name_ar": "غرامة التأخير الأسبوعية"
+        }
+      ]
+    },
+    "activities": {
+      "name_ar": "الأنشطة",
+      "key": "id",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المعرّف"
+        },
+        {
+          "name": "project_id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المشروع"
+        },
+        {
+          "name": "seq",
+          "type": "int",
+          "required": true,
+          "name_ar": "الترتيب"
+        },
+        {
+          "name": "phase",
+          "type": "str",
+          "required": true,
+          "name_ar": "المرحلة"
+        },
+        {
+          "name": "duration_weeks",
+          "type": "int",
+          "required": true,
+          "name_ar": "المدة بالأسابيع"
+        },
+        {
+          "name": "resource",
+          "type": "str",
+          "required": true,
+          "name_ar": "الفريق"
+        },
+        {
+          "name": "units",
+          "type": "int",
+          "required": true,
+          "name_ar": "عدد الفرق"
+        },
+        {
+          "name": "cost_per_week",
+          "type": "int",
+          "required": true,
+          "name_ar": "التكلفة الأسبوعية"
+        }
+      ]
+    },
+    "resources": {
+      "name_ar": "فرق العمل",
+      "key": "id",
+      "fields": [
+        {
+          "name": "id",
+          "type": "str",
+          "required": true,
+          "name_ar": "المعرّف"
+        },
+        {
+          "name": "name_ar",
+          "type": "str",
+          "required": true,
+          "name_ar": "الاسم"
+        },
+        {
+          "name": "capacity",
+          "type": "int",
+          "required": true,
+          "name_ar": "السعة"
+        }
+      ]
+    },
+    "history": {
+      "name_ar": "سجل مدد التنفيذ",
+      "key": null,
+      "fields": [
+        {
+          "name": "phase",
+          "type": "str",
+          "required": true,
+          "name_ar": "المرحلة"
+        },
+        {
+          "name": "planned_weeks",
+          "type": "float",
+          "required": true,
+          "name_ar": "المدة المخططة"
+        },
+        {
+          "name": "actual_weeks",
+          "type": "float",
+          "required": true,
+          "name_ar": "المدة الفعلية"
+        }
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "activities.project_id",
+      "to": "projects.id"
+    },
+    {
+      "from": "activities.resource",
+      "to": "resources.id"
+    }
+  ],
+  "parameters": [
+    {
+      "id": "horizon_weeks",
+      "name_ar": "أفق التخطيط بالأسابيع",
+      "type": "int",
+      "default": 44,
+      "min": 1
+    },
+    {
+      "id": "payment_lag_weeks",
+      "name_ar": "مهلة التحصيل بالأسابيع",
+      "type": "int",
+      "default": 4,
+      "min": 0
+    },
+    {
+      "id": "margin",
+      "name_ar": "معامل هامش الإيراد",
+      "type": "float",
+      "default": 1.15,
+      "min": 0
+    },
+    {
+      "id": "credit_limit",
+      "name_ar": "حد الائتمان (ألف ريال)",
+      "type": "int",
+      "default": 4000,
+      "min": 0
+    },
+    {
+      "id": "weekly_interest",
+      "name_ar": "الفائدة الأسبوعية",
+      "type": "float",
+      "default": 0.004,
+      "min": 0
+    },
+    {
+      "id": "project_start_date",
+      "name_ar": "تاريخ بدء التخطيط",
+      "type": "date",
+      "default": "2026-01-05"
+    },
+    {
+      "id": "capacity_override",
+      "name_ar": "تعديلات سعة الفرق",
+      "type": "dict",
+      "default": {}
+    }
+  ],
+  "constraints": [
+    {
+      "id": "precedence",
+      "name_ar": "تتابع المراحل",
+      "kind": "hard",
+      "editable": false
+    },
+    {
+      "id": "resource_capacity",
+      "name_ar": "سعة الفرق",
+      "kind": "hard",
+      "editable": true,
+      "param": "capacity_override"
+    },
+    {
+      "id": "credit_limit",
+      "name_ar": "حد الائتمان",
+      "kind": "hard_soft",
+      "editable": true,
+      "param": "credit_limit"
+    }
+  ],
+  "objective_weights": [
+    {
+      "id": "ld",
+      "name_ar": "غرامات التأخير",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "id": "financing",
+      "name_ar": "تكلفة التمويل",
+      "default": 1,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "id": "makespan",
+      "name_ar": "مدة تنفيذ الخطة",
+      "default": 0,
+      "min": 0,
+      "max": 5,
+      "step": 0.1
+    }
+  ],
+  "upload_sheets": {
+    "projects": [
+      "id",
+      "name_ar",
+      "nta_week",
+      "deadline_week",
+      "ld_per_week"
+    ],
+    "activities": [
+      "id",
+      "project_id",
+      "seq",
+      "phase",
+      "duration_weeks",
+      "resource",
+      "units",
+      "cost_per_week"
+    ],
+    "resources": [
+      "id",
+      "name_ar",
+      "capacity"
+    ],
+    "history": [
+      "phase",
+      "planned_weeks",
+      "actual_weeks"
+    ]
+  },
+  "whatif_changes": [
+    "credit_limit_pct",
+    "credit_limit_abs",
+    "crew_unavailable",
+    "deadline_shift",
+    "ld_change",
+    "project_start_delay",
+    "payment_lag",
+    "margin_pct",
+    "weight_change"
+  ]
+}

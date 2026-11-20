@@ -1,0 +1,510 @@
+{
+  "projects": [
+    {
+      "id": "A",
+      "name_ar": "برج الريان",
+      "nta_week": 0,
+      "deadline_week": 26,
+      "ld_per_week": 40
+    },
+    {
+      "id": "B",
+      "name_ar": "مجمع النخيل",
+      "nta_week": 2,
+      "deadline_week": 30,
+      "ld_per_week": 60
+    },
+    {
+      "id": "C",
+      "name_ar": "مدرسة الواحة",
+      "nta_week": 0,
+      "deadline_week": 20,
+      "ld_per_week": 25
+    },
+    {
+      "id": "D",
+      "name_ar": "مستودع الشرق",
+      "nta_week": 4,
+      "deadline_week": 28,
+      "ld_per_week": 50
+    },
+    {
+      "id": "E",
+      "name_ar": "فيلات الروضة",
+      "nta_week": 0,
+      "deadline_week": 24,
+      "ld_per_week": 30
+    }
+  ],
+  "activities": [
+    {
+      "id": "A0",
+      "project_id": "A",
+      "seq": 0,
+      "phase": "F",
+      "duration_weeks": 4,
+      "resource": "R1",
+      "units": 1,
+      "cost_per_week": 150
+    },
+    {
+      "id": "A1",
+      "project_id": "A",
+      "seq": 1,
+      "phase": "S",
+      "duration_weeks": 8,
+      "resource": "R2",
+      "units": 2,
+      "cost_per_week": 260
+    },
+    {
+      "id": "A2",
+      "project_id": "A",
+      "seq": 2,
+      "phase": "X",
+      "duration_weeks": 6,
+      "resource": "R3",
+      "units": 2,
+      "cost_per_week": 140
+    },
+    {
+      "id": "B0",
+      "project_id": "B",
+      "seq": 0,
+      "phase": "F",
+      "duration_weeks": 5,
+      "resource": "R1",
+      "units": 1,
+      "cost_per_week": 170
+    },
+    {
+      "id": "B1",
+      "project_id": "B",
+      "seq": 1,
+      "phase": "S",
+      "duration_weeks": 10,
+      "resource": "R2",
+      "units": 2,
+      "cost_per_week": 300
+    },
+    {
+      "id": "B2",
+      "project_id": "B",
+      "seq": 2,
+      "phase": "X",
+      "duration_weeks": 7,
+      "resource": "R3",
+      "units": 2,
+      "cost_per_week": 160
+    },
+    {
+      "id": "C0",
+      "project_id": "C",
+      "seq": 0,
+      "phase": "F",
+      "duration_weeks": 3,
+      "resource": "R1",
+      "units": 1,
+      "cost_per_week": 120
+    },
+    {
+      "id": "C1",
+      "project_id": "C",
+      "seq": 1,
+      "phase": "S",
+      "duration_weeks": 6,
+      "resource": "R2",
+      "units": 1,
+      "cost_per_week": 180
+    },
+    {
+      "id": "C2",
+      "project_id": "C",
+      "seq": 2,
+      "phase": "X",
+      "duration_weeks": 4,
+      "resource": "R3",
+      "units": 1,
+      "cost_per_week": 90
+    },
+    {
+      "id": "D0",
+      "project_id": "D",
+      "seq": 0,
+      "phase": "F",
+      "duration_weeks": 4,
+      "resource": "R1",
+      "units": 1,
+      "cost_per_week": 140
+    },
+    {
+      "id": "D1",
+      "project_id": "D",
+      "seq": 1,
+      "phase": "S",
+      "duration_weeks": 9,
+      "resource": "R2",
+      "units": 2,
+      "cost_per_week": 240
+    },
+    {
+      "id": "D2",
+      "project_id": "D",
+      "seq": 2,
+      "phase": "X",
+      "duration_weeks": 6,
+      "resource": "R3",
+      "units": 2,
+      "cost_per_week": 130
+    },
+    {
+      "id": "E0",
+      "project_id": "E",
+      "seq": 0,
+      "phase": "F",
+      "duration_weeks": 3,
+      "resource": "R1",
+      "units": 1,
+      "cost_per_week": 110
+    },
+    {
+      "id": "E1",
+      "project_id": "E",
+      "seq": 1,
+      "phase": "S",
+      "duration_weeks": 7,
+      "resource": "R2",
+      "units": 1,
+      "cost_per_week": 200
+    },
+    {
+      "id": "E2",
+      "project_id": "E",
+      "seq": 2,
+      "phase": "X",
+      "duration_weeks": 5,
+      "resource": "R3",
+      "units": 1,
+      "cost_per_week": 100
+    }
+  ],
+  "resources": [
+    {
+      "id": "R1",
+      "name_ar": "فرق الأساسات",
+      "capacity": 2
+    },
+    {
+      "id": "R2",
+      "name_ar": "فرق الهيكل",
+      "capacity": 3
+    },
+    {
+      "id": "R3",
+      "name_ar": "فرق التشطيبات",
+      "capacity": 4
+    }
+  ],
+  "history": [
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 5.174
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.018
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 5.353
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 5.235
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.079
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.747
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 3.842
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.042
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.482
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.588
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.879
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.588
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 5.008
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 3.254
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.227
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.61
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 3.641
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.737
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 3.564
+    },
+    {
+      "phase": "F",
+      "planned_weeks": 4,
+      "actual_weeks": 4.163
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 7.84
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 7.599
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 9.299
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.744
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 7.935
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 12.272
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 11.513
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.918
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 10.475
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.913
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.953
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 9.907
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.974
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.777
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 11.5
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 7.804
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 6.931
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 6.48
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 12.192
+    },
+    {
+      "phase": "S",
+      "planned_weeks": 8,
+      "actual_weeks": 8.527
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.629
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.377
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 7.182
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.372
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.614
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 7.303
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 7.121
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.797
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.584
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.32
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.904
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.383
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.04
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.476
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.951
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.431
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 5.891
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.467
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.455
+    },
+    {
+      "phase": "X",
+      "planned_weeks": 6,
+      "actual_weeks": 6.373
+    }
+  ]
+}

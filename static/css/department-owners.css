@@ -1,0 +1,68 @@
+.department-shell {
+    width: min(1160px, calc(100% - 2rem));
+    margin: 0 auto;
+    padding-block: 2rem 4rem;
+}
+
+.department-header,
+.department-actions,
+.department-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: .65rem 1rem;
+}
+
+.department-header { justify-content: space-between; }
+.department-header h1 { margin-block: 1rem 0; }
+.department-header .brand { margin: 0; }
+.department-header .brand-tagline { margin-block: .25rem 0; }
+.department-picker { flex: 0 1 21rem; }
+
+.department-grid,
+.department-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+    gap: .75rem;
+}
+
+.department-row {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    align-items: end;
+}
+
+.department-tile,
+.department-row,
+.department-review {
+    padding: .9rem;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    min-width: 0;
+}
+
+.department-tile h3,
+.department-tile p,
+.department-review p {
+    margin: 0;
+}
+
+.department-meta { align-items: center; color: var(--muted); }
+.department-meta strong { color: var(--ink); }
+.department-actions .grow { flex: 1 1 10rem; }
+.department-download { justify-self: start; }
+.department-actions [aria-pressed="true"] { border-color: var(--accent); }
+.department-checkbox { display: flex; align-items: center; gap: .45rem; }
+.department-checkbox input { width: auto; }
+.department-table { overflow-x: auto; margin-block: .5rem; }
+.department-table td { min-width: 5rem; overflow-wrap: anywhere; }
+.department-review summary { cursor: pointer; overflow-wrap: anywhere; }
+.department-review summary span { margin-inline: .5rem; }
+.department-review[open] > summary { margin-block-end: .45rem; }
+.department-reminders { display: grid; gap: .35rem; margin: 0; padding-inline-start: 1.4rem; }
+.department-shell input[type="file"] { min-inline-size: 0; max-inline-size: 100%; }
+
+@media (max-width: 520px) {
+    .department-table table { width: 100%; table-layout: fixed; font-size: .88rem; }
+    .department-table :is(th, td) { min-width: 0; padding-inline: 5px; overflow-wrap: anywhere; }
+    .department-table :is(th, td):is(:first-child, :last-child) { width: 32%; }
+}

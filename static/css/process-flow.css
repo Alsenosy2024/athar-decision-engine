@@ -1,0 +1,20 @@
+.lm-layout.lm-process-only { grid-template-columns: minmax(0, 1fr); }
+.lm-process { padding: 12px; border-top: 1px solid var(--lm-border); }
+.lm-process h3, .lm-process h4, .lm-map-key p { margin: 0; }
+.lm-process-import { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.lm-process-file { position: relative; }
+.lm-process-file:focus-within { outline: 2px solid var(--lm-green); outline-offset: 2px; }
+.lm-process-file:has(input:disabled) { cursor: default; opacity: .54; }
+.lm-process [data-testid="process-week"] { margin-block: 8px 12px; }
+.lm-process-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
+    gap: 6px;
+    margin: 0;
+}
+.lm-process-kpis div { padding: 7px; border: 1px solid var(--lm-border); border-radius: 8px; }
+.lm-process-kpis dt, .lm-process-rows small { font-size: .78rem; color: var(--lm-dim); }
+.lm-process-kpis dd { margin: 0; }
+.lm-process-rows li { flex-wrap: wrap; overflow-wrap: anywhere; }
+.lm-map-key .lm-action { margin-block-start: 5px; }
+.lm-node-label { overflow-wrap: anywhere; }

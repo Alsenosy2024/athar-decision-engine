@@ -1,0 +1,1176 @@
+<!doctype html>
+<html lang="ar" dir="rtl" data-theme="light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>أثر | Athar</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="/static/css/access.css">
+    <link rel="stylesheet" href="/static/css/onboarding.css">
+    <link rel="stylesheet" href="/static/css/prescriptive.css">
+    <link rel="stylesheet" href="/static/css/living-map.css">
+    <link rel="stylesheet" href="/static/css/process-flow.css">
+    <link rel="stylesheet" href="/static/css/map-briefing.css">
+    <script defer src="/static/vendor/chart.umd.js"></script>
+    <script defer src="/static/js/charts.js"></script>
+    <script defer src="/static/js/app.js"></script>
+    <script defer src="/static/js/pages/data.js"></script>
+    <script defer src="/static/js/pages/model.js"></script>
+    <script defer src="/static/js/pages/enterprise.js"></script>
+    <script defer src="/static/js/pages/onboarding.js"></script>
+    <script defer src="/static/js/pages/impact.js"></script>
+    <script defer src="/static/js/pages/scenarios.js"></script>
+    <script defer src="/static/js/pages/connectors.js"></script>
+    <script defer src="/static/js/pages/prescriptive.js"></script>
+    <script defer src="/static/js/pages/dashboard.js"></script>
+    <script defer src="/static/js/pages/forecast.js"></script>
+    <script defer src="/static/js/pages/optimize.js"></script>
+    <script defer src="/static/js/pages/whatif.js"></script>
+    <script defer src="/static/js/pages/chat.js"></script>
+    <script defer src="/static/js/pages/approvals.js"></script>
+    <script defer src="/static/js/pages/actuals.js"></script>
+    <script defer src="/static/js/living-map-canvas.js"></script>
+    <script defer src="/static/js/pages/process-flow.js"></script>
+    <script defer src="/static/js/pages/map-briefing.js"></script>
+    <script defer src="/static/js/pages/living-map.js"></script>
+    <script defer src="/static/vendor/alpine.min.js"></script>
+</head>
+<body x-data x-cloak>
+<a class="skip-link" href="#main" @click.prevent="$refs.main.focus()">انتقل إلى المحتوى</a>
+<div class="workspace" :data-page="$store.app.page">
+    <aside class="sidebar">
+        <a class="brand" href="#/map">
+            <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+            أثر | Athar
+        </a>
+        <p class="brand-tagline">كل قرار.. وأثره على شركتك كلها</p>
+        <nav aria-label="أقسام محرك القرارات">
+            <template x-for="[group, title] in [['overview', 'نظرة عامة'], ['inputs', 'التهيئة'], ['analysis', 'التخطيط'], ['delivery', 'التنفيذ']]" :key="group">
+                <div class="nav-group" x-show="$store.app.visiblePages.some(item => item[2] === group)">
+                    <p x-text="title"></p>
+                    <template x-for="[key, label] in $store.app.visiblePages.filter(item => item[2] === group)" :key="key">
+                        <a :href="'#/' + key" :aria-current="$store.app.page === key ? 'page' : null" x-text="label"></a>
+                    </template>
+                </div>
+            </template>
+            <div class="nav-group">
+                <a :href="'/ai?company_id=' + ($store.app.companyId || '')">مختبر الذكاء الاصطناعي</a>
+                <a x-show="$store.app.user?.role === 'admin'" href="/department-owners">أصحاب البيانات</a>
+            </div>
+        </nav>
+    </aside>
+
+    <div class="main-column">
+        <header class="topbar">
+            <div class="company-control" x-show="$store.app.companies.length">
+                <label for="company">الشركة</label>
+                <select id="company" data-testid="company-switcher" :value="$store.app.companyId" @change="$store.app.switchCompany(Number($event.target.value))" :disabled="$store.app.loading">
+                    <template x-for="company in $store.app.companies" :key="company.id">
+                        <option :value="company.id" :selected="company.id === $store.app.companyId" x-text="company.name"></option>
+                    </template>
+                </select>
+            </div>
+            <div class="account-controls" x-show="$store.app.user">
+                <bdi x-text="$store.app.user?.username"></bdi>
+                <a class="button secondary" x-show="$store.app.user?.role === 'admin'" href="/users">المستخدمين</a>
+                <button class="button secondary" type="button" @click="$store.app.logout()">خروج</button>
+            </div>
+            <button class="theme-button" type="button" data-testid="theme-toggle" @click="$store.app.toggleTheme()"
+                    :aria-pressed="$store.app.theme === 'dark'">
+                <span class="theme-icon" aria-hidden="true"></span> <span x-text="$store.app.theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></span>
+            </button>
+        </header>
+
+        <main id="main" x-ref="main" tabindex="-1">
+            <p class="empty" role="status" x-show="$store.app.loading">جارٍ تحميل مساحة العمل…</p>
+            <div class="notice error" x-show="$store.app.error"><p role="alert" x-text="$store.app.error"></p>
+                <button class="button secondary" @click="$store.app.loadCompanies()">إعادة المحاولة</button>
+            </div>
+            <div class="toast notice error" role="alert" x-show="$store.app.toast" x-text="$store.app.toast"></div>
+
+            <section class="living-map" data-testid="page-map" x-data="livingMapPage"
+                     x-show="$store.app.page === 'map' && !$store.app.loading" x-cloak
+                     x-effect="activate($store.app.page, $store.app.companyId, $store.app.loading)">
+                <p class="empty" role="status" x-show="busy === 'load' && !map">جارٍ تحميل خريطة الشركة…</p>
+                <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+                <div x-html="markup"></div>
+            </section>
+
+            <section data-testid="page-dashboard" x-show="$store.app.company && $store.app.page === 'dashboard'" x-data="dashboardPage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><p class="context" x-text="$store.app.templates[template]?.name_ar"></p><h1>لوحة التحكم</h1><p>تابع أثر التحسين على التكلفة والتشغيل والسيولة.</p></div>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <p class="notice page-feedback" x-show="outOfDate">التشغيل المعروض مبني على مجموعة بيانات سابقة. شغّل التحسين لتقييم البيانات النشطة.</p>
+                <div class="empty" x-show="!busy && !error && !run">
+                    <h2>لسه مفيش خطة للشركة</h2><p>شغّل التحسين عشان تظهر هنا مؤشرات الخطة والجدول والسيولة.</p>
+                    <a class="button primary" href="#/optimize">افتح التحسين</a>
+                </div>
+                <div class="stack" x-show="run">
+                    <div class="snapshot">
+                        <div class="snapshot-info"><h2>آخر تشغيل للتحسين</h2>
+                            <p x-text="'التشغيل ' + number(run?.id) + ' · ' + timestamp(run?.created_at)"></p></div>
+                        <div class="actions"><span class="status" x-text="solverLabel(run?.status)"></span>
+                            <a class="button secondary" href="#/optimize">تفاصيل التشغيل</a></div>
+                    </div>
+                    <div class="kpi-grid">
+                        <template x-for="item in kpis" :key="item.key">
+                            <article class="card kpi">
+                                <h3 x-text="item.label"></h3>
+                                <div class="kpi-value"><bdi x-text="number(item.after)"></bdi> <small x-text="item.unit"></small></div>
+                                <div class="kpi-detail"><span>مرجعي <bdi x-text="number(item.before)"></bdi></span>
+                                    <span class="status neutral"><span>الفرق</span><bdi x-text="signed(item.delta)"></bdi></span></div>
+                            </article>
+                        </template>
+                    </div>
+                    <p class="notice error" x-show="run && !dataset">التشغيل مفيهوش خطة قابلة للعرض.</p>
+                    <div class="stack" x-show="dataset">
+                        <article class="card" x-show="template === 'contracting'">
+                            <div class="card-heading"><div><h2>الجدول الزمني للمشروعات</h2>
+                                <p>كل شريط يوضح بداية نشاط ونهايته في الخطة المحسّنة.</p></div>
+                                <span class="chart-key"><i></i> موعد تسليم المشروع</span>
+                            </div>
+                            <div class="chart-scroll">
+                                <div class="chart gantt" :style="'height:' + Math.max(260, (run?.result.optimized?.plan?.activities?.length ?? 0) * 23 + 55) + 'px'">
+                                    <canvas data-testid="chart-gantt" x-ref="gantt" role="img" aria-label="الجدول الزمني للأنشطة ومواعيد تسليم المشروعات"></canvas>
+                                </div>
+                            </div>
+                        </article>
+                        <article class="card" x-show="template === 'production'">
+                            <div class="card-heading"><div><h2>جدول خطوط الإنتاج</h2><p>لون الخلية يحدد المنتج. المساحات الفارغة أيام من غير إنتاج مجدول.</p></div></div>
+                            <p class="empty" x-show="!run?.result.optimized?.plan?.schedule?.length">مفيش إنتاج مجدول في الخطة دي.</p>
+                            <div class="chart-scroll" x-show="run?.result.optimized?.plan?.schedule?.length">
+                                <div class="chart production-plan" :style="'height:' + Math.max(180, (dataset?.lines?.length ?? 0) * 46 + 100) + 'px'">
+                                    <canvas data-testid="chart-plan" x-ref="plan" role="img" aria-label="المنتجات المقررة لكل خط واليوم المخصص لها"></canvas>
+                                </div>
+                            </div>
+                        </article>
+                        <article class="card">
+                            <div class="card-heading"><div><h2>مسار السيولة</h2><p>الرصيد النقدي التراكمي للخطة المرجعية والمحسّنة.</p></div></div>
+                            <div class="chart"><canvas data-testid="chart-cash" x-ref="cash" role="img" aria-label="الرصيد النقدي التراكمي عبر زمن الخطة"></canvas></div>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section data-testid="page-data" x-show="$store.app.company && $store.app.page === 'data'" x-data="dataPage"
+                     x-effect="selectCompany($store.app.companyId, $store.app.template, $store.app.page)">
+                <header class="page-title">
+                    <div>
+                        <h1>البيانات</h1>
+                        <p>حمّل بيانات تجريبية أو ارفع ملف شركتك وراجع نتيجة التحقق.</p>
+                    </div>
+                    <p class="sector" x-text="$store.app.templates[$store.app.template]?.name_ar"></p>
+                </header>
+
+                <div class="data-grid">
+                    <article class="card">
+                        <h2>مصدر البيانات</h2>
+                        <div class="demo-action">
+                            <div>
+                                <h3>بيانات تجريبية</h3>
+                                <p>مجموعة بيانات جاهزة لقطاع الشركة.</p>
+                            </div>
+                            <button class="button secondary" type="button" data-testid="load-demo"
+                                    @click="submit('demo')" :disabled="!companyId || !!action"
+                                    x-text="action === 'demo' ? 'جارٍ التحميل…' : 'تحميل البيانات التجريبية'"></button>
+                        </div>
+                        <form x-ref="upload" class="upload-form" @submit.prevent="submit('upload')">
+                            <h3>رفع ملف</h3>
+                            <label class="file-picker">
+                                <span class="file-label" x-text="fileName || 'اختيار ملف Excel أو CSV'"></span>
+                                <input x-ref="file" data-testid="dataset-file" name="file" type="file" accept=".xlsx,.csv"
+                                       aria-label="اختيار ملف Excel أو CSV" required
+                                       @change="fileName = $event.target.files[0]?.name || ''">
+                            </label>
+                            <button class="button primary" type="submit" :disabled="!companyId || !!action || !fileName"
+                                    x-text="action === 'upload' ? 'جارٍ التحقق…' : 'رفع وتحقق'"></button>
+                        </form>
+                    </article>
+
+                    <article class="card template-card">
+                        <h2>قوالب الملفات</h2>
+                        <p>استخدم قالب القطاع عشان تعرف أسماء الجداول والأعمدة المطلوبة.</p>
+                        <div class="template-links" x-show="$store.app.template">
+                            <a data-testid="download-template" :href="'/static/templates/' + $store.app.template + '_template.xlsx'" download>
+                                <span>قالب البيانات</span><bdi>Excel ↙</bdi>
+                            </a>
+                            <a :href="'/static/templates/actuals_' + $store.app.template + '_template.csv'" download>
+                                <span>قالب البيانات الفعلية</span><bdi>CSV ↙</bdi>
+                            </a>
+                        </div>
+                        <details>
+                            <summary>إزاي تجهّز ملف CSV؟</summary>
+                            <p>أضف عمود <bdi>sheet</bdi> باسم الجدول لكل صف. اجمع أعمدة كل الجداول في أول صف، وسيب الخانات اللي مش بتخص جدول الصف فاضية. احفظ الملف بترميز <bdi>UTF-8</bdi>.</p>
+                        </details>
+                    </article>
+                </div>
+
+                <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success" role="status" x-show="message" x-text="message"></p>
+                <article class="card validation-card" x-show="validation && !validation.ok" aria-labelledby="validation-title">
+                    <h2 id="validation-title" role="alert">ملف البيانات فيه أخطاء</h2>
+                    <div class="table-scroll">
+                        <table data-testid="validation-errors">
+                            <thead><tr><th scope="col">الجدول</th><th scope="col">الصف</th><th scope="col">العمود</th><th scope="col">المشكلة</th></tr></thead>
+                            <tbody>
+                                <template x-for="(issue, index) in (validation?.errors || [])" :key="index">
+                                    <tr><td><bdi x-text="issue.sheet"></bdi></td><td x-text="$store.app.number(issue.row || null)"></td>
+                                        <td><bdi x-text="issue.column || '—'"></bdi></td><td x-text="issue.msg_ar"></td></tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="card active-card" data-testid="active-dataset">
+                    <div class="active-title">
+                        <div>
+                            <h2>مجموعة البيانات النشطة</h2>
+                            <p dir="auto" x-text="active?.name || (action === 'load' ? 'جارٍ تحميل البيانات…' : 'مفيش بيانات نشطة للشركة.')"></p>
+                        </div>
+                        <span x-show="active" class="status"><i aria-hidden="true"></i> اجتازت التحقق</span>
+                    </div>
+                    <dl class="metrics" x-show="summary.length">
+                        <template x-for="item in summary" :key="item.key">
+                            <div><dt x-text="item.label"></dt><dd x-text="$store.app.number(item.count)"></dd></div>
+                        </template>
+                    </dl>
+                    <details x-show="datasets.length > 1">
+                        <summary>المجموعات السابقة</summary>
+                        <ul>
+                            <template x-for="item in datasets.filter(item => !item.is_active)" :key="item.id">
+                                <li dir="auto" x-text="item.name"></li>
+                            </template>
+                        </ul>
+                    </details>
+                </article>
+            </section>
+
+            <section data-testid="page-model" x-show="$store.app.company && $store.app.page === 'model'" x-data="modelPage"
+                     x-effect="load($store.app.companyId, $store.app.template, $store.app.page)">
+                <header class="page-title">
+                    <div><h1>نموذج الشركة</h1><p>اضبط المعاملات والقيود وأوزان الأهداف.</p></div>
+                    <p class="sector" x-show="model" x-text="'الإصدار ' + $store.app.number(model?.version)"></p>
+                </header>
+                <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success" role="status" x-show="message" x-text="message"></p>
+                <p class="empty" role="status" x-show="busy && !model">جارٍ تحميل نموذج الشركة…</p>
+                <template x-if="model">
+                    <form @submit.prevent="save()" class="model-form">
+                        <div class="data-grid">
+                            <article class="card">
+                                <h2>المعاملات</h2>
+                                <div class="fields">
+                                    <template x-for="param in definition.parameters" :key="param.id">
+                                        <label>
+                                            <span x-text="param.name_ar"></span>
+                                            <template x-if="param.type === 'int' || param.type === 'float'">
+                                                <input type="number" required :min="param.min" :step="param.type === 'int' ? '1' : 'any'"
+                                                       x-model.number="draft.parameters[param.id]" dir="ltr">
+                                            </template>
+                                            <template x-if="param.type === 'date'">
+                                                <input type="date" required x-model="draft.parameters[param.id]">
+                                            </template>
+                                            <template x-if="param.type === 'dict'">
+                                                <input type="text" required x-model="draft.parameters[param.id]" dir="ltr">
+                                            </template>
+                                        </label>
+                                    </template>
+                                </div>
+                            </article>
+                            <div class="model-side">
+                                <article class="card">
+                                    <h2>القيود</h2>
+                                    <div class="rules">
+                                        <template x-for="rule in definition.constraints" :key="rule.id">
+                                            <div class="rule">
+                                                <label :for="'rule-' + rule.id" x-text="rule.name_ar"></label>
+                                                <template x-if="rule.kind === 'hard_soft' && rule.editable">
+                                                    <select :id="'rule-' + rule.id" x-model="draft.constraints[rule.id]">
+                                                        <option value="hard">إلزامي</option><option value="soft">مرن</option>
+                                                    </select>
+                                                </template>
+                                                <span class="status" x-show="rule.kind !== 'hard_soft' || !rule.editable"
+                                                      x-text="draft.constraints[rule.id] === 'hard' ? 'إلزامي' : 'مرن'"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </article>
+                                <article class="card">
+                                    <h2>أوزان الأهداف</h2>
+                                    <div class="rules">
+                                        <template x-for="weight in definition.objective_weights" :key="weight.id">
+                                            <label class="slider">
+                                                <span x-text="weight.name_ar"></span>
+                                                <output x-text="$store.app.number(draft.weights[weight.id])"></output>
+                                                <input type="range" :min="weight.min" :max="weight.max" :step="weight.step"
+                                                       x-model.number="draft.weights[weight.id]">
+                                            </label>
+                                        </template>
+                                    </div>
+                                </article>
+                            </div>
+                        </div>
+                        <button class="button primary" type="submit" :disabled="busy" x-text="busy ? 'جارٍ الحفظ…' : 'حفظ إصدار جديد'"></button>
+                    </form>
+                </template>
+            </section>
+
+            <section id="onboarding-panel" data-testid="page-onboarding" x-show="$store.app.page === 'onboarding'"
+                     x-data="onboardingPage" x-effect="activate($store.app.page, $store.app.companyId, $store.app.loading)">
+                <p class="empty" role="status" x-show="!markup && busy">جارٍ تحميل تجهيز الشركة…</p>
+                <div class="notice error" x-show="!markup && error"><p role="alert" x-text="error"></p>
+                    <button class="button secondary" @click="load()">إعادة المحاولة</button>
+                </div>
+                <div x-html="markup"></div>
+            </section>
+
+            <section data-testid="page-enterprise" x-show="$store.app.page === 'enterprise'" x-data="enterprisePage"
+                     x-init="if ($store.app.page === 'enterprise') load(); $watch('$store.app.page', page => { if (page === 'enterprise') load() })">
+                <header class="page-title">
+                    <div><h1>النموذج المؤسسي</h1><p>استكشف علاقات التشغيل والمالية والمخاطر داخل الشركة.</p></div>
+                </header>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <p class="empty" role="status" x-show="busy && !model">جارٍ تحميل النموذج…</p>
+                <button class="button secondary" type="button" x-show="error && !model" @click="load()">إعادة المحاولة</button>
+                <template x-if="model">
+                    <div class="stack" :aria-busy="busy">
+                        <div class="snapshot enterprise-snapshot">
+                            <div class="snapshot-info">
+                                <h2 x-text="model.name"></h2>
+                                <p x-text="model.id ? 'الإصدار ' + number(model.version) + ' · ' + timestamp(model.created_at) : 'معاينة الديمو'"></p>
+                            </div>
+                            <div class="actions">
+                                <label for="enterprise-model" x-show="models.length > 1">النموذج</label>
+                                <select id="enterprise-model" x-show="models.length > 1" :disabled="busy" @change="choose($event.target.value)">
+                                    <template x-for="item in models" :key="item.id">
+                                        <option :value="item.id" :selected="item.id === model.id" x-text="item.name"></option>
+                                    </template>
+                                </select>
+                                <button class="button primary" type="button" data-testid="enterprise-save-demo"
+                                        x-show="!model.id" :disabled="busy" @click="saveDemo()">حفظ الديمو</button>
+                                <a class="button secondary" href="#/impact">احسب أثر فرضية</a>
+                            </div>
+                        </div>
+
+                        <article class="card" aria-labelledby="enterprise-graph-title" data-testid="enterprise-graph">
+                            <div class="card-heading enterprise-heading">
+                                <div>
+                                    <h2 id="enterprise-graph-title">خريطة العلاقات</h2>
+                                    <p x-text="number(graph.nodes.length) + ' عنصر · ' + number(graph.edges.length) + ' علاقة'"></p>
+                                </div>
+                                <label class="enterprise-select" for="enterprise-node">العنصر المعروض
+                                    <select id="enterprise-node" x-model="selected" data-testid="enterprise-node">
+                                        <template x-for="group in groups" :key="group.id">
+                                            <optgroup :label="group.title">
+                                                <template x-for="item in group.nodes" :key="item.id">
+                                                    <option :value="item.id" :selected="item.id === selected" x-text="item.name_ar"></option>
+                                                </template>
+                                            </optgroup>
+                                        </template>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="enterprise-graph">
+                                <div class="enterprise-branch">
+                                    <h3>العناصر المؤثرة</h3>
+                                    <ul>
+                                        <template x-for="edge in incoming" :key="edge.source">
+                                            <li><button type="button" @click="follow(edge.source, $el)">
+                                                <span x-text="name(edge.source)"></span><small x-text="edge.name_ar"></small>
+                                            </button></li>
+                                        </template>
+                                    </ul>
+                                    <p x-show="!incoming.length">مفيش علاقات واردة.</p>
+                                </div>
+                                <span class="enterprise-arrow" aria-hidden="true" :class="{ 'is-empty': !incoming.length }">←</span>
+                                <div class="enterprise-focus" tabindex="-1" data-testid="enterprise-focus">
+                                    <span class="enterprise-type" x-text="types[node?.type]"></span>
+                                    <h3 x-text="node?.name_ar"></h3>
+                                    <template x-if="node?.baseline.kind === 'scalar'">
+                                        <p class="enterprise-value" x-text="node.baseline.value == null ? 'القيمة لسه مش متاحة' : number(node.baseline.value) + ' ' + units[node.unit]"></p>
+                                    </template>
+                                    <template x-if="node?.baseline.kind === 'series'">
+                                        <div>
+                                            <p class="enterprise-value" x-text="number(node.baseline.points.at(-1).value) + ' ' + units[node.unit]"></p>
+                                            <p class="enterprise-definition" x-text="'آخر قراءة · ' + node.baseline.points.at(-1).date + ' · ' + number(node.baseline.points.length) + ' قراءة'"></p>
+                                        </div>
+                                    </template>
+                                    <p class="enterprise-definition" x-text="node?.definition.kind === 'engine' ? engines[node.definition.engine] : node?.definition.expression"></p>
+                                </div>
+                                <span class="enterprise-arrow" aria-hidden="true" :class="{ 'is-empty': !outgoing.length }">←</span>
+                                <div class="enterprise-branch">
+                                    <h3>العناصر المتأثرة</h3>
+                                    <ul>
+                                        <template x-for="edge in outgoing" :key="edge.target">
+                                            <li><button type="button" @click="follow(edge.target, $el)">
+                                                <span x-text="name(edge.target)"></span><small x-text="edge.name_ar"></small>
+                                            </button></li>
+                                        </template>
+                                    </ul>
+                                    <p x-show="!outgoing.length">مفيش علاقات صادرة.</p>
+                                </div>
+                            </div>
+                        </article>
+
+                        <details class="card enterprise-directory">
+                            <summary>كل علاقات النموذج</summary>
+                            <div class="table-scroll">
+                                <table class="numeric-table">
+                                    <thead><tr><th scope="col">من</th><th scope="col">العلاقة</th><th scope="col">إلى</th></tr></thead>
+                                    <tbody>
+                                        <template x-for="edge in graph.edges" :key="edge.source + ':' + edge.target">
+                                            <tr><td x-text="name(edge.source)"></td><td x-text="edge.name_ar"></td><td x-text="name(edge.target)"></td></tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <p x-show="!graph.edges.length">مفيش علاقات في النموذج.</p>
+                            </div>
+                        </details>
+                    </div>
+                </template>
+            </section>
+
+            <section data-testid="page-impact" x-show="$store.app.page === 'impact'" x-data="impactPage"
+                     x-init="if ($store.app.page === 'impact') load(); $watch('$store.app.page', page => { if (page === 'impact') load() })">
+                <header class="page-title">
+                    <div><h1>أثر الفرضية</h1><p>جرّب تغيير في التشغيل أو التمويل، وشوف أثره على الشركة كلها.</p></div>
+                </header>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <div class="stack">
+                    <form class="card stack impact-form"
+                          @submit.prevent="$event.submitter?.value === 'save' ? saveScenario() : run()" :aria-busy="!!busy">
+                        <label class="enterprise-select">النموذج
+                            <select x-model="modelId" @change="switchModel()" :disabled="!!busy" data-testid="impact-model">
+                                <option value="">ديمو شركة روافد</option>
+                                <template x-for="model in models" :key="model.id">
+                                    <option :value="String(model.id)" x-text="model.name"></option>
+                                </template>
+                            </select>
+                        </label>
+                        <p role="status" x-show="busy === 'load'">جارٍ تحميل المدخلات…</p>
+                        <p x-show="!busy && !drivers.length">مفيش مدخلات متاحة للنموذج ده.</p>
+                        <fieldset :disabled="!!busy" x-show="drivers.length" class="impact-fieldset">
+                            <legend>الفرضيات</legend>
+                            <template x-for="(row, index) in assumptions" :key="row.id">
+                                <div class="impact-form-row">
+                                    <label>المدخل
+                                        <select x-model="row.node_id" required data-testid="impact-driver">
+                                            <option value="">اختار مدخل</option>
+                                            <template x-for="item in drivers" :key="item.id">
+                                                <option :value="item.id" :selected="item.id === row.node_id"
+                                                        :disabled="assumptions.some(other => other.id !== row.id && other.node_id === item.id)"
+                                                        x-text="item.name_ar"></option>
+                                            </template>
+                                        </select>
+                                    </label>
+                                    <label>نوع التغيير
+                                        <select x-model="row.operation" data-testid="impact-operation">
+                                            <option value="pct">تغيير بالنسبة المئوية</option>
+                                            <option value="add">زيادة أو خفض بالقيمة</option>
+                                            <option value="set">قيمة جديدة</option>
+                                        </select>
+                                    </label>
+                                    <label><span x-text="row.operation === 'pct' ? 'التغيير (%)' : 'القيمة'"></span>
+                                        <input type="number" step="any" dir="ltr" x-model="row.value" required data-testid="impact-value">
+                                    </label>
+                                    <label><span x-text="'عدم اليقين ±' + (driver(row.node_id) ? ' (' + units[driver(row.node_id).unit] + ')' : '')"></span>
+                                        <input type="number" min="0" step="any" dir="ltr" x-model="row.uncertainty" placeholder="0" data-testid="impact-uncertainty">
+                                    </label>
+                                    <button class="button secondary" type="button" @click="assumptions.splice(index, 1)"
+                                            x-show="assumptions.length > 1" :aria-label="'حذف الفرضية ' + (index + 1)">حذف</button>
+                                    <small x-show="driver(row.node_id)" x-text="'القيمة المرجعية ' + number(driver(row.node_id)?.value) + ' ' + (units[driver(row.node_id)?.unit] || '')"></small>
+                                </div>
+                            </template>
+                        </fieldset>
+                        <div class="actions" x-show="drivers.length">
+                            <button class="button primary" type="submit" :disabled="!!busy" data-testid="impact-run"
+                                    x-text="busy === 'run' ? 'جارٍ حساب الأثر…' : 'احسب الأثر'"></button>
+                            <button class="button secondary" type="button" @click="add()"
+                                    :disabled="!!busy || assumptions.length >= Math.min(50, drivers.length)">أضف فرضية</button>
+                            <button class="button secondary" type="button" :disabled="!!busy" x-show="!saving"
+                                    @click="saving = true; $nextTick(() => $refs.scenarioName.focus())">سمّي السيناريو واحفظه</button>
+                        </div>
+                        <div class="actions scenario-save" x-show="saving && drivers.length">
+                            <label>اسم السيناريو
+                                <input type="text" x-model="scenarioName" x-ref="scenarioName" maxlength="120" :disabled="!!busy">
+                            </label>
+                            <button class="button primary" type="submit" value="save" :disabled="!!busy"
+                                    x-text="busy === 'save' ? 'جارٍ الحفظ…' : 'احفظ السيناريو'"></button>
+                        </div>
+                        <div class="notice success" x-show="savedName" role="status">
+                            <span x-text="'اتحفظ «' + savedName + '».'"></span>
+                            <a href="#/scenarios">قارن السيناريوهات</a>
+                        </div>
+                    </form>
+                    <template x-if="result">
+                        <div class="stack" data-testid="impact-result">
+                            <p class="notice" x-show="result.onboarding">
+                                توقعات أسبوعية تقديرية. راجع جاهزية البيانات في <a href="#/onboarding">تجهيز الشركة</a>.
+                            </p>
+                            <p role="status" x-text="number(result.simulation.n) + ' محاكاة · ' + number(ranked.length) + ' عنصر متأثر'"></p>
+                            <article class="card">
+                                <div class="card-heading enterprise-heading">
+                                    <div><h2>خريطة الأثر</h2><p>اختار عنصر عشان تتابع العلاقات اللي نقلت الأثر.</p></div>
+                                    <label class="enterprise-select">العنصر المعروض
+                                        <select x-model="selection" data-testid="impact-focus-select">
+                                            <template x-for="row in focusOptions" :key="row.id">
+                                                <option :value="row.id" :selected="row.id === selection" x-text="row.name_ar"></option>
+                                            </template>
+                                        </select>
+                                    </label>
+                                </div>
+                                <ul class="impact-legend">
+                                    <li class="impact-up">↑ زيادة</li><li class="impact-down">↓ انخفاض</li>
+                                    <li class="impact-shift">تغيّر التوقيت أو النطاق</li>
+                                </ul>
+                                <div class="enterprise-graph" data-testid="impact-graph">
+                                    <div class="enterprise-branch">
+                                        <h3>وصل من</h3>
+                                        <ul>
+                                            <template x-for="edge in incoming" :key="edge.source">
+                                                <li><button type="button" @click="follow(edge.source, $el)" :class="tone(find(edge.source))">
+                                                    <span x-text="find(edge.source)?.name_ar"></span><small x-text="edge.name_ar"></small>
+                                                </button></li>
+                                            </template>
+                                        </ul>
+                                        <p x-show="!incoming.length">مفيش أثر وارد.</p>
+                                    </div>
+                                    <span class="enterprise-arrow" aria-hidden="true" :class="{ 'is-empty': !incoming.length }">←</span>
+                                    <div class="enterprise-focus impact-focus" tabindex="-1" x-ref="focus" :class="tone(focused)">
+                                        <h3 x-text="focused?.name_ar"></h3>
+                                        <p x-text="delta(focused)"></p>
+                                        <small><bdi x-text="number(focused?.before)"></bdi> ← <bdi x-text="number(focused?.after)"></bdi> <span x-text="units[focused?.unit]"></span></small>
+                                    </div>
+                                    <span class="enterprise-arrow" aria-hidden="true" :class="{ 'is-empty': !outgoing.length }">←</span>
+                                    <div class="enterprise-branch">
+                                        <h3>انتقل إلى</h3>
+                                        <ul>
+                                            <template x-for="edge in outgoing" :key="edge.target">
+                                                <li><button type="button" @click="follow(edge.target, $el)" :class="tone(find(edge.target))">
+                                                    <span x-text="find(edge.target)?.name_ar"></span><small x-text="edge.name_ar"></small>
+                                                </button></li>
+                                            </template>
+                                        </ul>
+                                        <p x-show="!outgoing.length">مفيش أثر خارج.</p>
+                                    </div>
+                                </div>
+                            </article>
+                            <div class="impact-charts" x-show="result.charts.pnl.length || result.charts.cash">
+                                <article class="card" x-show="result.charts.pnl.length">
+                                    <h2>الأرباح والخسائر</h2>
+                                    <div class="chart"><canvas x-ref="pnl" data-testid="chart-impact-pnl" role="img" aria-label="الأرباح والخسائر قبل وبعد الفرضية"></canvas></div>
+                                </article>
+                                <article class="card" x-show="result.charts.cash">
+                                    <h2 x-text="result.onboarding ? 'الكاش المتوقع' : 'السيولة بعد التمويل'"></h2>
+                                    <p x-text="result.onboarding ? 'الرصيد المتوقع بنهاية الأسبوع' : 'أقل رصيد في كل أسبوع'"></p>
+                                    <div class="chart"><canvas x-ref="cash" data-testid="chart-impact-cash" role="img" aria-label="أقل رصيد أسبوعي قبل وبعد الفرضية"></canvas></div>
+                                </article>
+                            </div>
+                            <article class="card">
+                                <h2>العناصر المتأثرة</h2>
+                                <p>الترتيب بأكبر نسبة تغيّر، والمدى من المحاكاة.</p>
+                                <p x-show="!ranked.length">الفرضيات دي ما غيّرتش النتيجة.</p>
+                                <div class="table-scroll" x-show="ranked.length">
+                                    <table class="numeric-table" data-testid="impact-ranking">
+                                        <thead><tr><th scope="col">العنصر</th><th scope="col">الوحدة</th><th scope="col">قبل</th>
+                                            <th scope="col">بعد</th><th scope="col">الفرق</th><th scope="col">التغيّر %</th>
+                                            <th scope="col">P10</th><th scope="col">P50</th><th scope="col">P90</th></tr></thead>
+                                        <tbody>
+                                            <template x-for="row in ranked" :key="row.id">
+                                                <tr>
+                                                    <th scope="row"><button type="button" class="button secondary" @click="follow(row.id, $el)"
+                                                        x-text="row.name_ar"></button></th>
+                                                    <td x-text="units[row.unit]"></td>
+                                                    <td><bdi x-text="number(row.before)"></bdi> <small x-text="sourceLabel(row.source)"></small></td>
+                                                    <td><bdi x-text="number(row.after)"></bdi> <small x-text="sourceLabel(row.scenario_source)"></small></td>
+                                                    <td><bdi x-text="signed(row.delta)"></bdi></td><td><bdi x-text="signed(row.delta_pct)"></bdi></td>
+                                                    <td x-text="number(row.quantiles?.p10)"></td><td x-text="number(row.quantiles?.p50)"></td>
+                                                    <td x-text="number(row.quantiles?.p90)"></td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </article>
+                        </div>
+                    </template>
+                </div>
+            </section>
+
+            <section data-testid="page-scenarios" x-show="$store.app.page === 'scenarios'" x-data="scenariosPage"
+                     x-init="if ($store.app.page === 'scenarios') load(); $watch('$store.app.page', page => { if (page === 'scenarios') load() })">
+                <header class="page-title">
+                    <div><h1>مقارنة السيناريوهات</h1><p>قارن الفرضيات المحفوظة واختبر حساسية المؤشرات.</p></div>
+                    <a class="button secondary" href="#/impact">جهّز سيناريو</a>
+                </header>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p role="status" class="page-feedback" x-show="busy === 'load'">جارٍ تحميل السيناريوهات والمدخلات…</p>
+                <div class="stack">
+                    <div class="card">
+                        <label class="enterprise-select">النموذج والإصدار
+                            <select x-model="scope" @change="perform('load', () => loadDrivers())" :disabled="!!busy" data-testid="scenario-scope">
+                                <template x-for="[key, label] in Object.entries(scopes)" :key="key">
+                                    <option :value="key" x-text="label"></option>
+                                </template>
+                            </select>
+                        </label>
+                    </div>
+                    <article class="card stack">
+                        <div><h2>المقارنة جنب بعض</h2><p>اختار من 2 لـ4 سيناريوهات من نفس الإصدار.</p></div>
+                        <p x-show="!busy && available.length < 2">احفظ سيناريوهين على الأقل من صفحة أثر الفرضية.</p>
+                        <fieldset class="scenario-options" :disabled="!!busy" x-show="available.length">
+                            <legend>السيناريوهات المحفوظة</legend>
+                            <template x-for="row in available" :key="row.id">
+                                <label>
+                                    <input type="checkbox" :value="String(row.id)" x-model="scenarioIds"
+                                           :disabled="scenarioIds.length >= 4 && !scenarioIds.includes(String(row.id))">
+                                    <span><span x-text="row.name"></span> <small>
+                                        <bdi dir="ltr" x-text="'#' + row.id"></bdi> · <span x-text="number(row.assumptions.length) + ' فرضية'"></span>
+                                    </small></span>
+                                </label>
+                            </template>
+                        </fieldset>
+                        <div class="actions">
+                            <button class="button primary" type="button" data-testid="compare-scenarios"
+                                    :disabled="!!busy || scenarioIds.length < 2"
+                                    @click="compare()" x-text="busy === 'compare' ? 'جارٍ حساب المقارنة…' : 'قارن السيناريوهات'"></button>
+                        </div>
+                        <template x-if="comparison">
+                            <div class="stack" data-testid="scenario-comparison">
+                                <div class="table-scroll" tabindex="0" role="region" aria-label="جدول مقارنة السيناريوهات">
+                                    <table class="numeric-table">
+                                        <thead><tr><th scope="col">المؤشر</th><th scope="col">الوحدة</th><th scope="col">خط الأساس</th>
+                                            <template x-for="row in comparison.scenarios" :key="row.id">
+                                                <th scope="col" x-text="row.name"></th>
+                                            </template>
+                                        </tr></thead>
+                                        <tbody>
+                                            <template x-for="[key, metric] in Object.entries(comparison.kpis)" :key="key">
+                                                <tr><th scope="row" x-text="metric.label"></th><td x-text="metric.unit"></td>
+                                                    <td><bdi x-text="number(comparison.baseline[key])"></bdi></td>
+                                                    <template x-for="row in comparison.scenarios" :key="row.id">
+                                                        <td><bdi x-text="number(row.kpis[key])"></bdi></td>
+                                                    </template>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p x-text="'احتمال التجاوز محسوب من ' + number(comparison.settings.n) + ' عينة للفرضيات اللي فيها عدم يقين.'"></p>
+                                <div class="actions"><button class="button secondary" type="button" :disabled="!!busy"
+                                    @click="download('compare')">نزّل المقارنة Excel</button></div>
+                            </div>
+                        </template>
+                    </article>
+                    <article class="card stack">
+                        <div><h2>تحليل الحساسية (Tornado)</h2><p>غيّر كل مدخل لوحده حوالين خط الأساس، وقارن مدى تأثيره على المؤشر.</p></div>
+                        <form class="stack" @submit.prevent="analyze()" :aria-busy="!!busy">
+                            <div class="split-grid">
+                                <label>المؤشر
+                                    <select x-model="kpi" :disabled="!!busy">
+                                        <template x-for="[key, label] in Object.entries(kpis)" :key="key">
+                                            <option :value="key" x-text="label"></option>
+                                        </template>
+                                    </select>
+                                </label>
+                                <label>التغيير في كل اتجاه <bdi dir="ltr">(±%)</bdi>
+                                    <input type="number" x-model.number="variation" data-testid="tornado-percent" dir="ltr"
+                                           step="any" min="0" max="100" required :disabled="!!busy">
+                                </label>
+                            </div>
+                            <fieldset class="scenario-options" :disabled="!!busy" x-show="drivers.length">
+                                <legend>المدخلات</legend>
+                                <button class="button secondary" type="button" @click="driverIds = driverIds.length === drivers.length ? [] : drivers.map(row => row.id)"
+                                        x-text="driverIds.length === drivers.length ? 'امسح الاختيار' : 'اختار الكل'"></button>
+                                <div class="scenario-driver-list">
+                                    <template x-for="row in drivers" :key="row.id">
+                                        <label><input type="checkbox" :value="row.id" x-model="driverIds">
+                                            <span x-text="row.name_ar"></span></label>
+                                    </template>
+                                </div>
+                            </fieldset>
+                            <p x-show="!busy && !drivers.length">مفيش مدخلات متاحة للنموذج ده.</p>
+                            <div class="actions">
+                                <button class="button primary" type="submit" data-testid="run-tornado" :disabled="!!busy || !driverIds.length || !(variation > 0)"
+                                        x-text="busy === 'tornado' ? 'جارٍ حساب الحساسية…' : 'احسب الحساسية'"></button>
+                            </div>
+                        </form>
+                        <template x-if="tornado">
+                            <div class="stack" data-testid="tornado-result">
+                                <div><h3><span x-text="tornado.metric.label + ' عند'"></span>
+                                    <bdi dir="ltr" x-text="'±' + number(tornado.percent) + '%'"></bdi></h3>
+                                    <p x-text="'خط الأساس ' + number(tornado.baseline) + ' ' + tornado.metric.unit"></p></div>
+                                <div class="chart" x-show="chartRows.length" :style="{ height: Math.max(230, 85 + chartRows.length * 42) + 'px' }">
+                                    <canvas x-ref="tornadoChart" data-testid="chart-tornado" role="img" :aria-label="sensitivityTitle"></canvas>
+                                </div>
+                                <div class="table-scroll" tabindex="0" role="region" aria-label="جدول الحساسية">
+                                    <table class="numeric-table">
+                                        <thead><tr><th scope="col">المدخل</th><th scope="col">أثر الخفض</th><th scope="col">أثر الزيادة</th>
+                                            <th scope="col">المدى</th></tr></thead>
+                                        <tbody>
+                                            <template x-for="row in tornado.rows" :key="row.driver.id">
+                                                <tr>
+                                                    <th scope="row"><span x-text="row.driver.name_ar"></span>
+                                                        <small x-show="row.zero_reference">القيمة المرجعية صفر</small></th>
+                                                    <td><bdi x-text="row.low.error ? 'متعذّر' : signed(row.low.delta)"></bdi>
+                                                        <small x-show="row.low.error" x-text="row.low.error"></small></td>
+                                                    <td><bdi x-text="row.high.error ? 'متعذّر' : signed(row.high.delta)"></bdi>
+                                                        <small x-show="row.high.error" x-text="row.high.error"></small></td>
+                                                    <td><bdi x-text="number(row.span)"></bdi></td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p x-show="tornado.kpi === 'credit_breach'">الحساسية هنا بتقيس حدوث التجاوز عند قيم الفرضيات المحددة.</p>
+                                <div class="actions"><button class="button secondary" type="button" :disabled="!!busy"
+                                    @click="download('tornado')">نزّل الحساسية Excel</button></div>
+                            </div>
+                        </template>
+                    </article>
+                </div>
+            </section>
+
+            <section data-testid="page-prescriptive" x-show="$store.app.company && $store.app.page === 'prescriptive'"
+                     x-data="prescriptivePage" x-effect="activate($store.app.page, $store.app.companyId)"
+                     @focus.window="if (activeTab === 'monitor') perform('refresh', refresh)">
+                <header class="page-title"><div><h1>القرارات والمتابعة</h1></div></header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <div x-html="markup"></div>
+            </section>
+
+            <section data-testid="page-connectors" x-show="$store.app.page === 'connectors'" x-data="connectorsPage"
+                     x-init="if ($store.app.page === 'connectors') load(); $watch('$store.app.page', page => { if (page === 'connectors') load() })">
+                <p class="empty" role="status" x-show="!markup && busy">جارٍ تحميل صفحة ربط البيانات…</p>
+                <div class="notice error" x-show="!markup && error"><p role="alert" x-text="error"></p>
+                    <button class="button secondary" @click="load()">إعادة المحاولة</button>
+                </div>
+                <div x-html="markup"></div>
+            </section>
+
+            <section data-testid="page-forecast" x-show="$store.app.company && $store.app.page === 'forecast'" x-data="forecastPage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><h1>التوقعات</h1><p>راجع المدى المتوقع ودقة النموذج بالرجوع للبيانات السابقة.</p></div>
+                    <button class="button primary" data-testid="run-forecast" :disabled="!!busy || !$store.app.company?.active_dataset_id"
+                        @click="generate()" x-text="busy === 'forecast' ? 'جارٍ إعداد التوقع…' : 'ولّد توقع جديد'"></button>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <div class="empty" x-show="!busy && !error && !forecast">
+                    <h2>مفيش توقعات محفوظة</h2><p>ولّد توقعًا من بيانات الشركة النشطة.</p>
+                </div>
+                <div class="stack" x-show="forecast">
+                    <article class="card">
+                        <div class="card-heading"><div><h2 x-text="template === 'contracting' ? 'مدد الأنشطة المتوقعة' : 'الطلب الأسبوعي المتوقع'"></h2>
+                            <p x-text="forecast?.summary_ar"></p></div>
+                            <label class="select-control"><span x-text="template === 'contracting' ? 'النشاط' : 'المنتج'"></span>
+                                <select data-testid="forecast-series" :disabled="!!busy" @change="selected = $event.target.value; draw()">
+                                    <option value="" x-show="template === 'contracting'">كل الأنشطة</option>
+                                    <template x-for="(series, index) in forecast?.series || []" :key="series.key">
+                                        <option :value="series.key" :selected="selected ? selected === series.key : template === 'production' && index === 0"
+                                            x-text="series.name_ar"></option>
+                                    </template>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="chart-scroll"><div class="chart"><canvas data-testid="chart-forecast" x-ref="forecast" role="img" aria-label="التوقع ونطاق الاحتمال من P10 إلى P90"></canvas></div></div>
+                    </article>
+                    <article class="card">
+                        <h2>الاختبار على البيانات السابقة</h2>
+                        <div class="table-scroll" tabindex="0" aria-label="دقة التوقع">
+                            <table class="numeric-table"><thead><tr><th scope="col">السلسلة</th><th scope="col">الطريقة</th>
+                                <th scope="col">متوسط الخطأ المطلق</th><th scope="col">متوسط نسبة الخطأ</th></tr></thead>
+                                <tbody><template x-for="row in forecast?.series || []" :key="row.key">
+                                    <tr><th scope="row"><bdi x-text="row.name_ar"></bdi></th>
+                                        <td><span class="status" :class="{neutral: row.engine !== 'timesfm'}" data-testid="forecast-engine">
+                                            <bdi x-text="row.engine === 'timesfm' ? 'TimesFM' : 'إحصائي'"></bdi></span>
+                                            <span x-show="row.engine !== 'timesfm'" x-text="methodLabel(row.method || forecast.method)"></span></td>
+                                        <td><bdi x-text="row.backtest.n ? number(row.backtest.mae) : '—'"></bdi></td>
+                                        <td><bdi x-text="row.backtest.mape_n ? percent(row.backtest.mape / 100) : '—'"></bdi></td></tr>
+                                </template></tbody>
+                            </table>
+                        </div>
+                    </article>
+                    <article class="card" x-show="forecast?.phases">
+                        <h2>تباين المدة حسب المرحلة</h2>
+                        <div class="table-scroll" tabindex="0" aria-label="تباين المراحل">
+                            <table class="numeric-table"><thead><tr><th scope="col">المرحلة</th><th scope="col">الانحراف المعياري اللوغاريتمي</th><th scope="col">العينة</th><th scope="col">المصدر</th></tr></thead>
+                                <tbody><template x-for="[phase, fit] in Object.entries(forecast?.phases || {})" :key="phase">
+                                    <tr><th scope="row" x-text="({ F: 'الأساسات', S: 'الهيكل', X: 'التشطيبات' })[phase] || phase"></th>
+                                        <td><bdi x-text="number(fit.sigma)"></bdi></td><td><bdi x-text="number(fit.n)"></bdi></td><td x-text="fit.source_ar"></td></tr>
+                                </template></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section data-testid="page-optimize" x-show="$store.app.company && $store.app.page === 'optimize'" x-data="optimizePage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><h1>التحسين</h1><p>قارِن الخطة المرجعية بالخطة المحسّنة بناءً على القيود وأوزان الأهداف.</p></div>
+                    <button class="button primary" data-testid="run-optimize" :disabled="!!busy || !$store.app.company?.active_dataset_id"
+                        @click="optimize()" x-text="busy === 'solve' ? 'جارٍ حل النموذج…' : 'شغّل التحسين'"></button>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <div class="empty" x-show="!busy && !error && !run">
+                    <h2>ابدأ بتشغيل التحسين</h2><p>النتيجة هتظهر هنا ومعاها مؤشرات الخطتين وتفسير الفروق.</p>
+                </div>
+                <p class="notice page-feedback" x-show="run && datasetId !== $store.app.company?.active_dataset_id">النتيجة المعروضة من مجموعة بيانات سابقة.</p>
+                <div class="stack" x-show="run">
+                    <p class="notice error page-feedback" role="status" x-show="run?.optimized?.kpis?.credit_ok === false">
+                        الخطة المحسّنة بتتجاوز حد الائتمان. راجع قيمة التجاوز قبل اعتمادها.
+                    </p>
+                    <div class="snapshot">
+                        <div class="snapshot-info"><h2 x-text="solverLabel(run?.solver.status)"></h2>
+                            <p x-text="'التشغيل ' + number(runId) + ' · ' + number(run?.solver.wall_s) + ' ثانية'"></p></div>
+                        <button class="button secondary" data-testid="draft-optimized" @click="draft()" :disabled="!!busy || !run?.optimized?.plan"
+                            x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>
+                    </div>
+                    <div class="split-grid">
+                        <article class="card" x-show="rows.length"><h2>المقارنة المالية</h2><div class="chart compact"><canvas data-testid="chart-compare" x-ref="compare" role="img" aria-label="مقارنة التكاليف والعجز النقدي للخطة المرجعية والمحسّنة"></canvas></div></article>
+                        <article class="card insight"><h2>تفسير النتيجة</h2><p x-text="run?.explanation_ar"></p></article>
+                    </div>
+                    <article class="card" x-show="rows.length"><h2>مؤشرات الخطتين</h2><div class="table-scroll" tabindex="0" aria-label="جدول مقارنة المؤشرات">
+                    <table class="numeric-table"><thead><tr><th scope="col">المؤشر</th><th scope="col">مرجعي</th><th scope="col">محسّن</th><th scope="col">الفرق</th></tr></thead>
+                        <tbody><template x-for="row in rows" :key="row.key">
+                            <tr><th scope="row"><span x-text="row.label"></span> <small x-text="row.unit"></small></th>
+                                <td><bdi x-text="number(row.before)"></bdi></td><td><bdi x-text="number(row.after)"></bdi></td>
+                                <td><bdi x-text="signed(row.delta)"></bdi></td></tr>
+                        </template></tbody>
+                    </table>
+                </div></article>
+                </div>
+            </section>
+
+            <section data-testid="page-whatif" x-show="$store.app.company && $store.app.page === 'whatif'" x-data="whatifPage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><h1>ماذا لو</h1><p>اختبر أثر تغيّر الافتراضات وقدّر مخاطر الخطة المحسّنة.</p></div>
+                    <p class="sector" x-text="$store.app.templates[template]?.name_ar"></p>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <div class="empty" x-show="!busy && !error && !ready">
+                    <h2>السيناريو محتاج خطة أساسية</h2><p>شغّل التحسين أولًا عشان تجرّب تغييرات على نتيجة قابلة للتنفيذ.</p>
+                    <a class="button primary" href="#/optimize">افتح التحسين</a>
+                </div>
+                <div class="stack" x-show="ready">
+                    <div class="split-grid">
+                        <article class="card">
+                            <div class="card-heading"><div><h2>بناء السيناريو</h2><p x-text="'مبني على تشغيل التحسين رقم ' + number(baseRun?.id)"></p></div></div>
+                            <div class="actions presets">
+                                <template x-for="[type, label] in presets" :key="type">
+                                    <button class="button chip" type="button" :disabled="!!busy" @click="changes = [change(type)]" x-text="label"></button>
+                                </template>
+                            </div>
+                            <form @submit.prevent="simulate()" class="stack">
+                                <template x-for="(item, index) in changes" :key="index">
+                                    <fieldset :disabled="!!busy" class="change-fields">
+                                        <legend x-text="'التغيير ' + number(index + 1)"></legend>
+                                        <div class="field-group">
+                                            <label class="field">نوع التغيير
+                                                <select :value="item.type" @change="changes.splice(index, 1, change($event.target.value))">
+                                                    <template x-for="type in definition?.whatif_changes || []" :key="type">
+                                                        <option :value="type" :selected="item.type === type" x-text="changeTypes[type][0]"></option>
+                                                    </template>
+                                                </select>
+                                            </label>
+                                            <template x-for="field in fields(item.type)" :key="item.type + field.key">
+                                                <label class="field">
+                                                    <span x-text="field.label"></span>
+                                                    <template x-if="field.entity">
+                                                        <select x-model="item[field.key]" :required="!field.optional">
+                                                            <option value="" x-text="field.optional ? 'كل المنتجات' : 'اختار من القائمة'"></option>
+                                                            <template x-for="row in choices(field.key)" :key="row.id">
+                                                                <option :value="row.id" :selected="row.id === item[field.key]"
+                                                                    x-text="row.name_ar ? row.name_ar + ' · ' + row.id : row.id"></option>
+                                                            </template>
+                                                        </select>
+                                                    </template>
+                                                    <template x-if="!field.entity">
+                                                        <input type="number" dir="ltr" required :min="field.min" :max="field.max" :step="field.step" x-model.number="item[field.key]">
+                                                    </template>
+                                                </label>
+                                            </template>
+                                        </div>
+                                        <button type="button" class="text-button" x-show="changes.length > 1" @click="changes.splice(index, 1)">احذف التغيير</button>
+                                    </fieldset>
+                                </template>
+                                <div class="actions">
+                                    <button type="submit" class="button primary" data-testid="run-whatif" :disabled="!!busy"
+                                        x-text="busy === 'scenario' ? 'جارٍ حل السيناريو…' : 'شغّل السيناريو'"></button>
+                                    <button type="button" class="button secondary" :disabled="!!busy || changes.length >= 20" @click="changes.push(change('credit_limit_pct'))">أضف تغيير</button>
+                                </div>
+                            </form>
+                        </article>
+                        <article class="card insight">
+                            <h2>مخاطر الخطة الأساسية</h2>
+                            <p>مونت كارلو بيختبر الخطة المحسّنة من خلال 200 سحبة من التوزيع المتوقع.</p>
+                            <button class="button secondary spaced" data-testid="run-mc" :disabled="!!busy" @click="monteCarlo()"
+                                x-text="busy === 'mc' ? 'جارٍ حساب المخاطر…' : 'شغّل مونت كارلو'"></button>
+                            <dl class="risk-grid" x-show="risk">
+                                <div><dt>احتمال التأخير</dt><dd><bdi x-text="percent(risk?.p_any_late)"></bdi></dd></div>
+                                <div><dt>احتمال تجاوز الائتمان</dt><dd><bdi x-text="percent(risk?.p_credit_breach)"></bdi></dd></div>
+                                <div x-show="template === 'production'"><dt>احتمال تجاوز التخزين</dt><dd><bdi x-text="percent(risk?.p_storage_overflow)"></bdi></dd></div>
+                                <div x-show="template === 'production'"><dt>وسيط نسبة تلبية الطلب</dt><dd><bdi x-text="percent(risk?.fill_rate?.p50)"></bdi></dd></div>
+                            </dl>
+                            <div x-show="risk"><div class="chart mini"><canvas data-testid="chart-mc" x-ref="mc" role="img" aria-label="التوزيع التكراري للتأخير"></canvas></div></div>
+                        </article>
+                    </div>
+                    <article class="card" x-show="result">
+                        <div class="card-heading"><div><h2>نتيجة السيناريو</h2>
+                            <p x-text="'السيناريو ' + number(result?.run_id) + ' · التشغيل الأساسي ' + number(resultBase) + ' · ' + solverLabel(result?.scenario.solver.status)"></p></div>
+                            <button class="button secondary" data-testid="draft-scenario" @click="draft()" :disabled="!!busy || !result?.scenario?.plan"
+                                x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>
+                        </div>
+                        <ul class="change-summary"><template x-for="(text, index) in result?.changes_ar || []" :key="index"><li x-text="text"></li></template></ul>
+                        <p class="spaced" x-text="result?.explanation_ar"></p>
+                        <div class="spaced"><div class="table-scroll" tabindex="0" aria-label="جدول مقارنة المؤشرات">
+                    <table class="numeric-table"><thead><tr><th scope="col">المؤشر</th><th scope="col">أساسي محسّن</th><th scope="col">سيناريو</th><th scope="col">الفرق</th></tr></thead>
+                        <tbody><template x-for="row in rows" :key="row.key">
+                            <tr><th scope="row"><span x-text="row.label"></span> <small x-text="row.unit"></small></th>
+                                <td><bdi x-text="number(row.before)"></bdi></td><td><bdi x-text="number(row.after)"></bdi></td>
+                                <td><bdi x-text="signed(row.delta)"></bdi></td></tr>
+                        </template></tbody>
+                    </table>
+                </div></div>
+                    </article>
+                </div>
+            </section>
+
+            <section data-testid="page-chat" x-show="$store.app.company && $store.app.page === 'chat'" x-data="chatPage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><h1>المساعد الذكي</h1><p>اسأل عن نتيجة، اطلب تفسير، أو جرّب سيناريو باللغة العربية.</p></div>
+                    <p class="sector" x-show="scope === 'sector'" x-text="$store.app.templates[template]?.name_ar"></p>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <article class="card chat-panel" x-show="busy !== 'load'">
+                    <div class="card-heading">
+                        <div><h2>المحادثة</h2><p>الردود مبنية على نتائج محرك التخطيط وبيانات الشركة.</p></div>
+                        <span class="status neutral" data-testid="chat-provider" x-show="providerLabel" x-text="providerLabel"></span>
+                    </div>
+                    <div class="actions">
+                        <label>نطاق المحادثة
+                            <select data-testid="chat-scope" x-model="scope" @change="$nextTick(() => switchScope())" :disabled="!!busy">
+                                <option value="sector">خطة القطاع</option>
+                                <option value="enterprise">النموذج المؤسسي</option>
+                            </select>
+                        </label>
+                        <label x-show="scope === 'enterprise'">النموذج
+                            <select data-testid="chat-model" x-model="modelId" @change="switchModel()" :disabled="!!busy">
+                                <option value="">ديمو روافد</option>
+                                <template x-for="model in models" :key="model.id">
+                                    <option :value="String(model.id)" x-text="model.name"></option>
+                                </template>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="thread" x-ref="thread" role="log" aria-label="رسائل المحادثة">
+                        <p class="empty" x-show="!messages.length">ابدأ بسؤال من الاقتراحات أو اكتب سؤالك تحت.</p>
+                        <template x-for="(item, index) in messages" :key="index">
+                            <article class="bubble" :class="item.role">
+                                <h3 x-text="item.role === 'user' ? 'أنت' : 'المساعد'"></h3><p dir="auto" x-text="item.content"></p>
+                            </article>
+                        </template>
+                    </div>
+                    <div class="actions presets"><template x-for="question in suggestions" :key="question">
+                        <button type="button" class="button chip" @click="input = question; $refs.chatInput.focus()" :disabled="!!busy" x-text="question"></button>
+                    </template></div>
+                    <form class="compose" @submit.prevent="send()">
+                        <label class="visually-hidden" for="chat-input">رسالتك</label>
+                        <input type="text" id="chat-input" x-ref="chatInput" data-testid="chat-input" maxlength="2000" required
+                            placeholder="اكتب سؤالك عن الخطة…" x-model="input" :disabled="!!busy">
+                        <button class="button primary" data-testid="chat-send" :disabled="!!busy || !input.trim()"
+                            x-text="busy === 'chat' ? 'جارٍ إعداد الرد…' : 'إرسال'"></button>
+                    </form>
+                </article>
+                <article class="card spaced chat-panel" data-testid="chat-enterprise-result" x-show="reply?.result">
+                    <div class="card-heading">
+                        <h2>الفرضيات اللي اتشغّلت</h2>
+                        <a class="button secondary" href="#/impact" @click="openImpact()">افتح خريطة الأثر</a>
+                    </div>
+                    <div class="table-scroll">
+                        <table>
+                            <thead><tr><th scope="col">المدخل</th><th scope="col">قبل</th><th scope="col">بعد</th></tr></thead>
+                            <tbody>
+                                <template x-for="row in reply?.result?.assumptions || []" :key="row.node_id">
+                                    <tr>
+                                        <th scope="row" x-text="driverLabel(row.node_id)"></th>
+                                        <td x-text="driverValue(row.node_id, row.before)"></td>
+                                        <td x-text="driverValue(row.node_id, row.after)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+                <article class="card spaced" x-show="reply?.scenario?.changes?.length">
+                    <div class="card-heading">
+                        <div><h2>السيناريو المستخلص</h2><p x-text="reply?.scenario.echo_ar || 'راجع التغييرات قبل التشغيل.'"></p></div>
+                        <a class="button secondary" href="#/whatif" x-show="reply?.action === 'whatif'">عرض نتيجة السيناريو</a>
+                        <button class="button primary" @click="confirm()" :disabled="!!busy" x-show="reply && reply.action !== 'whatif'"
+                            x-text="busy === 'confirm' ? 'جارٍ التشغيل…' : 'شغّل'"></button>
+                    </div>
+                    <div class="actions" x-show="reply?.action === 'whatif'"><span class="status" x-text="'تم التشغيل · ' + number(reply?.run_id)"></span></div>
+                </article>
+            </section>
+
+            <section data-testid="page-approvals" x-show="$store.app.company && $store.app.page === 'approvals'" x-data="approvalsPage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><h1>الاعتمادات والتصدير</h1><p>راجع المسودات وسجّل القرار ونزّل ملفات الخطط المعتمدة.</p></div>
+                    <p class="sector" x-text="$store.app.templates[template]?.name_ar"></p>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <div class="stack" x-show="busy !== 'load'">
+                    <article class="card">
+                        <h2>الخطط المسجلة</h2>
+                        <div class="empty" x-show="!plans.length"><p>مفيش خطط للمراجعة. احفظ مسودة من نتيجة التحسين أو السيناريو.</p>
+                            <a class="button secondary" href="#/optimize">افتح التحسين</a></div>
+                        <div class="table-scroll" x-show="plans.length" tabindex="0" aria-label="جدول الخطط">
+                            <table class="plans-table"><thead><tr><th scope="col">الخطة</th><th scope="col">النوع</th><th scope="col">الحالة</th>
+                                <th scope="col">المراجع والتعليق</th><th scope="col">الإجراء</th></tr></thead>
+                                <tbody><template x-for="plan in plans" :key="plan.id">
+                                    <tr><th scope="row" x-text="'خطة ' + number(plan.id)"></th><td x-text="variantLabel(plan.variant)"></td>
+                                        <td><span class="status" :class="{neutral: plan.status === 'draft', error: plan.status === 'rejected'}" x-text="planStatus(plan.status)"></span></td>
+                                        <td><p dir="auto" x-text="plan.actor || '—'"></p><p class="secondary-text" dir="auto" x-text="plan.comment"></p></td>
+                                        <td><div class="actions">
+                                            <button class="button secondary" x-show="plan.status === 'draft' && $store.app.canApprove" :disabled="!!busy" @click="review(plan.id)">راجع المسودة</button>
+                                            <template x-for="[format, label] in formats" :key="format">
+                                                <button class="button chip" x-show="plan.status === 'approved'" :disabled="!!busy" @click="download(plan.id, format)"
+                                                    x-text="label" :aria-label="'نزّل ' + label + ' للخطة ' + number(plan.id)"></button>
+                                            </template>
+                                            <span x-show="plan.status === 'rejected'">—</span>
+                                        </div></td></tr>
+                                </template></tbody>
+                            </table>
+                        </div>
+                        <p class="spaced" role="status" x-show="busy === 'export'">جارٍ تجهيز الملف…</p>
+                    </article>
+                    <article class="card" x-show="selected">
+                        <h2 x-text="'مراجعة الخطة ' + number(selected)"></h2>
+                        <form @submit.prevent="saveDecision()" class="stack">
+                            <div class="field-group">
+                                <p class="field">المراجع <bdi x-text="$store.app.user?.username"></bdi></p>
+                                <label class="field">القرار<select x-ref="decision" x-model="decision" :disabled="!!busy">
+                                    <option value="approved">اعتماد الخطة</option><option value="rejected">رفض الخطة</option>
+                                </select></label>
+                                <label class="field field-wide">تعليق<textarea rows="2" maxlength="2000" x-model="comment" :disabled="!!busy"></textarea></label>
+                            </div>
+                            <div class="actions">
+                                <button class="button primary" data-testid="save-decision" :disabled="!!busy" x-text="busy === 'decision' ? 'جارٍ تسجيل القرار…' : 'سجّل القرار'"></button>
+                                <button type="button" class="button secondary" :disabled="!!busy" @click="selected = null">إلغاء</button>
+                            </div>
+                        </form>
+                    </article>
+                    <article class="card">
+                        <h2>سجل الإجراءات</h2>
+                        <p class="empty" x-show="!audit.length">لسه مفيش إجراءات مسجلة.</p>
+                        <div class="table-scroll audit-scroll" x-show="audit.length" tabindex="0" aria-label="سجل الإجراءات">
+                            <table><thead><tr><th scope="col">الإجراء</th><th scope="col">المرجع</th><th scope="col">المنفّذ</th><th scope="col">التوقيت</th></tr></thead>
+                                <tbody><template x-for="(entry, index) in audit" :key="index">
+                                    <tr><th scope="row" x-text="auditLabel(entry.action)"></th><td><bdi x-text="number(entry.entity_id)"></bdi></td>
+                                        <td dir="auto" x-text="['system', 'local'].includes(entry.actor) && entry.user_id == null ? 'النظام' : entry.actor"></td><td><bdi x-text="timestamp(entry.ts)"></bdi></td></tr>
+                                </template></tbody>
+                            </table>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section data-testid="page-actuals" x-show="$store.app.company && $store.app.page === 'actuals'" x-data="actualsPage"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                <header class="page-title">
+                    <div><h1>الفعلي مقابل المخطط</h1><p>قِس انحرافات التنفيذ وحدّث معاملات التوقع من البيانات الفعلية.</p></div>
+                    <p class="sector" x-text="$store.app.templates[template]?.name_ar"></p>
+                </header>
+                <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
+                <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
+                <p class="notice success page-feedback" role="status" x-show="message" x-text="message"></p>
+                <div class="stack" x-show="busy !== 'load'">
+                    <div class="split-grid">
+                        <article class="card">
+                            <div class="card-heading"><div><h2>رفع بيانات فعلية</h2><p>اربط ملف التنفيذ بخطة معتمدة للشركة.</p></div>
+                                <a class="text-button" :href="'/static/templates/actuals_' + template + '_template.csv'" download>نزّل قالب CSV</a></div>
+                            <p class="empty" x-show="!plans.length">اعتمد خطة الأول من <a href="#/approvals">الاعتمادات والتصدير</a>.</p>
+                            <form x-show="plans.length" x-ref="actualForm" @submit.prevent="upload()" class="stack">
+                                <label class="field">الخطة المعتمدة
+                                    <select name="plan_id" x-model="planId" required>
+                                        <option value="">اختار الخطة</option>
+                                        <template x-for="plan in plans" :key="plan.id">
+                                            <option :value="plan.id" x-text="'خطة ' + number(plan.id) + ' · ' + variantLabel(plan.variant)"></option>
+                                        </template>
+                                    </select>
+                                </label>
+                                <label class="file-picker">
+                                    <span class="file-label" x-text="fileName || 'اختار ملف CSV'"></span>
+                                    <input x-ref="actualFile" data-testid="actuals-file" name="file" type="file" accept=".csv" required
+                                        aria-label="اختيار ملف البيانات الفعلية" @change="fileName = $event.target.files[0]?.name || ''">
+                                </label>
+                                <div class="actions"><button class="button primary" data-testid="upload-actuals" :disabled="!!busy || !planId || !fileName"
+                                    x-text="busy === 'upload' ? 'جارٍ رفع الملف…' : 'ارفع وقارن'"></button></div>
+                            </form>
+                        </article>
+                        <article class="card insight">
+                            <h2>معايرة التوقعات</h2><p>المعايرة بتستخدم سجلات التنفيذ لتحديث معاملات التوقع الجاي.</p>
+                            <button class="button secondary spaced" data-testid="recalibrate" @click="recalibrate()" :disabled="!!busy || !actuals"
+                                x-text="busy === 'calibrate' ? 'جارٍ تحديث المعاملات…' : 'أعد المعايرة'"></button>
+                            <dl class="calibrations" x-show="calibrations.length">
+                                <template x-for="row in calibrations" :key="row.key">
+                                    <div><dt x-text="calibrationLabel(row.key)"></dt><dd><bdi x-text="calibrationValue(row.value)"></bdi></dd></div>
+                                </template>
+                            </dl>
+                            <p class="spaced" x-show="!calibrations.length">مفيش معاملات معايرة محفوظة.</p>
+                        </article>
+                    </div>
+                    <div class="empty" x-show="!actuals"><p>ارفع ملف بيانات فعلية عشان تقارن الأداء بالخطة.</p></div>
+                    <div class="stack" x-show="actuals">
+                        <article class="card">
+                            <div class="card-heading"><div><h2>آخر مقارنة محفوظة</h2><p x-text="'سجل فعلي ' + number(actuals?.actuals_id) + ' · ' + number(comparison?.kpis_actual.observed_rows) + ' صف عليه بيانات فعلية'"></p></div></div>
+                            <div class="chart-scroll"><div class="chart"><canvas data-testid="chart-pva" x-ref="pva" role="img" aria-label="مقارنة القيم المخططة والفعلية لكل سجل"></canvas></div></div>
+                        </article>
+                        <article class="card">
+                            <div class="card-heading"><div><h2>تفاصيل الانحراف</h2><p>الفرق هو القيمة الفعلية مطروح منها المخطط.</p></div>
+                                <label class="select-control">المؤشر<select x-model="detailMetric">
+                                    <template x-for="key in metrics" :key="key"><option :value="key" :selected="key === detailMetric" x-text="metricLabel(key)"></option></template>
+                                </select></label>
+                            </div>
+                            <div class="table-scroll" tabindex="0" aria-label="تفاصيل المقارنة">
+                                <table class="numeric-table"><thead><tr><th scope="col" x-text="template === 'contracting' ? 'النشاط' : 'الطلب'"></th>
+                                    <th scope="col">مخطط</th><th scope="col">فعلي</th><th scope="col">الفرق</th></tr></thead>
+                                    <tbody><template x-for="row in comparison?.rows || []" :key="row.activity_id || row.order_id">
+                                        <tr><th scope="row"><bdi x-text="row.activity_id || row.order_id"></bdi></th>
+                                            <td><bdi x-text="number(row.plan[detailMetric])"></bdi></td><td><bdi x-text="number(row.actual[detailMetric])"></bdi></td>
+                                            <td><bdi x-text="signed(row.variance[detailMetric])"></bdi></td></tr>
+                                    </template></tbody>
+                                </table>
+                            </div>
+                        </article>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+</div>
+</body>
+</html>

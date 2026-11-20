@@ -1,0 +1,316 @@
+<div class="stack">
+    <article class="card">
+        <label class="field" x-show="models.length">النموذج المؤسسي
+            <select x-model="modelId" @change="perform('model', selectModel)" :disabled="!!busy" data-testid="p18-model">
+                <template x-for="model in models" :key="model.id">
+                    <option :value="String(model.id)" :selected="String(model.id) === modelId" x-text="model.name"></option>
+                </template>
+            </select>
+        </label>
+        <p x-show="setup">الإصدار <bdi x-text="number(currentVersion)"></bdi></p>
+        <p x-show="!models.length">احفظ نموذج مؤسسي للشركة عشان تستخدم البحث والمعايرة والمتابعة. خطط الأقسام المعتمدة موجودة في سجل القرارات.</p>
+        <div class="actions" role="group" aria-label="أدوات القرارات">
+            <template x-for="[key, label] in tabs" :key="key">
+                <button type="button" class="button" :class="activeTab === key ? 'primary' : 'secondary'"
+                        :aria-pressed="activeTab === key" :disabled="!!busy || (!setup && key !== 'log')"
+                        :data-testid="'p18-tab-' + key" @click="switchTab(key)" x-text="label"></button>
+            </template>
+        </div>
+    </article>
+
+    <div class="stack" x-show="activeTab === 'goal' && setup">
+        <form class="card" x-show="editAllowed" @submit.prevent="perform('search', search)">
+            <h2>البحث عن هدف</h2>
+            <div class="field-group">
+                <label class="field">وصف الهدف (اختياري)
+                    <input x-model.trim="goalText" maxlength="300" data-testid="p18-goal-text"
+                           placeholder="عايز أرفع الربح 10% من غير ما السيولة تنزل تحت 50 ألف ريال">
+                </label>
+                <div class="actions">
+                    <button type="button" class="button secondary" :disabled="!!busy || !goalText"
+                            @click="perform('parse', parseGoal)" data-testid="p18-parse">اقرأ الهدف</button>
+                </div>
+            </div>
+            <div class="field-group">
+                <label class="field">تحسّن الربح المطلوب (%)
+                    <input type="number" min="0" max="1000" step="any" x-model="goalForm.profit_pct" data-testid="p18-profit" required>
+                </label>
+                <label class="field">أقل سيولة مسموح بيها (ريال)
+                    <input type="number" step="any" x-model="goalForm.cash_minimum" data-testid="p18-cash" required>
+                </label>
+            </div>
+            <p x-show="!setup?.controls.length">النموذج محتاج مدخل قابل للتحكم وله قيمة مرجعية.</p>
+            <template x-for="(control, index) in goalForm.controls" :key="index">
+                <div class="field-group prescriptive-bounds">
+                    <label class="field">المدخل القابل للتحكم
+                        <select x-model="control.node_id" required>
+                            <template x-for="driver in setup?.controls || []" :key="driver.id">
+                                <option :value="driver.id" :selected="control.node_id === driver.id"
+                                        :disabled="goalForm.controls.some((other, i) => i !== index && other.node_id === driver.id)"
+                                        x-text="driver.name_ar + ' · ' + driver.unit"></option>
+                            </template>
+                        </select>
+                        <small>خط الأساس <bdi x-text="number(referenceFor(control.node_id))"></bdi></small>
+                    </label>
+                    <label class="field">أقل قيمة
+                        <input type="number" step="any" x-model="control.minimum" :data-testid="'p18-min-' + index" required>
+                    </label>
+                    <label class="field">أعلى قيمة
+                        <input type="number" step="any" x-model="control.maximum" :data-testid="'p18-max-' + index" required>
+                    </label>
+                    <div class="actions">
+                        <button type="button" class="button secondary" x-show="index > 0" :disabled="!!busy"
+                                @click="goalForm.controls.splice(index, 1)">احذف المدخل</button>
+                    </div>
+                </div>
+            </template>
+            <div class="actions">
+                <button type="button" class="button secondary"
+                        :disabled="!!busy || goalForm.controls.length >= 3 || goalForm.controls.length >= (setup?.controls.length || 0)"
+                        @click="addControl()">ضيف مدخل</button>
+                <button class="button primary" :disabled="!!busy || !goalForm.controls.length" data-testid="p18-search">شغّل البحث</button>
+                <span role="status" x-show="busy === 'search'">جارٍ حساب الأثر…</span>
+            </div>
+        </form>
+        <p class="empty" x-show="!editAllowed">تشغيل البحث متاح للمخطط والأدمن.</p>
+        <template x-if="recommendation">
+            <article class="card stack" data-testid="p18-recommendations">
+                <div>
+                    <h2>نتيجة البحث</h2>
+                    <p>خط الأساس <bdi x-text="number(recommendation?.baseline.profit)"></bdi> ريال ربح،
+                        وأقل سيولة <bdi x-text="number(recommendation?.baseline.cash_low)"></bdi> ريال.</p>
+                    <p>الربح المستهدف <bdi x-text="number(recommendation?.profit_minimum)"></bdi> ريال.
+                        حد السيولة <bdi x-text="number(recommendation?.cash_minimum)"></bdi> ريال.</p>
+                    <p>اتقيّم <bdi x-text="number(recommendation?.evaluated)"></bdi> بديل،
+                        وتعذّر حساب <bdi x-text="number(recommendation?.invalid)"></bdi>.</p>
+                    <p x-show="recommendation?.baseline_meets_goal">خط الأساس بيحقق الهدف من غير تعديل.</p>
+                    <p x-show="!recommendation?.recommendations.length && !recommendation?.baseline_meets_goal">
+                        القيم اللي اتجرّبت في النطاق ما حققتش الهدفين مع بعض.</p>
+                </div>
+                <label class="field" x-show="recommendation?.recommendations.length">اسم مسودة القرار
+                    <input x-model.trim="draftName" maxlength="160" data-testid="p18-draft-name">
+                </label>
+                <template x-for="(row, rank) in recommendation?.recommendations || []" :key="rank">
+                    <div class="snapshot">
+                        <div class="snapshot-info">
+                            <h3>توصية <bdi x-text="rank + 1"></bdi></h3>
+                            <p x-text="'الربح ' + number(row.kpis.profit) + ' ريال · أقل سيولة ' + number(row.kpis.cash_low) + ' ريال'"></p>
+                            <ul>
+                                <template x-for="action in row.assumptions" :key="action.node_id">
+                                    <li><span x-text="setup?.controls.find(driver => driver.id === action.node_id)?.name_ar"></span>
+                                        <bdi x-text="'من ' + number(action.before) + ' إلى ' + number(action.after)"></bdi></li>
+                                </template>
+                            </ul>
+                            <details>
+                                <summary>تفاصيل الأثر</summary>
+                                <ul>
+                                    <template x-for="change in row.impact" :key="change.id">
+                                        <li><span x-text="change.name_ar"></span> <bdi x-text="signed(change.delta)"></bdi>
+                                            <bdi x-text="change.unit"></bdi></li>
+                                    </template>
+                                </ul>
+                            </details>
+                            <button type="button" class="button secondary" :disabled="!!busy || !draftName"
+                                    data-testid="p18-save-draft" @click="perform('draft', (_, live) => draft(row, live))">احفظ مسودة للمراجعة</button>
+                        </div>
+                    </div>
+                </template>
+            </article>
+        </template>
+    </div>
+
+    <article class="card" x-show="activeTab === 'calibration' && setup">
+        <h2>معايرة العلاقات</h2>
+        <p>بتستخدم السلاسل التاريخية اللي دخلت على النموذج. الثقة هنا درجة التنبؤ على آخر جزء من التاريخ.</p>
+        <div class="actions">
+            <button type="button" class="button secondary" :disabled="!!busy"
+                    @click="perform('preview', preview)" data-testid="p18-preview">عاين المعايرة</button>
+            <button type="button" class="button primary" :disabled="!!busy || !calibration.length" x-show="editAllowed"
+                    @click="perform('apply', apply)" data-testid="p18-apply">احفظ المعايرة</button>
+        </div>
+        <div class="table-scroll" x-show="calibration.length">
+            <table><thead><tr><th>العلاقة</th><th>المصدر</th><th>المعامل</th><th>التأخير (أسبوع)</th><th>الثقة</th><th>البيانات</th></tr></thead>
+                <tbody><template x-for="row in calibration" :key="row.source + ':' + row.target">
+                    <tr>
+                        <th scope="row"><span x-text="row.name_ar"></span> <small><bdi x-text="row.source + ' → ' + row.target"></bdi></small></th>
+                        <td x-text="row.source_type === 'engine' ? 'محرك النموذج' : row.source_type === 'calibrated' ? 'متعلّم' : 'افتراضي'"></td>
+                        <td><bdi x-text="number(row.rule?.multiplier)"></bdi></td>
+                        <td><bdi x-text="number(row.rule?.lag_weeks)"></bdi></td>
+                        <td><bdi x-text="percent(row.holdout_skill)"></bdi></td>
+                        <td x-text="reasons[row.reason] || (number(row.holdout_observations) + ' اختبار / ' + number(row.observations) + ' إجمالي')"></td>
+                    </tr>
+                </template></tbody>
+            </table>
+        </div>
+    </article>
+
+    <div class="stack" x-show="activeTab === 'monitor' && setup">
+        <form class="card" x-show="editAllowed" @submit.prevent="perform('thresholds', saveThresholds)">
+            <h2>حدود التنبيه</h2>
+            <p>سيب الحد فاضي لو المؤشر ما يحتاجش تنبيه. احتمال التجاوز بيتحسب من عدم اليقين اللي تحدده.</p>
+            <div class="field-group">
+                <template x-for="key in thresholdFields" :key="key">
+                    <label class="field"><span x-text="labels[key]"></span>
+                        <input type="number" step="any" :min="key === 'cash_minimum' ? null : 0" :max="key === 'credit_maximum' ? 100 : null"
+                               x-model="thresholdForm[key]" :data-testid="'p18-threshold-' + key">
+                    </label>
+                </template>
+            </div>
+            <template x-for="(row, index) in uncertainty" :key="index">
+                <div class="field-group">
+                    <label class="field">مدخل عدم اليقين
+                        <select x-model="row.node_id" required>
+                            <option value="">اختار مدخل</option>
+                            <template x-for="driver in setup?.drivers || []" :key="driver.id">
+                                <option :value="driver.id" :selected="row.node_id === driver.id"
+                                        x-text="driver.name_ar + ' · ' + driver.unit"></option>
+                            </template>
+                        </select>
+                    </label>
+                    <label class="field">هامش التغيّر (± بوحدة المدخل)<input type="number" step="any" x-model="row.spread" required></label>
+                    <div class="actions"><button type="button" class="button secondary" @click="uncertainty.splice(index, 1)">احذف المدخل</button></div>
+                </div>
+            </template>
+            <div class="actions">
+                <button type="button" class="button secondary" :disabled="!!busy || uncertainty.length >= 10"
+                        @click="uncertainty.push({ node_id: '', spread: '' })">ضيف عدم يقين</button>
+                <button class="button primary" :disabled="!!busy" data-testid="p18-save-thresholds">احفظ الحدود</button>
+            </div>
+        </form>
+        <article class="card" data-testid="p18-alerts">
+            <h2>تنبيهات أحدث إصدار</h2>
+            <div class="actions">
+                <button type="button" class="button secondary" :disabled="!!busy" @click="perform('refresh', refresh)">حدّث المؤشرات</button>
+                <span role="status" x-show="busy && !monitoring">جارٍ حساب المؤشرات…</span>
+            </div>
+            <template x-if="monitoring">
+                <div>
+                    <p>إصدار <bdi x-text="number(monitoring?.version)"></bdi>.
+                        <span x-text="monitoring?.samples === 1 ? 'حالة واحدة بالقيم الحالية' :
+                            monitoring?.samples ? number(monitoring?.samples) + ' عينة لتقدير تجاوز الائتمان' : ''"></span></p>
+                    <div class="table-scroll">
+                        <table><thead><tr><th>المؤشر</th><th>القيمة</th><th>حد التنبيه</th></tr></thead><tbody>
+                            <template x-for="(key, i) in ['cash_low', 'credit_breach', 'delays']" :key="key">
+                                <tr><th scope="row" x-text="labels[key]"></th>
+                                    <td><bdi x-text="number(monitoring?.kpis[key])"></bdi> <span x-text="setup?.kpis[key]?.unit"></span></td>
+                                    <td><bdi x-text="number(monitoring?.thresholds[thresholdFields[i]])"></bdi></td></tr>
+                            </template>
+                        </tbody></table>
+                    </div>
+                    <p class="notice" x-show="monitoring?.warning" x-text="monitoring?.warning"></p>
+                    <p x-show="!monitoring?.alerts.length && !monitoring?.unavailable.length">مفيش تجاوز للحدود المضبوطة.</p>
+                    <ul>
+                        <template x-for="item in monitoring?.alerts || []" :key="item.kpi">
+                            <li class="notice error" data-testid="p18-alert" x-text="labels[item.kpi] + ' ' + number(item.value) +
+                                (item.direction === 'below' ? ' أقل من ' : ' أعلى من ') + number(item.threshold) + ' ' + setup?.kpis[item.kpi]?.unit"></li>
+                        </template>
+                        <template x-for="key in monitoring?.unavailable || []" :key="key">
+                            <li x-text="labels[key] + ' غير متاح في الإصدار الحالي.'"></li>
+                        </template>
+                    </ul>
+                </div>
+            </template>
+        </article>
+    </div>
+
+    <div class="stack" x-show="activeTab === 'log'">
+        <article class="card">
+            <h2>سجل القرارات المؤسسية</h2>
+            <p x-show="log && !log.decisions.length">لسه مفيش قرارات للنموذج.</p>
+            <p x-show="!modelId">اختار نموذج محفوظ عشان تراجع قراراته.</p>
+            <template x-for="item in log?.decisions || []" :key="item.id">
+                <details class="card" :data-testid="'p18-decision-' + item.id">
+                    <summary><span x-text="item.name"></span> · <span x-text="decisionLabel(item.status)"></span>
+                        · إصدار <bdi x-text="number(item.version)"></bdi></summary>
+                    <p x-show="item.reviewer">المراجع <bdi x-text="item.reviewer"></bdi> · <span x-text="timestamp(item.decided_at)"></span></p>
+                    <p x-show="item.comment" x-text="item.comment"></p>
+                    <ul>
+                        <template x-for="change in item.forecast.assumptions" :key="change.node_id">
+                            <li><bdi x-text="change.node_id"></bdi> <bdi x-text="'من ' + number(change.before) + ' إلى ' + number(change.after)"></bdi></li>
+                        </template>
+                    </ul>
+                    <div class="table-scroll">
+                        <table><thead><tr><th>المؤشر</th><th>خط الأساس</th><th>التوقع</th><th>الفعلي</th><th>الفرق</th></tr></thead><tbody>
+                            <template x-for="(value, key) in item.forecast.kpis" :key="key">
+                                <tr><th scope="row" x-text="labels[key] + ' (' + setup?.kpis[key]?.unit + ')'"></th>
+                                    <td><bdi x-text="number(item.forecast.baseline[key])"></bdi></td>
+                                    <td><bdi x-text="number(value)"></bdi></td>
+                                    <td><bdi x-text="number(item.actuals?.metrics[key])"></bdi></td>
+                                    <td><bdi x-text="signed(item.accuracy.find(row => row.kpi === key)?.error)"></bdi></td></tr>
+                            </template>
+                        </tbody></table>
+                    </div>
+                    <div x-show="$store.app.canApprove && item.status === 'draft'">
+                        <p x-show="item.version !== currentVersion">الإصدار اتغيّر. لازم مسودة جديدة للاعتماد.</p>
+                        <label class="field">تعليق المراجعة<input x-model="reviewed[item.id]" maxlength="2000"></label>
+                        <div class="actions">
+                            <button type="button" class="button primary" :disabled="!!busy || item.version !== currentVersion"
+                                    @click="perform('decision', (base, live) => decide(item.id, 'approved', base, live))">اعتمد</button>
+                            <button type="button" class="button secondary" :disabled="!!busy"
+                                    @click="perform('decision', (base, live) => decide(item.id, 'rejected', base, live))">ارفض</button>
+                        </div>
+                    </div>
+                    <p x-show="item.actuals">تاريخ قياس الفعلي <bdi x-text="item.actuals?.observed_on"></bdi></p>
+                    <button type="button" class="button secondary" x-show="editAllowed && item.status === 'approved' && !actualForms[item.id]"
+                            :disabled="!!busy" @click="startActuals(item)">سجّل القيم الفعلية</button>
+                    <template x-if="actualForms[item.id]">
+                        <form @submit.prevent="perform('actuals', (base, live) => saveActuals(item.id, base, live))">
+                            <p>استخدم نفس نطاق القرار والتوقع المحفوظ.</p>
+                            <label class="field">تاريخ القياس
+                                <input type="date" x-model="actualForms[item.id].observed_on" required data-testid="p18-actual-date">
+                            </label>
+                            <div class="field-group">
+                                <template x-for="key in Object.keys(item.forecast.kpis).filter(key => item.forecast.kpis[key] != null)" :key="key">
+                                    <label class="field"><span x-text="labels[key]"></span>
+                                        <input type="number" step="any" x-model="actualForms[item.id].metrics[key]" :data-testid="'p18-actual-' + key">
+                                    </label>
+                                </template>
+                            </div>
+                            <div class="actions"><button class="button primary" :disabled="!!busy">احفظ الفعلي</button></div>
+                        </form>
+                    </template>
+                </details>
+            </template>
+        </article>
+        <article class="card" x-show="log?.accuracy.length">
+            <h2>دقة التوقعات المؤسسية</h2>
+            <p>العدد هو القرارات اللي لها فعلي. MAE متوسط الخطأ المطلق وMAPE متوسط نسبة الخطأ المطلق.</p>
+            <div class="table-scroll">
+                <table class="prescriptive-accuracy"><thead><tr><th>المؤشر</th><th>العدد</th><th><abbr title="متوسط الخطأ المطلق">MAE</abbr></th><th><abbr title="متوسط نسبة الخطأ المطلق">MAPE</abbr></th></tr></thead><tbody>
+                    <template x-for="row in log?.accuracy || []" :key="row.kpi">
+                        <tr data-testid="p18-accuracy"><th scope="row" x-text="labels[row.kpi]"></th>
+                            <td><bdi x-text="number(row.count)"></bdi></td><td><bdi x-text="number(row.mae)"></bdi></td>
+                            <td><bdi x-text="percent(row.mape == null ? null : row.mape / 100)"></bdi></td></tr>
+                    </template>
+                </tbody></table>
+            </div>
+        </article>
+        <article class="card">
+            <h2>خطط الأقسام المعتمدة</h2>
+            <p x-show="!sectorLog.length">لسه مفيش خطط معتمدة للشركة.</p>
+            <template x-for="item in sectorLog" :key="item.id">
+                <details class="card">
+                    <summary>خطة <bdi x-text="number(item.id)"></bdi> · <bdi x-text="item.actor"></bdi> · <span x-text="timestamp(item.decided_at)"></span></summary>
+                    <div class="table-scroll">
+                        <table><thead><tr><th>المؤشر</th><th>التوقع عند الاعتماد</th></tr></thead><tbody>
+                            <template x-for="(value, key) in item.predicted" :key="key">
+                                <tr x-show="typeof value === 'number' && metricDefinitions[key]">
+                                    <th scope="row" x-text="metricDefinitions[key]"></th><td><bdi x-text="number(value)"></bdi></td></tr>
+                            </template>
+                        </tbody></table>
+                    </div>
+                    <p x-show="!item.accuracy.length">لسه مفيش فعلي للخطة دي.</p>
+                    <p x-show="item.accuracy.length">الفعلي بيغطي <bdi x-text="number(item.observed_rows)"></bdi> بند من الخطة.</p>
+                    <ul>
+                        <template x-for="row in item.accuracy" :key="row.kpi">
+                            <li><span x-text="labels[row.kpi]"></span>
+                                · مخطط <bdi x-text="number(row.predicted)"></bdi>
+                                · فعلي <bdi x-text="number(row.actual)"></bdi>
+                                · فرق <bdi x-text="signed(row.error)"></bdi></li>
+                        </template>
+                    </ul>
+                </details>
+            </template>
+        </article>
+    </div>
+</div>
