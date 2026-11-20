@@ -7,6 +7,7 @@
     <title>مختبر الذكاء الاصطناعي | أثر</title>
     <link rel="stylesheet" href="/static/css/app.css">
     <link rel="stylesheet" href="/static/css/ai.css">
+    <link rel="stylesheet" href="/static/css/decision-benchmark.css">
     <link rel="stylesheet" href="/static/css/athar-assistant.css">
     <script defer src="/static/vendor/chart.umd.js"></script>
     <script defer src="/static/js/executive-motion.js"></script>
@@ -63,7 +64,8 @@
                 <nav class="actions ai-actions" aria-label="وظائف مختبر الذكاء الاصطناعي">
                     <template x-for="[key, title] in sections" :key="key">
                         <button class="button" :class="section === key ? 'primary' : 'secondary'" :aria-pressed="section === key"
-                                type="button" :disabled="busy" @click="changeSection(key)" x-text="title"></button>
+                                type="button" :disabled="busy" x-show="key !== 'benchmark' || productionCompany"
+                                @click="changeSection(key)" x-text="title"></button>
                     </template>
                 </nav>
                 <p x-show="section === 'entry' && companyUsesFiles">
@@ -196,6 +198,62 @@
                         <button class="button primary" :disabled="busy || !modelId || !controls.length">رتّب التوصيات</button>
                     </div>
                 </form>
+                <section id="production-benchmark" class="stack" x-show="section === 'benchmark' && productionCompany"
+                         aria-labelledby="production-benchmark-title">
+                    <div>
+                        <h2 id="production-benchmark-title">جودة قرار الإنتاج</h2>
+                        <p>مقارنة أسبوعية على بيانات الديمو. خسارة القرار هي فرق التكلفة عن خطة شايفة الطلب الفعلي مسبقًا.</p>
+                    </div>
+                    <div><button type="button" class="button primary" :disabled="busy" @click="runBenchmark()"
+                                 x-text="busy ? 'جاري تشغيل المقارنة…' : 'شغّل المقارنة'"></button></div>
+                    <template x-if="benchmark">
+                        <div class="stack">
+                            <p class="notice" role="status"
+                               x-text="'اتطابقت إعادة تشغيل ' + benchmarkNumber(benchmark.replay.evaluation_matched, 0)
+                                   + ' من ' + benchmarkNumber(benchmark.replay.evaluation_windows, 0) + ' أسبوع اختبار.'"></p>
+                            <div class="benchmark-table-wrap" role="region" aria-label="مقارنة سياسات التخطيط">
+                                <table class="benchmark-table">
+                                    <thead><tr>
+                                        <th scope="col">السياسة</th>
+                                        <template x-for="(label, metric) in benchmarkMetrics" :key="metric">
+                                            <th scope="col" x-text="label"></th>
+                                        </template>
+                                    </tr></thead>
+                                    <tbody>
+                                        <template x-for="(name, key) in benchmarkNames" :key="key">
+                                            <tr>
+                                                <th scope="row" x-text="name"></th>
+                                                <template x-for="(label, metric) in benchmarkMetrics" :key="metric">
+                                                    <td :data-label="label"
+                                                        x-text="benchmarkNumber(benchmark.summary[key][metric], metric === 'latency_p95_s' ? 3 : 2)"></td>
+                                                </template>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="snapshot stack">
+                                <h3>بوابة تجربة التعلّم</h3>
+                                <p>
+                                    المنافس <strong x-text="benchmarkNames[benchmark.experiment.strongest_baseline]"></strong>
+                                    <span x-show="benchmark.experiment.regret_improvement_pct != null">
+                                        · <span x-text="benchmark.experiment.regret_improvement_pct < 0 ? 'الخسارة أعلى بـ' : 'الخسارة أقل بـ'"></span>
+                                        <bdi x-text="benchmarkNumber(Math.abs(benchmark.experiment.regret_improvement_pct)) + '٪'"></bdi>
+                                    </span>
+                                    · المطلوب تحسّن <bdi x-text="benchmarkNumber(benchmark.experiment.minimum_improvement_pct) + '٪'"></bdi> على الأقل
+                                </p>
+                                <p x-show="benchmarkComparison?.ci95_sar">
+                                    فاصل الثقة المقترن ٩٥٪ للتحسّن بالريال
+                                    <bdi x-text="benchmarkNumber(benchmarkComparison?.ci95_sar?.[0])"></bdi>
+                                    إلى <bdi x-text="benchmarkNumber(benchmarkComparison?.ci95_sar?.[1])"></bdi>
+                                </p>
+                                <p x-show="!benchmarkComparison?.ci95_sar">فاصل الثقة غير متاح من العينة الحالية.</p>
+                                <strong x-text="benchmark.experiment.passed ? 'عدّت بوابة الديمو وتفضل تجربة'
+                                    : 'ما عدّتش البوابة · معطّلة افتراضيًا'"></strong>
+                            </div>
+                        </div>
+                    </template>
+                </section>
                 <form class="stack" x-show="section === 'question'" @submit.prevent="ask()">
                     <h2>راجع أدلة المؤشر أو التوصية</h2>
                     <label class="field">سؤالك

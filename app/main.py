@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.access import protected, request_principal, require_role, seed_admin
 from app.config import STATIC_DIR, Settings
 from app.db import get_conn, initialize
+from app.decision_loop import routes as decision_benchmark
 from app.department_owners import workflow as department_workflow
 from app.enterprise.operating_source import source_runtime
 from app.forecasting.foundation import TimesFMWorker
@@ -91,7 +92,7 @@ def create_app(settings: Settings | None = None):
                    forecast.router, whatif.router, chat.router, plans.router, actuals.router, enterprise.router,
                    connectors.router, enterprise_chat.router, auth.router, onboarding.router,
                    prescriptive.router, intelligence.router, living_map.router, map_briefing.router,
-                   process_mining.router):
+                   process_mining.router, decision_benchmark.router):
         application.include_router(router, prefix='/api', dependencies=[Depends(protected)])
 
     @application.exception_handler(RequestValidationError)

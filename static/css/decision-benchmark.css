@@ -1,0 +1,13 @@
+.benchmark-table-wrap { min-inline-size: 0; overflow-x: auto; }
+.benchmark-table { inline-size: 100%; font-variant-numeric: tabular-nums; }
+.benchmark-table th, .benchmark-table td { padding-inline: 0.4rem; }
+.benchmark-table thead th { white-space: normal; }
+
+@media (max-width: 850px) {
+    .benchmark-table, .benchmark-table tbody { display: block; }
+    .benchmark-table thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+    .benchmark-table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .benchmark-table tr + tr { margin-block-start: var(--space-3); }
+    .benchmark-table th[scope="row"] { grid-column: 1 / -1; color: var(--ink); background: var(--inset); }
+    .benchmark-table td::before { display: block; content: attr(data-label); color: var(--muted); font-size: 0.85em; }
+}

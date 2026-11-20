@@ -1,8 +1,19 @@
 document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => ({
     sections: [
         ['entry', 'إدخال البيانات'], ['analysis', 'تحليل ومعايرة'], ['forecast', 'التوقعات'],
-        ['decision', 'اختبار قرار'], ['question', 'مراجعة الأدلة'],
+        ['decision', 'اختبار قرار'], ['benchmark', 'جودة قرار الإنتاج'], ['question', 'مراجعة الأدلة'],
     ],
+    benchmark: null,
+    benchmarkNames: {
+        current: 'الخطة الحالية', stat: 'التوقع الإحصائي', winner: 'النموذج الفائز',
+        scenario: 'مفاضلة السيناريوهات', spo_plus: 'تجربة التعلّم',
+    },
+    benchmarkMetrics: {
+        cost_sar: 'التكلفة · ريال', mean_regret_sar: 'خسارة القرار · ريال',
+        service_pct: 'الخدمة ٪', credit_breach_sar: 'تجاوز الائتمان · ريال',
+        cvar90_realized_sar: 'تكلفة الذيل · ريال', feasible_pct: 'الخطط الممكنة ٪',
+        latency_p95_s: 'زمن P95 · ثانية', mean_planning_gap_pct: 'فجوة الحل ٪',
+    },
     kinds: {
         entry: 'فرق البيانات', refresh: 'إشارات البيانات', forecast: 'توقع', calibration: 'معايرة العلاقات',
         decision: 'توصيات القرار', answer: 'رد أثر',
@@ -38,6 +49,13 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     get questionFacts() { return this.payload.facts || this.payload.insight?.facts || []; },
     get reviewTitle() { return this.kinds[this.review?.kind] || ''; },
     get assistantVersion() { return this.data?.models.find(model => String(model.id) === this.modelId)?.version; },
+    get productionCompany() {
+        return this.$store.app.companies.find(company => String(company.id) === this.companyId)?.template === 'production';
+    },
+    get benchmarkComparison() {
+        const baseline = this.benchmark?.experiment.strongest_baseline;
+        return this.benchmark?.comparisons.find(pair => pair.reference === baseline && pair.challenger === 'spo_plus');
+    },
     get companyUsesFiles() {
         return this.$store.app.companies.find(company => String(company.id) === this.companyId)?.template === 'enterprise_company';
     },
@@ -74,7 +92,8 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     changeCompany(id, initialModel = null) {
         this.companyId = String(id);
         this.modelId = '';
-        this.review = this.data = null;
+        this.review = this.data = this.benchmark = null;
+        if (this.section === 'benchmark' && !this.productionCompany) this.section = 'entry';
         this.records = [];
         this.files = [];
         this.description = this.modelName = this.fxRate = this.topic = this.goalText = '';
@@ -113,6 +132,14 @@ document.addEventListener('alpine:init', () => Alpine.data('aiWorkspace', () => 
     changeSection(section) {
         this.section = section;
         if (section === 'decision' && !this.controls.length && this.goalDrivers.length) this.addControl();
+    },
+    runBenchmark() {
+        return this.work(async () => {
+            this.benchmark = await api(this.scope + '/decision-benchmark', { method: 'POST' });
+        });
+    },
+    benchmarkNumber(value, precision = 2) {
+        return value == null ? '—' : new Intl.NumberFormat('ar-SA', { maximumFractionDigits: precision }).format(value);
     },
     addControl() {
         const driver = this.goalDrivers.find(item => !this.controls.some(control => control.node_id === item.id));
