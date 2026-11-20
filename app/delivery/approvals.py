@@ -39,7 +39,11 @@ def create_plan(connection, cid, run_id, variant):
         raise api_error(404, 'run_not_found', 'التشغيل غير موجود للشركة.')
     if run['kind'] != RUN_KINDS[variant]:
         raise api_error(422, 'invalid_plan_variant', 'نوع الخطة لا يطابق نتيجة التشغيل.')
-    output = json.loads(run['result_json']).get(variant, {})
+    result = json.loads(run['result_json'])
+    policy = (result.get('decision_contract') or {}).get('approval_policy', result.get('approval_policy'))
+    if policy == 'shadow_only':
+        raise api_error(422, 'shadow_run', 'تشغيل التوقع للمراجعة التجريبية فقط.')
+    output = result.get(variant, {})
     if not output.get('plan') or not output.get('kpis'):
         raise api_error(422, 'plan_unavailable', 'التشغيل لا يحتوي على خطة قابلة للاعتماد.')
 

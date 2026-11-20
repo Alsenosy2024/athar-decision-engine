@@ -5,13 +5,29 @@ document.addEventListener('alpine:init', () => {
             const saved = await latestRun(base);
             if (live() && saved) this.showRun(saved.id, saved.result, saved.dataset_id);
         },
-        optimize() {
+        optimize({ forecast = false, replan = false, replay = false } = {}) {
             this.perform('solve', async (base, live) => {
-                const datasetId = this.$store.app.company.active_dataset_id;
-                const result = await api(base + '/optimize', post({ dataset_id: datasetId }));
+                const datasetId = replay ? this.datasetId : this.$store.app.company.active_dataset_id;
+                const previousRunId = this.runId;
+                const options = replay ? { replay_run_id: previousRunId } : { dataset_id: datasetId };
+                if (forecast) {
+                    const result = await api(base + '/forecast', post({ dataset_id: datasetId }));
+                    if (!live()) return;
+                    options.forecast_id = result.forecast_id;
+                }
+                if (replan || (forecast && previousRunId)) options.previous_run_id = previousRunId;
+                const result = await api(base + '/optimize', post(options));
                 if (live()) this.showRun(result.run_id, result, datasetId);
             });
         },
+        get contract() { return this.run?.decision_contract; },
+        get resultLabel() {
+            const status = this.run?.solver?.status;
+            if (this.contract && status === 'FEASIBLE') return 'حل تجريبي ممكن';
+            if (this.contract && status === 'OPTIMAL') return 'حل تجريبي أمثل';
+            return solverLabel(status);
+        },
+        get demandTargets() { return this.run?.optimized?.kpis?.forecast_inventory_targets || []; },
         showRun(id, run, datasetId) {
             this.run = run;
             this.runId = id;

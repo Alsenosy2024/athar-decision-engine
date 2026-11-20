@@ -1,5 +1,6 @@
 import json
 from time import perf_counter
+from typing import Literal
 
 import numpy as np
 from fastapi import APIRouter, Depends, Request
@@ -36,6 +37,8 @@ class WhatIfResult(StrictBody):
     diff: dict
     changes_ar: list[str]
     explanation_ar: str
+    approval_policy: Literal['shadow_only'] | None = None
+    source_input_fingerprint: str | None = None
 
 
 def base_optimization(connection, cid, run_id):
@@ -52,7 +55,7 @@ def base_optimization(connection, cid, run_id):
     return base
 
 
-@router.post('/companies/{cid}/whatif', response_model=WhatIfResult)
+@router.post('/companies/{cid}/whatif', response_model=WhatIfResult, response_model_exclude_unset=True)
 def whatif(cid: int, body: WhatIfRequest, request: Request, connection=Depends(request_conn)):
     settings = request.app.state.settings
     company = get_company(connection, cid)
@@ -63,6 +66,7 @@ def run_whatif(connection, company, body, settings, provider):
     cid, template = company['id'], company['template']
     base = base_optimization(connection, cid, body.base_run_id)
     original = json.loads(base['result_json'])
+    contract = original.get('decision_contract')
     base_kpis = original['optimized']['kpis']
     if not base_kpis:
         raise api_error(422, 'plan_unavailable', 'تشغيل التحسين الأساسي مفيهوش خطة للمقارنة.')
@@ -74,7 +78,8 @@ def run_whatif(connection, company, body, settings, provider):
     parameters = changed_model['parameters']
     solver_module = {'contracting': contracting, 'production': production}[template]
     try:
-        solved = solver_module.solve(payload, parameters, changed_model['weights'], settings.solver_time_limit)
+        limit = contract['solver']['wall_limit_s'] if contract else settings.solver_time_limit
+        solved = solver_module.solve(payload, parameters, changed_model['weights'], limit, decision_contract=contract)
     except OptimizationInputError as error:
         raise api_error(422, 'invalid_optimization_input', str(error)) from None
     solver = solved['solver']
@@ -83,8 +88,11 @@ def run_whatif(connection, company, body, settings, provider):
     result = {
         'base': {'kpis': base_kpis}, 'scenario': scenario,
         'diff': kpi_diff(base_kpis, scenario['kpis']), 'changes_ar': changes_ar,
-        'explanation_ar': provider.explain({'grounded_ar': grounded}, grounded),
+        'explanation_ar': grounded if contract else provider.explain({'grounded_ar': grounded}, grounded),
     }
+    if contract:
+        result['approval_policy'] = contract['approval_policy']
+        result['source_input_fingerprint'] = contract['input_fingerprint']
     run_id = connection.execute(
         '''INSERT INTO runs (company_id, dataset_id, model_id, kind, base_run_id,
                              scenario_json, result_json, status, wall_s, created_at)
@@ -97,34 +105,42 @@ def run_whatif(connection, company, body, settings, provider):
     return {'run_id': run_id, **result}
 
 
-@router.post('/companies/{cid}/montecarlo', response_model=ContractingRisk | ProductionRisk)
+@router.post('/companies/{cid}/montecarlo', response_model=ContractingRisk | ProductionRisk,
+             response_model_exclude_unset=True)
 def montecarlo(cid: int, body: MonteCarloRequest, request: Request, connection=Depends(request_conn)):
     company = get_company(connection, cid)
     base = base_optimization(connection, cid, body.run_id)
-    plan = json.loads(base['result_json'])['optimized']['plan']
+    original = json.loads(base['result_json'])
+    plan = original['optimized']['plan']
+    contract = original.get('decision_contract')
     if not plan:
         raise api_error(422, 'plan_unavailable', 'تشغيل التحسين لا يحتوي على خطة قابلة للمحاكاة.')
 
     start = perf_counter()
     dataset = json.loads(base['payload_json'])
     parameters = json.loads(base['model_json'])['parameters']
-    forecast = company_forecast(connection, company, dataset, request)
+    forecast = None if contract else company_forecast(connection, company, dataset, request)
     try:
         with np.errstate(over='raise', invalid='raise'):
             result = run_mc(
-                company['template'], dataset, plan, forecast, body.n, body.seed, parameters=parameters,
+                company['template'], dataset, plan, forecast, body.n, body.seed,
+                parameters=parameters, decision_contract=contract,
             )
     except OptimizationInputError as error:
         raise api_error(422, 'invalid_simulation_input', str(error)) from None
     except (FloatingPointError, OverflowError):
         raise api_error(422, 'invalid_simulation_input', 'قيم البيانات أكبر من النطاق المدعوم للمحاكاة.') from None
 
+    evidence = {'n': body.n, 'seed': body.seed}
+    if contract:
+        evidence['input_fingerprint'] = contract['input_fingerprint']
+        evidence['scenario_set_fingerprint'] = contract['scenario_set_fingerprint']
     with connection:
         run_id = connection.execute(
             '''INSERT INTO runs (company_id, dataset_id, model_id, kind, base_run_id,
                                  scenario_json, result_json, status, wall_s, created_at)
                VALUES (?, ?, ?, 'montecarlo', ?, ?, ?, 'OK', ?, ?)''',
-            (cid, base['dataset_id'], base['model_id'], base['id'], encode({'n': body.n, 'seed': body.seed}),
+            (cid, base['dataset_id'], base['model_id'], base['id'], encode(evidence),
              encode(result), perf_counter() - start, utc_now()),
         ).lastrowid
         audit(connection, cid, 'run.montecarlo', 'run', run_id)

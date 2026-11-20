@@ -3,6 +3,7 @@ from math import log
 
 import numpy as np
 
+from app.decision_loop.contract import BANDS, production_targets
 from app.forecasting.methods import quantiles
 from app.optimization import contracting, production
 from app.optimization.common import OptimizationInputError
@@ -164,10 +165,44 @@ def production_mc(dataset, parameters, plan, forecast, n, rng):
     }
 
 
-def run_mc(template, dataset, plan, forecast, n=200, seed=42, *, parameters=None):
+def contracted_production_risk(dataset, parameters, plan, contract, n):
+    # The booked orders and operations are fixed. Each pinned demand band is
+    # evaluated against inventory independently, with no invented probability.
+    kpis = production_kpis(production.prepare(dataset, parameters), plan)
+    shipments = {row['order']: row for row in kpis['shipments']}
+    orders = dataset['orders']
+    late = {row['id']: row['id'] not in shipments or shipments[row['id']]['late_days'] > 0
+            for row in orders}
+    total = sum(row['qty'] for row in orders)
+    shipped = sum(row['qty'] for row in orders if row['id'] in shipments)
+    fill = shipped / total if total else 1.0
+    scenarios = {}
+    for band in BANDS:
+        targets = production_targets(dataset, contract | {'selected_scenario': band})
+        scenarios[band] = sum(max(0, target['unbooked_units'] - kpis['inventory'][sku][day])
+                              for (sku, day), target in targets.items())
+    count = sum(late.values())
+    return {
+        'n': n,
+        'p_any_late': float(bool(count)),
+        'p_storage_overflow': float(not kpis['storage_ok']),
+        'p_credit_breach': float(not kpis['credit_ok']),
+        'fill_rate': {'p10': fill, 'p50': fill, 'p90': fill},
+        'late_orders': {'p10': count, 'p50': count, 'p90': count, 'hist': [{'bin': count, 'count': n}]},
+        'per_order': {key: {'p_late': float(value)} for key, value in late.items()},
+        'forecast_shortfall_units': scenarios,
+    }
+
+
+def run_mc(template, dataset, plan, forecast, n=200, seed=42, *, parameters=None, decision_contract=None):
     defaults = load_templates()[template].model_defaults()['parameters']
+    parameters = defaults | (parameters or {})
+    if decision_contract:
+        if template == 'production':
+            return contracted_production_risk(dataset, parameters, plan, decision_contract, n)
+        forecast = {'phases': decision_contract['duration_phases']}
     simulate = {'contracting': contracting_mc, 'production': production_mc}[template]
-    return simulate(dataset, defaults | (parameters or {}), plan, forecast, n, np.random.default_rng(seed))
+    return simulate(dataset, parameters, plan, forecast, n, np.random.default_rng(seed))
 
 
 def driver_trials(centers, spreads, n, seed, correlations=()):

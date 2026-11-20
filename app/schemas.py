@@ -200,6 +200,7 @@ class ProductionRisk(BaseModel):
     fill_rate: RiskBand
     late_orders: RiskDistribution
     per_order: dict[str, OrderRisk]
+    forecast_shortfall_units: dict[str, int] | None = None
 
 
 class OptimizeRequest(BaseModel):
@@ -207,6 +208,9 @@ class OptimizeRequest(BaseModel):
     dataset_id: int | None = Field(default=None, gt=0)
     weights: dict[str, float] | None = None
     time_limit: float | None = Field(default=None, gt=0)
+    forecast_id: int | None = Field(default=None, gt=0)
+    previous_run_id: int | None = Field(default=None, gt=0)
+    replay_run_id: int | None = Field(default=None, gt=0)
 
 
 class PlanVariant(BaseModel):
@@ -223,6 +227,8 @@ class SolverSummary(BaseModel):
     state: Literal['complete', 'partial', 'no_result'] | None = None
     stop_reason: Literal['search_limit', 'finished'] | None = None
     search_status: str | None = None
+    hint_source: Literal['previous_plan', 'heuristic'] | None = None
+    first_qualified_s: float | None = None
 
 
 class OptimizeResult(BaseModel):
@@ -231,6 +237,8 @@ class OptimizeResult(BaseModel):
     optimized: PlanVariant
     solver: SolverSummary
     explanation_ar: str
+    decision_contract: dict[str, JsonValue] | None = None
+    solution_fingerprint: str | None = None
 
 
 class RunDetail(BaseModel):

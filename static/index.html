@@ -876,8 +876,14 @@
                      x-effect="activate($store.app.page, $store.app.companyId)">
                 <header class="page-title">
                     <div><h1>التحسين</h1><p>قارِن الخطة المرجعية بالخطة المحسّنة بناءً على القيود وأوزان الأهداف.</p></div>
-                    <button class="button primary" data-testid="run-optimize" :disabled="!!busy || !$store.app.company?.active_dataset_id"
-                        @click="optimize()" x-text="busy === 'solve' ? 'جارٍ حل النموذج…' : 'شغّل التحسين'"></button>
+                    <div class="actions">
+                        <button class="button primary" data-testid="run-optimize" :disabled="!!busy || !$store.app.company?.active_dataset_id"
+                            @click="optimize()" x-text="busy === 'solve' ? 'جارٍ حل النموذج…' : 'شغّل التحسين'"></button>
+                        <button class="button secondary" data-testid="forecast-optimize"
+                            :disabled="!!busy || !$store.app.company?.active_dataset_id" @click="optimize({ forecast: true })">جرّب توقع جديد</button>
+                        <button class="button secondary" data-testid="replan-optimize" x-show="run?.optimized?.kpis?.credit_ok && !contract"
+                            :disabled="!!busy || !$store.app.company?.active_dataset_id" @click="optimize({ replan: true })">أعد التخطيط بالخطة السابقة</button>
+                    </div>
                 </header>
                 <p class="empty" role="status" x-show="busy === 'load'">جارٍ تحميل الصفحة…</p>
                 <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
@@ -887,14 +893,37 @@
                 </div>
                 <p class="notice page-feedback" x-show="run && datasetId !== $store.app.company?.active_dataset_id">النتيجة المعروضة من مجموعة بيانات سابقة.</p>
                 <div class="stack" x-show="run">
+                    <article class="card" x-show="contract" data-testid="decision-contract">
+                        <h2>لقطة التوقع والقرار</h2>
+                        <p>التشغيل للمراجعة التجريبية فقط.</p>
+                        <p x-show="contract"><bdi x-text="'#' + number(contract?.forecast_id)"></bdi>
+                            <span>توقع مثبت · وقت القطع</span>
+                            <bdi x-text="contract?.cutoff_at?.slice(0, 16).replace('T', ' ')"></bdi> <bdi>UTC</bdi></p>
+                        <p>بصمة المدخلات <bdi x-text="contract?.input_fingerprint?.slice(0, 16)" :title="contract?.input_fingerprint"></bdi></p>
+                        <button class="button secondary" data-testid="replay-optimize" :disabled="!!busy"
+                            @click="optimize({ replay: true })">أعد تشغيل اللقطة</button>
+                        <div class="table-scroll" x-show="demandTargets.length" tabindex="0" aria-label="جدول الطلب والمخزون المتوقع">
+                            <table class="numeric-table" aria-label="الطلب والمخزون المتوقع">
+                                <thead><tr><th scope="col">المنتج</th><th scope="col">آخر يوم</th><th scope="col">طلب مؤكد</th>
+                                    <th scope="col">إجمالي متوقع</th><th scope="col">طلب غير محجوز</th><th scope="col">عجز المخزون</th></tr></thead>
+                                <tbody><template x-for="row in demandTargets" :key="row.sku + '-' + row.end_day">
+                                    <tr><th scope="row" x-text="row.sku"></th><td x-text="number(row.end_day + 1)"></td>
+                                        <td x-text="number(row.confirmed_units)"></td><td x-text="number(row.expected_total_units)"></td>
+                                        <td x-text="number(row.unbooked_units)"></td><td x-text="number(row.shortfall_units)"></td></tr>
+                                </template></tbody>
+                            </table>
+                        </div>
+                    </article>
                     <p class="notice error page-feedback" role="status" x-show="run?.optimized?.kpis?.credit_ok === false">
                         الخطة المحسّنة بتتجاوز حد الائتمان. راجع قيمة التجاوز قبل اعتمادها.
                     </p>
                     <div class="snapshot">
-                        <div class="snapshot-info"><h2 x-text="solverLabel(run?.solver.status)"></h2>
+                        <div class="snapshot-info"><h2 x-text="resultLabel"></h2>
                             <p x-show="run?.solver.state === 'partial'" role="status">البحث وصل لحدّه. دي أفضل خطة متاحة.</p>
-                            <p x-text="'التشغيل ' + number(runId) + ' · ' + number(run?.solver.wall_s) + ' ثانية'"></p></div>
-                        <button class="button secondary" data-testid="draft-optimized" @click="draft()" :disabled="!!busy || !run?.optimized?.plan"
+                            <p x-text="'التشغيل ' + number(runId) + ' · ' + number(run?.solver.wall_s) + ' ثانية'"></p>
+                            <p data-testid="hint-source" x-show="run?.solver?.hint_source"
+                                x-text="run?.solver?.hint_source === 'previous_plan' ? 'تلميح الحل من الخطة السابقة' : 'تلميح الحل من الخطة المرجعية'"></p></div>
+                        <button class="button secondary" data-testid="draft-optimized" @click="draft()" :disabled="!!busy || !run?.optimized?.plan || !!contract"
                             x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>
                     </div>
                     <div class="split-grid">
@@ -977,22 +1006,29 @@
                         </article>
                         <article class="card insight">
                             <h2>مخاطر الخطة الأساسية</h2>
-                            <p>مونت كارلو بيختبر الخطة المحسّنة من خلال 200 سحبة من التوزيع المتوقع.</p>
+                            <p x-show="!pinnedDemand">مونت كارلو بيختبر الخطة المحسّنة من خلال 200 سحبة من التوزيع المتوقع.</p>
+                            <p x-show="pinnedDemand">بنقارن المخزون بالطلب غير المحجوز في نطاقات التوقع المثبتة مع تثبيت الطلبات المؤكدة.</p>
                             <button class="button secondary spaced" data-testid="run-mc" :disabled="!!busy" @click="monteCarlo()"
-                                x-text="busy === 'mc' ? 'جارٍ حساب المخاطر…' : 'شغّل مونت كارلو'"></button>
-                            <dl class="risk-grid" x-show="risk">
+                                x-text="busy === 'mc' ? 'جارٍ حساب المخاطر…' : pinnedDemand ? 'قيّم نطاقات التوقع' : 'شغّل مونت كارلو'"></button>
+                            <dl class="risk-grid" x-show="risk?.forecast_shortfall_units" data-testid="pinned-demand-risk">
+                                <template x-for="[band, label] in [['p10', 'منخفض'], ['p50', 'مركزي'], ['p90', 'مرتفع']]" :key="band">
+                                    <div><dt x-text="'العجز · ' + label"></dt><dd><bdi x-text="number(risk?.forecast_shortfall_units?.[band])"></bdi> وحدة</dd></div>
+                                </template>
+                            </dl>
+                            <dl class="risk-grid" x-show="risk && !pinnedDemand">
                                 <div><dt>احتمال التأخير</dt><dd><bdi x-text="percent(risk?.p_any_late)"></bdi></dd></div>
                                 <div><dt>احتمال تجاوز الائتمان</dt><dd><bdi x-text="percent(risk?.p_credit_breach)"></bdi></dd></div>
                                 <div x-show="template === 'production'"><dt>احتمال تجاوز التخزين</dt><dd><bdi x-text="percent(risk?.p_storage_overflow)"></bdi></dd></div>
                                 <div x-show="template === 'production'"><dt>وسيط نسبة تلبية الطلب</dt><dd><bdi x-text="percent(risk?.fill_rate?.p50)"></bdi></dd></div>
                             </dl>
-                            <div x-show="risk"><div class="chart mini"><canvas data-testid="chart-mc" x-ref="mc" role="img" aria-label="التوزيع التكراري للتأخير"></canvas></div></div>
+                            <div x-show="risk && !pinnedDemand"><div class="chart mini"><canvas data-testid="chart-mc" x-ref="mc" role="img" aria-label="التوزيع التكراري للتأخير"></canvas></div></div>
                         </article>
                     </div>
                     <article class="card" x-show="result">
                         <div class="card-heading"><div><h2>نتيجة السيناريو</h2>
-                            <p x-text="'السيناريو ' + number(result?.run_id) + ' · التشغيل الأساسي ' + number(resultBase) + ' · ' + solverLabel(result?.scenario.solver.status)"></p></div>
-                            <button class="button secondary" data-testid="draft-scenario" @click="draft()" :disabled="!!busy || !result?.scenario?.plan"
+                            <p x-text="'السيناريو ' + number(result?.run_id) + ' · التشغيل الأساسي ' + number(resultBase) + ' · ' + solverLabel(result?.scenario.solver.status)"></p>
+                            <p x-show="result?.approval_policy">السيناريو للمراجعة التجريبية فقط.</p></div>
+                            <button class="button secondary" data-testid="draft-scenario" @click="draft()" :disabled="!!busy || !result?.scenario?.plan || !!result?.approval_policy"
                                 x-text="busy === 'draft' ? 'جارٍ حفظ المسودة…' : 'احفظ مسودة للاعتماد'"></button>
                         </div>
                         <ul class="change-summary"><template x-for="(text, index) in result?.changes_ar || []" :key="index"><li x-text="text"></li></template></ul>

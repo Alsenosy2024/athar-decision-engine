@@ -1,10 +1,13 @@
 from dataclasses import dataclass, replace
 from decimal import Decimal
 from math import isfinite
+from time import monotonic
 
 from ortools.sat.python import cp_model
 
 from app.config import Settings
+from app.decision_loop.contract import contracting_dataset
+from app.decision_loop.warm_start import FirstQualified, contracting_hint, hint_metrics
 from app.ingestion.loader import load_demo
 from app.optimization.budget import SolveBudget
 from app.optimization.common import OptimizationInputError, Weights, configured_solver
@@ -153,7 +156,7 @@ def evaluate(problem, starts):
     }}
 
 
-def build_model(problem, weights, hint):
+def build_model(problem, weights, hint, *, previous=None):
     model = cp_model.CpModel()
     choices = {}
     starts = {}
@@ -177,8 +180,8 @@ def build_model(problem, weights, hint):
     for project, chain in problem.chains.items():
         if not chain:
             continue
-        for previous, activity in zip(chain, chain[1:]):
-            model.add(starts[activity.id] >= starts[previous.id] + previous.duration)
+        for predecessor, activity in zip(chain, chain[1:]):
+            model.add(starts[activity.id] >= starts[predecessor.id] + predecessor.duration)
         last = chain[-1]
         finish = starts[last.id] + last.duration
         late[project] = model.new_int_var(0, problem.horizon, f'late_{project}')
@@ -209,6 +212,11 @@ def build_model(problem, weights, hint):
     # A known credit-feasible plan lets us enforce the ceiling during the solve.
     breach_limit = (0 if hint_cash is not None and min(hint_cash) >= -problem.credit
                     else max(0, max_od - problem.credit))
+    selected = previous if previous is not None else hint
+    selected_cash = hint_cash if previous is None else (
+        cash_curve(problem.activities, previous, receipts, problem.lag, problem.cash_periods)
+        if len(previous) == len(problem.activities) else None
+    )
     overdrafts = []
     breaches = []
     for week, terms in enumerate(cash_terms):
@@ -219,9 +227,9 @@ def build_model(problem, weights, hint):
         model.add(balance + breach >= -problem.credit)
         overdrafts.append(od)
         breaches.append(breach)
-        if hint_cash is not None:
-            model.add_hint(od, max(0, -hint_cash[week]))
-            model.add_hint(breach, max(0, -hint_cash[week] - problem.credit))
+        if selected_cash is not None:
+            model.add_hint(od, max(0, -selected_cash[week]))
+            model.add_hint(breach, max(0, -selected_cash[week] - problem.credit))
 
     ld_weight, fin_weight, span_weight = weights.scaled()
     ld_coefficients = {p: 1000 * ld_weight * problem.projects[p]['ld_per_week'] for p in late}
@@ -238,23 +246,29 @@ def build_model(problem, weights, hint):
         + breach_coefficient * sum(breaches)
     )
 
+    if selected is not None:
+        for activity, week in selected.items():
+            for option, choice in choices[activity].items():
+                model.add_hint(choice, int(week == option))
+        if selected_cash is not None:
+            finishes = []
+            for project, var in late.items():
+                last = problem.chains[project][-1]
+                finish = selected[last.id] + last.duration
+                finishes.append(finish)
+                model.add_hint(var, max(0, finish - problem.projects[project]['deadline_week']))
+            model.add_hint(makespan, max(finishes, default=0))
+
     hint_score = None
     if hint_cash is not None:
-        span = 0
-        ld_score = 0
-        for activity, options in choices.items():
-            for week, choice in options.items():
-                model.add_hint(choice, int(hint[activity] == week))
-        for project, var in late.items():
-            last = problem.chains[project][-1]
-            finish = hint[last.id] + last.duration
-            span = max(span, finish)
-            weeks = max(0, finish - problem.projects[project]['deadline_week'])
-            model.add_hint(var, weeks)
-            ld_score += ld_coefficients[project] * weeks
-        model.add_hint(makespan, span)
+        finishes = {
+            project: hint[chain[-1].id] + chain[-1].duration
+            for project, chain in problem.chains.items() if chain
+        }
         hint_score = (
-            ld_score + span_coefficient * span
+            sum(ld_coefficients[p] * max(0, finish - problem.projects[p]['deadline_week'])
+                for p, finish in finishes.items())
+            + span_coefficient * max(finishes.values(), default=0)
             + fin_coefficient * sum(max(0, -cash) for cash in hint_cash)
             + breach_coefficient * sum(max(0, -cash - problem.credit) for cash in hint_cash)
         )
@@ -262,27 +276,43 @@ def build_model(problem, weights, hint):
     return model, starts, hint_score
 
 
-def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False):
+def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False,
+          decision_contract=None, previous=None, measure_first=False):
+    started = monotonic()
     time_limit = Settings().solver_time_limit if time_limit is None else time_limit
     if not isfinite(time_limit) or time_limit <= 0:
         raise OptimizationInputError('وقت التحسين لازم يكون أكبر من صفر.')
     budget = SolveBudget(time_limit)
     defaults = load_templates()['contracting'].model_defaults()
-    problem = prepare(dataset, defaults['parameters'] | (parameters or {}))
+    parameters = defaults['parameters'] | (parameters or {})
+    problem = prepare(contracting_dataset(dataset, decision_contract), parameters)
     weights = Weights(**(defaults['weights'] | (weights or {})))
     initial = baseline(problem)
     if initial is None:
         initial = baseline(problem, respect_credit=False)
+    warm = contracting_hint(problem, previous, parameters) if previous else None
     try:
-        model, start_vars, hint_score = build_model(problem, weights, initial)
+        model, start_vars, hint_score = build_model(problem, weights, initial, previous=warm)
     except (OverflowError, ValueError, TypeError):
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.') from None
     if model.validate():
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.')
 
+    def extract(solution):
+        return {activity: solution.value(var) for activity, var in start_vars.items()}
+
+    # CP-SAT enforces precedence and crew capacity. Recount credit at the
+    # independent ledger's precision before counting an incumbent as qualified.
+    def qualified(solution):
+        return min(cash_curve(problem.activities, extract(solution), problem.receipts,
+                              problem.lag, problem.cash_periods)) >= -problem.credit
+
+    first = FirstQualified(started, qualified) if measure_first or previous else None
     remaining = budget.remaining()
-    solver = configured_solver(remaining, deterministic=deterministic)
-    search_status = solver.solve(model) if remaining else cp_model.UNKNOWN
+    fixed = deterministic or decision_contract is not None or previous is not None
+    solver = configured_solver(remaining, deterministic=fixed,
+                               deterministic_budget=time_limit if fixed else None)
+    search_status = solver.solve(model, first) if remaining else cp_model.UNKNOWN
     status = search_status
 
     objective = None
@@ -291,7 +321,7 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         objective = solver.objective_value
         bound = solver.best_objective_bound
-        chosen = {activity: solver.value(var) for activity, var in start_vars.items()}
+        chosen = extract(solver)
     if initial is not None and (status == cp_model.UNKNOWN or objective is not None and hint_score < objective):
         chosen = initial
         objective = hint_score
@@ -307,7 +337,8 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
         'solver': {'status': solver.status_name(status), 'objective': objective,
                    'bound': bound, 'wall_s': solver.wall_time if remaining else 0.0,
                    'time_limit_s': time_limit, 'state': state,
-                   'stop_reason': stop_reason, 'search_status': solver.status_name(search_status)},
+                   'stop_reason': stop_reason, 'search_status': solver.status_name(search_status),
+                   **hint_metrics(previous, warm, measure_first, first)},
         'explanation_ar': '',
     }
 

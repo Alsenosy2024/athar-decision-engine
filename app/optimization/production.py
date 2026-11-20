@@ -1,10 +1,13 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from math import isfinite
+from time import monotonic
 
 from ortools.sat.python import cp_model
 
 from app.config import Settings
+from app.decision_loop.contract import production_targets
+from app.decision_loop.warm_start import FirstQualified, hint_metrics, production_hint
 from app.ingestion.loader import load_demo
 from app.optimization.budget import SolveBudget
 from app.optimization.common import OptimizationInputError, configured_solver
@@ -129,7 +132,7 @@ def baseline(problem):
     return plan if production_kpis(problem, plan)['feasible'] else None
 
 
-def build_model(problem, weights, hint):
+def build_model(problem, weights, hint, *, warm=None, targets=None):
     model = cp_model.CpModel()
     quantities, used, setups, switches = {}, {}, {}, {}
     inventory, ship, skipped, overdraft, breach = {}, {}, {}, {}, {}
@@ -230,21 +233,30 @@ def build_model(problem, weights, hint):
     for day in problem.days:
         charge(overdraft[day], problem.daily_interest, 'financing')
         objective_terms.append((breach[day], 1_000_000 * scale))
+    # Unbooked demand reserves stock. It creates neither shipments nor receipts.
+    shortages = {}
+    for (sku, day), target in (targets or {}).items():
+        qty = target['unbooked_units']
+        if qty:
+            variable = shortages[sku, day] = model.new_int_var(0, qty, f'shortage[{sku},{day}]')
+            model.add_max_equality(variable, [0, qty - inventory[sku, day]])
+            specs = problem.skus[sku]
+            charge(variable, max(0, specs['unit_price'] - specs['unit_cost']), 'unshipped')
     objective = sum(variable * cost for variable, cost in objective_terms)
     model.minimize(objective)
 
-    hint_score = None
-    if hint is not None:
-        rows = {(row['line'], row['day']): row for row in hint['schedule']}
-        shipped = {row['order']: row['day'] for row in hint['shipments']}
-        kpis = production_kpis(problem, hint)
-        # Use the same definition as the KPI: a late order shipped after its due date.
+    baseline_kpis = production_kpis(problem, hint) if hint is not None else None
+    if baseline_kpis is not None:
+        late_cap = baseline_kpis['late_orders']
         model.add(sum(variable for (order, day), variable in ship.items()
-                      if day > problem.orders[order]['due_day']) <= kpis['late_orders'])
+                      if day > problem.orders[order]['due_day']) <= late_cap)
+
+    def values_for(plan, kpis):
+        rows = {(row['line'], row['day']): row for row in plan['schedule']}
+        shipped = {row['order']: row['day'] for row in plan['shipments']}
         values = {}
 
         def add_hint(variable, value):
-            model.add_hint(variable, value)
             values[variable.index] = value
 
         add_hint(initial_setup, 0)
@@ -270,42 +282,70 @@ def build_model(problem, weights, hint):
         for day, balance in enumerate(kpis['cash_curve']):
             add_hint(overdraft[day], max(0, -balance))
             add_hint(breach[day], max(0, -balance - problem.credit))
-        hint_score = sum(values[var.index] * cost for var, cost in objective_terms)
+        for (sku, day), variable in shortages.items():
+            add_hint(variable, max(0, targets[sku, day]['unbooked_units'] - kpis['inventory'][sku][day]))
+        return values
+
+    baseline_values = values_for(hint, baseline_kpis) if baseline_kpis is not None else None
+    selected = values_for(warm, production_kpis(problem, warm)) if warm is not None else baseline_values
+    if selected is not None:
+        for index, value in selected.items():
+            model.add_hint(model.get_int_var_from_proto_index(index), value)
+    hint_score = None if baseline_values is None else sum(
+        baseline_values[var.index] * cost for var, cost in objective_terms
+    )
 
     return model, quantities, ship, hint_score
 
 
-def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False):
+def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False,
+          decision_contract=None, previous=None, measure_first=False):
+    started = monotonic()
     time_limit = Settings().solver_time_limit if time_limit is None else time_limit
     if not isfinite(time_limit) or time_limit <= 0:
         raise OptimizationInputError('وقت التحسين لازم يكون أكبر من صفر.')
 
     budget = SolveBudget(time_limit)
     defaults = load_templates()['production'].model_defaults()
-    problem = prepare(dataset, defaults['parameters'] | (parameters or {}))
+    parameters = defaults['parameters'] | (parameters or {})
+    problem = prepare(dataset, parameters)
+    targets = production_targets(dataset, decision_contract)
     weights = defaults['weights'] | (weights or {})
     initial = baseline(problem)
+    late_cap = production_kpis(problem, initial)['late_orders'] if previous and initial is not None else None
+    warm = production_hint(problem, previous, parameters, late_cap) if previous else None
     try:
-        model, quantities, ship, hint_score = build_model(problem, weights, initial)
+        model, quantities, ship, hint_score = build_model(
+            problem, weights, initial, warm=warm, targets=targets,
+        )
     except (OverflowError, ValueError, TypeError):
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.') from None
     if model.validate():
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.')
 
+    def extract(solution):
+        return {
+            'schedule': [{'line': line, 'day': day, 'sku': sku, 'qty': qty}
+                         for (line, day, sku), variable in quantities.items()
+                         if (qty := solution.value(variable)) > 0],
+            'shipments': [{'order': order, 'day': day} for (order, day), variable in ship.items()
+                          if solution.value(variable)],
+        }
+
+    def qualified(solution):
+        kpis = production_kpis(problem, extract(solution))
+        return kpis['feasible'] and kpis['credit_ok']
+
+    first = FirstQualified(started, qualified) if measure_first or previous else None
     remaining = budget.remaining()
-    solver = configured_solver(remaining, deterministic=True)
-    search_status = solver.solve(model) if remaining else cp_model.UNKNOWN
+    solver = configured_solver(remaining, deterministic=True,
+                               deterministic_budget=time_limit if deterministic or decision_contract or previous else None)
+    search_status = solver.solve(model, first) if remaining else cp_model.UNKNOWN
     status = search_status
 
     chosen = objective = bound = None
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        chosen = {
-            'schedule': [{'line': line, 'day': day, 'sku': sku, 'qty': qty}
-                         for (line, day, sku), variable in quantities.items()
-                         if (qty := solver.value(variable)) > 0],
-            'shipments': [{'order': order, 'day': day} for (order, day), variable in ship.items()
-                          if solver.value(variable)],
-        }
+        chosen = extract(solver)
         objective = solver.objective_value
         bound = solver.best_objective_bound
     if initial is not None and (
@@ -316,14 +356,27 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
     state = ('complete' if search_status in (cp_model.OPTIMAL, cp_model.INFEASIBLE)
              else 'partial' if chosen is not None else 'no_result')
     stop_reason = 'search_limit' if search_status in (cp_model.FEASIBLE, cp_model.UNKNOWN) else 'finished'
-    empty = {'kpis': {}, 'plan': {}}
+    def variant(plan):
+        if plan is None:
+            return {'kpis': {}, 'plan': {}}
+        result = evaluate(problem, plan)
+        if decision_contract is not None:
+            inventory = result['kpis']['inventory']
+            result['kpis']['forecast_inventory_targets'] = [
+                {'sku': sku, 'end_day': day, **target,
+                 'shortfall_units': max(0, target['unbooked_units'] - inventory[sku][day])}
+                for (sku, day), target in targets.items()
+            ]
+        return result
+
     return {
-        'baseline': empty if initial is None else evaluate(problem, initial),
-        'optimized': empty if chosen is None else evaluate(problem, chosen),
+        'baseline': variant(initial),
+        'optimized': variant(chosen),
         'solver': {'status': solver.status_name(status), 'objective': objective,
                    'bound': bound, 'wall_s': solver.wall_time if remaining else 0.0,
                    'time_limit_s': time_limit, 'state': state,
-                   'stop_reason': stop_reason, 'search_status': solver.status_name(search_status)},
+                   'stop_reason': stop_reason, 'search_status': solver.status_name(search_status),
+                   **hint_metrics(previous, warm, measure_first, first)},
         'explanation_ar': '',
     }
 

@@ -21,12 +21,19 @@ class Weights:
         return tuple(round(weight * 10) for weight in (self.ld, self.financing, self.makespan))
 
 
-def configured_solver(time_limit: float, *, deterministic: bool = False) -> cp_model.CpSolver:
+SEED = 7
+DETERMINISTIC_TIME_RATIO = 0.05
+
+
+def configured_solver(time_limit: float, *, deterministic: bool = False,
+                      deterministic_budget: float | None = None) -> cp_model.CpSolver:
     solver = cp_model.CpSolver()
-    solver.parameters.random_seed = 7
+    solver.parameters.random_seed = SEED
     solver.parameters.max_time_in_seconds = time_limit
     solver.parameters.num_workers = 1 if deterministic else 8
     if deterministic:
         # Prefer a reproducible search quota. The wall cap also applies under load.
-        solver.parameters.max_deterministic_time = 0.05 * time_limit
+        solver.parameters.max_deterministic_time = DETERMINISTIC_TIME_RATIO * (
+            time_limit if deterministic_budget is None else deterministic_budget
+        )
     return solver

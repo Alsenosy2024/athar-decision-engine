@@ -29,6 +29,7 @@ document.addEventListener('alpine:init', () => {
         resultBase: null,
     }), {
         changeTypes,
+        get pinnedDemand() { return this.template === 'production' && !!this.baseRun?.result?.decision_contract; },
         get ready() { return !!this.baseRun?.result.optimized?.plan; },
         get presets() {
             const bySector = this.template === 'contracting'
@@ -89,7 +90,7 @@ document.addEventListener('alpine:init', () => {
         setRisk(result, live) {
             this.risk = result;
             this.$nextTick(() => {
-                if (live()) histogramChart(this.$refs.mc, result);
+                if (live() && !this.pinnedDemand) histogramChart(this.$refs.mc, result);
             });
         },
         draft() {

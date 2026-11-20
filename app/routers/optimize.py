@@ -3,6 +3,8 @@ import json
 from fastapi import APIRouter, Depends, Request
 
 from app.db import audit, encode, request_conn, utc_now
+from app.decision_loop.contract import ContractError, solution_fingerprint
+from app.decision_loop.storage import decision_contract, previous_plan, replay_inputs
 from app.llm.explain import optimization_explanation
 from app.llm.provider import get_provider
 from app.optimization import contracting, production
@@ -14,7 +16,7 @@ from app.schemas import OptimizeRequest, OptimizeResult, RunDetail, RunKind, api
 router = APIRouter()
 
 
-@router.post('/companies/{cid}/optimize', response_model=OptimizeResult)
+@router.post('/companies/{cid}/optimize', response_model=OptimizeResult, response_model_exclude_unset=True)
 def optimize(cid: int, request: Request, body: OptimizeRequest | None = None,
              connection=Depends(request_conn)):
     settings = request.app.state.settings
@@ -23,13 +25,74 @@ def optimize(cid: int, request: Request, body: OptimizeRequest | None = None,
 
 def run_optimization(connection, cid, body, settings, provider, *, dataset_id=None):
     company = get_company(connection, cid)
-    dataset_id = body.dataset_id or dataset_id or company['active_dataset_id']
+    try:
+        if body.replay_run_id is not None:
+            if body.model_fields_set - {'replay_run_id'} or dataset_id is not None:
+                raise ContractError('invalid_replay', 'إعادة التشغيل تستخدم المدخلات المثبتة من غير تعديلات.')
+            dataset_id, payload, model, contract, previous, expected = replay_inputs(
+                connection, company, body.replay_run_id,
+            )
+            weights = contract['weights']
+            time_limit = contract['solver']['wall_limit_s']
+        else:
+            dataset_id, dataset, payload, model, weights = optimization_inputs(
+                connection, company, body, dataset_id,
+            )
+            time_limit = body.time_limit if body.time_limit is not None else settings.solver_time_limit
+            previous = previous_plan(connection, cid, body.previous_run_id)
+            contract = None
+            if body.forecast_id is not None:
+                contract = decision_contract(
+                    connection, company, dataset_id, payload, dataset['created_at'], model, weights,
+                    body.forecast_id, time_limit, body.previous_run_id, previous,
+                )
+
+        solver_module = {'contracting': contracting, 'production': production}[company['template']]
+        result = solver_module.solve(
+            payload, model['parameters'], weights, time_limit, decision_contract=contract, previous=previous,
+        )
+        if contract is not None:
+            result['decision_contract'] = contract
+            result['solution_fingerprint'] = solution_fingerprint(result)
+            if body.replay_run_id is not None and result['solution_fingerprint'] != expected:
+                raise ContractError('replay_result_changed', 'نتيجة الإعادة اختلفت عن التشغيل المحفوظ.')
+    except ContractError as error:
+        if error.code in ('forecast_not_found', 'run_not_found'):
+            status = 404
+        else:
+            status = 409 if error.code.startswith('replay_') else 422
+        raise api_error(status, error.code, str(error)) from None
+    except OptimizationInputError as error:
+        raise api_error(422, 'invalid_optimization_input', str(error)) from None
+
+    solver = result['solver']
+    grounded = optimization_explanation(company['template'], result, payload, model['parameters'])
+    result['explanation_ar'] = grounded if contract is not None else provider.explain(
+        {'grounded_ar': grounded}, grounded,
+    )
+    stored = result | {'effective_weights': weights}
+    run_id = connection.execute(
+        '''INSERT INTO runs (company_id, dataset_id, model_id, kind, result_json, status, wall_s, created_at)
+           VALUES (?, ?, ?, 'optimize', ?, ?, ?, ?)''',
+        (cid, dataset_id, model['id'], encode(stored), solver['status'], solver['wall_s'], utc_now()),
+    ).lastrowid
+    details = {key: value for key, value in {
+        'input_fingerprint': contract['input_fingerprint'] if contract is not None else None,
+        'replay_run_id': body.replay_run_id,
+        'previous_run_id': body.previous_run_id,
+    }.items() if value is not None}
+    audit(connection, cid, 'run.optimize', 'run', run_id, details or None)
+    return {'run_id': run_id, **result}
+
+
+def optimization_inputs(connection, company, body, default_dataset):
+    dataset_id = body.dataset_id or default_dataset or company['active_dataset_id']
     dataset = connection.execute(
-        'SELECT payload_json FROM datasets WHERE id = ? AND company_id = ?', (dataset_id, cid),
+        'SELECT payload_json, created_at FROM datasets WHERE id = ? AND company_id = ?',
+        (dataset_id, company['id']),
     ).fetchone()
     if dataset is None:
         raise api_error(404, 'dataset_not_found', 'مجموعة البيانات غير موجودة للشركة.')
-
     model = current_model(connection, company)
     template = get_template(company['template'])
     weight_specs = {item.id: item for item in template.objective_weights}
@@ -37,26 +100,7 @@ def run_optimization(connection, cid, body, settings, provider, *, dataset_id=No
     for key, value in weights.items():
         if key not in weight_specs or not weight_specs[key].min <= value <= weight_specs[key].max:
             raise api_error(422, 'invalid_weight', f'الوزن خارج النطاق المسموح ({key}).')
-
-    time_limit = body.time_limit if body.time_limit is not None else settings.solver_time_limit
-    solver_module = {'contracting': contracting, 'production': production}[company['template']]
-    payload = json.loads(dataset['payload_json'])
-    try:
-        result = solver_module.solve(payload, model['parameters'], weights, time_limit)
-    except OptimizationInputError as error:
-        raise api_error(422, 'invalid_optimization_input', str(error)) from None
-
-    solver = result['solver']
-    grounded = optimization_explanation(company['template'], result, payload, model['parameters'])
-    result['explanation_ar'] = provider.explain({'grounded_ar': grounded}, grounded)
-    stored = result | {'effective_weights': weights}
-    run_id = connection.execute(
-        '''INSERT INTO runs (company_id, dataset_id, model_id, kind, result_json, status, wall_s, created_at)
-           VALUES (?, ?, ?, 'optimize', ?, ?, ?, ?)''',
-        (cid, dataset_id, model['id'], encode(stored), solver['status'], solver['wall_s'], utc_now()),
-    ).lastrowid
-    audit(connection, cid, 'run.optimize', 'run', run_id)
-    return {'run_id': run_id, **result}
+    return dataset_id, dataset, json.loads(dataset['payload_json']), model, weights
 
 
 def run_detail(row):
