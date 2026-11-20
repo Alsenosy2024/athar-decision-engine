@@ -8,7 +8,7 @@ from playwright.sync_api import expect, sync_playwright
 import pytest
 
 from app.llm import codex_cli
-from qa.phase16_browser import PASSWORD, capture, download_excel, login, post_from as await_post, server
+from qa.phase16_browser import PASSWORD, capture, download_excel, login, post_from as await_post, server, click_workspace_link
 from qa.phase17_browser import upload_template
 from qa.phase26_video import record_home
 from test_p21_living_map import ASSUMPTIONS, QUESTION, codex_parse
@@ -49,7 +49,7 @@ def local_context(browser, origin, width, errors, **options):
 
 
 def new_company(page):
-    page.get_by_role('link', name='تجهيز الشركة', exact=True).click()
+    click_workspace_link(page, 'تجهيز الشركة')
     page.get_by_label('اسم الشركة').fill(COMPANY)
     page.get_by_label('قالب القطاع').select_option('trading')
     company = post_from(page, '/onboarding/companies', page.get_by_role('button', name='أنشئ الشركة'))
@@ -71,7 +71,7 @@ def update_sales(page, company_id):
         'username': OWNER, 'password': PASSWORD, 'role': 'planner', 'company_ids': [company_id],
     })
     assert response.ok, response.text()
-    page.get_by_role('link', name='أصحاب البيانات').click()
+    click_workspace_link(page, 'أصحاب البيانات')
     page.get_by_label('الشركة', exact=True).select_option(str(company_id))
     tile = page.get_by_role('article').filter(has=page.get_by_role('heading', name='المبيعات والطلب'))
     tile.get_by_label('المخطّط').select_option(str(response.json()['id']))
@@ -92,7 +92,7 @@ def update_sales(page, company_id):
 
     page.get_by_role('button', name='خروج').click()
     sign_in(page, 'qa-owner')
-    page.get_by_role('link', name='أصحاب البيانات').click()
+    click_workspace_link(page, 'أصحاب البيانات')
     page.get_by_label('الشركة', exact=True).select_option(str(company_id))
     page.get_by_role('link', name='طلبات الاعتماد').click()
     pending = page.locator('details').filter(has_text='مستني اعتماد')
@@ -146,7 +146,7 @@ def ask(page, stage, model_id):
     assert result['paths']
     expect(stage).to_have_attribute('data-ripple', 'running')
     expect(stage).to_have_attribute('data-ripple', 'complete', timeout=8000)
-    expect(page.get_by_test_id('map-impact-kpis')).to_contain_text('P90')
+    expect(page.get_by_text('سيناريو محدد · هامش عدم اليقين صفر', exact=False)).to_be_visible()
     expect(page.get_by_test_id('map-chain')).to_contain_text('الأسبوع')
     week = page.get_by_role('slider', name='أسبوع وصول الأثر')
     final_week = week.get_attribute('max')
@@ -191,7 +191,7 @@ def compare(page):
 
 
 def approve(page, model_id):
-    page.get_by_role('link', name='القرارات والمتابعة', exact=True).click()
+    click_workspace_link(page, 'القرارات والمتابعة')
     base = f'/enterprise/models/{model_id}/prescriptive'
     page.get_by_role('combobox', name='المدخل القابل للتحكم').select_option('price')
     for key, value in [('profit', '5'), ('cash', '1700'), ('min-0', '25'), ('max-0', '30')]:
@@ -211,7 +211,7 @@ def approve(page, model_id):
 
 
 def export_comparison(page, comparison):
-    page.get_by_role('link', name='مقارنة السيناريوهات', exact=True).click()
+    click_workspace_link(page, 'مقارنة السيناريوهات')
     for row in comparison['scenarios']:
         page.get_by_role('checkbox', name=row['name']).check()
     post_from(page, '/enterprise/scenarios/compare', page.get_by_test_id('compare-scenarios'))

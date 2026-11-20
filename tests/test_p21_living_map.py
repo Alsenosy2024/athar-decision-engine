@@ -14,7 +14,7 @@ from app.enterprise.living_map import GROUP
 from app.enterprise.schema import NodeType
 from app.enterprise.whatif import ImpactModel
 from app.llm import codex_cli
-from qa.phase16_browser import capture, login, post_from, server
+from qa.phase16_browser import capture, login, post_from, server, click_workspace_link
 from conftest import sign_in
 from test_p15_access import USER_PASSWORD, new_account
 
@@ -126,15 +126,19 @@ def test_map_scope_and_goal_csrf(client):
     new_account(client, 'viewer', (2,))
     with TestClient(client.app) as viewer:
         assert viewer.get(API).status_code == 401
+        assert viewer.get(API + '/baseline').status_code == 401
         sign_in(viewer, 'viewer', USER_PASSWORD)
         assert viewer.get(API, params={'company_id': 1}).status_code == 404
         assert viewer.get(API, params={'model_id': model_id}).status_code == 404
+        assert viewer.get(API + '/baseline', params={'model_id': model_id}).status_code == 404
         assert viewer.get(API).status_code == 200  # Shared fictional demo.
         assert viewer.post(API + '/goal-seek', json=goal).status_code == 403
     assert client.post(API + '/goal-seek', headers={'X-CSRF-Token': 'bad'}, json=goal).status_code == 403
     reference = client.post(API + '/baseline', json={'model_id': model_id, 'version': 1})
     assert reference.json() == {'profit': 240, 'cash_low': 500, 'credit_breach': None,
                                 'delays': None, 'fill_rate': None}
+    automatic = client.get(API + '/baseline', params={'model_id': model_id, 'version': 1})
+    assert automatic.status_code == 200 and automatic.json() == reference.json()
     result = client.post(API + '/goal-seek', json=goal)
     assert result.status_code == 200, result.text
     first = result.json()['recommendations'][0]
@@ -217,11 +221,11 @@ def test_map_browser(width):
         page.get_by_test_id('theme-toggle').click()
         shot('night', page.locator('.lm-shell'), theme=True)
         page.get_by_test_id('theme-toggle').click()
-        if width == 1440:
-            baseline = post_from(page, '/enterprise/map/baseline', page.get_by_role('button', name='احسب خط الأساس'))
-            assert all(value is not None for value in baseline.values())
-            assert 0 <= baseline['fill_rate'] <= 100
-            shot('baseline', page.locator('.lm-shell'))
+        executive = page.get_by_test_id('map-kpis')
+        expect(executive.locator('article')).to_have_count(4)
+        expect(executive.locator('.lm-ribbon-value bdi').first).not_to_have_text('—', timeout=90_000)
+        expect(executive.locator('.lm-ribbon-value bdi').nth(1)).not_to_have_text('—')
+        shot('baseline', page.locator('.lm-shell'))
 
         profile = page.request.get('/api/auth/me').json()
         headers = {'X-CSRF-Token': profile['csrf_token']}
@@ -248,7 +252,8 @@ def test_map_browser(width):
             expect(week).to_have_value('2')
             shot('ripple', stage)
         expect(stage).to_have_attribute('data-ripple', 'complete', timeout=8000)
-        expect(page.get_by_test_id('map-impact-kpis')).to_contain_text('P90')
+        expect(page.get_by_text('سيناريو محدد · هامش عدم اليقين صفر', exact=False)).to_be_visible()
+        expect(page.get_by_test_id('map-impact-kpis').locator('.lm-bands:visible')).to_have_count(0)
         expect(page.get_by_test_id('map-ranked')).to_contain_text('الأرباح والخسائر')
         expect(page.get_by_test_id('map-chain')).to_contain_text('الأسبوع 4')
         expect(week).to_have_value('4')
@@ -283,9 +288,9 @@ def test_map_browser(width):
         compared = post_from(page, '/enterprise/scenarios/compare', panel.get_by_role('button', name='قارن المختار'))
         assert {item['id'] for item in compared['scenarios']} == {first['id'], second['id']}
         expect(page.get_by_test_id('map-comparison')).to_contain_text('بديل من التوصية')
-        page.get_by_role('link', name='لوحة التحكم', exact=True).click()
+        click_workspace_link(page, 'لوحة التحكم')
         expect(page.get_by_test_id('page-dashboard')).to_be_visible()
-        page.get_by_role('link', name='خريطة الشركة', exact=True).click()
+        click_workspace_link(page, 'خريطة الشركة')
         expect(stage).to_have_attribute('data-ripple', 'idle')
         assert not errors, errors
         assert codex.call_count == 1

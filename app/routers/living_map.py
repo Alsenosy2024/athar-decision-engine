@@ -71,6 +71,13 @@ def baseline(body: MapBaseline, request: Request, connection=Depends(request_con
         return kpis(computed.metrics(), computed.fill_rate)
 
 
+@router.get('/baseline')
+def read_baseline(request: Request, model_id: Selection = None, version: Selection = None,
+                  weeks: Annotated[int, Query(ge=1, le=104)] = 52,
+                  connection=Depends(request_conn)):
+    return baseline(MapBaseline(model_id=model_id, version=version, weeks=weeks), request, connection)
+
+
 class MapGoal(MapSelection):
     goal: decision.Goal
 

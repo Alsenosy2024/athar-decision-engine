@@ -1,0 +1,109 @@
+.executive-strip {
+    display: grid;
+    gap: 10px;
+    min-inline-size: 0;
+}
+.executive-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-flow: row;
+    overflow: visible;
+}
+.executive-grid article {
+    min-inline-size: 0;
+    animation: none;
+    border-block-start: 3px solid var(--signal-line, var(--lm-border, var(--line)));
+    transition: border-color 780ms cubic-bezier(.22, .61, .36, 1),
+                background-color 780ms cubic-bezier(.22, .61, .36, 1);
+}
+.executive-grid article[data-tone="positive"],
+.executive-grid article[data-tone="critical"] {
+    background-color: color-mix(in srgb, var(--signal-line) 9%, var(--lm-paper, var(--paper)));
+}
+.executive-grid .lm-ribbon-value > bdi,
+.executive-grid .kpi-value {
+    font-family: "Thmanyah Serif Display";
+    font-size: clamp(1.45rem, 2.3vw, 2.35rem);
+    font-weight: 900;
+    line-height: 1.22;
+    overflow-wrap: anywhere;
+}
+.executive-grid .lm-ribbon-value {
+    margin-block: 3px;
+}
+.executive-grid .lm-ribbon-value small { font-size: .82rem; }
+.executive-grid .lm-ribbon-value svg { margin-inline-start: auto; }
+.executive-delta {
+    color: var(--signal-line, var(--lm-dim, var(--muted)));
+    font-size: .82rem;
+}
+.executive-grid [data-tone="positive"] { --signal-line: var(--lm-green, var(--accent)); }
+.executive-grid [data-tone="critical"],
+.executive-actions [data-tone="critical"] { --signal-line: var(--lm-alert, var(--chart-danger)); }
+.executive-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 8px;
+}
+.executive-actions > div {
+    background: var(--lm-paper, var(--paper));
+    border: 1px solid var(--lm-border, var(--line));
+    border-inline-start: 3px solid var(--signal-line, var(--lm-deep, var(--accent)));
+    border-radius: 9px;
+    min-inline-size: 0;
+    padding: 8px 12px;
+    overflow-wrap: anywhere;
+}
+.executive-actions h2 {
+    font-family: "Thmanyah Serif Text";
+    font-size: .8rem;
+    color: var(--signal-line, var(--lm-deep, var(--accent)));
+}
+.executive-actions p { font-size: .86rem; }
+.executive-actions a,
+.executive-actions button { margin-inline-start: .35em; color: var(--lm-deep, var(--accent)); }
+.lm-node-value {
+    color: var(--lm-halo, var(--lm-text));
+    transition: color 780ms cubic-bezier(.22, .61, .36, 1);
+}
+.lm-department {
+    transition: box-shadow 780ms cubic-bezier(.22, .61, .36, 1),
+                border-color 780ms cubic-bezier(.22, .61, .36, 1);
+}
+.lm-bands > div { min-inline-size: 0; }
+.lm-bands dt, .lm-bands dd { overflow-wrap: anywhere; }
+
+.menu-toggle { display: none; }
+@media (max-width: 1050px) {
+    .kpi-grid.executive-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 780px) {
+    .sidebar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .sidebar-heading .brand { padding-block-end: 0; padding-inline: 0; }
+    .sidebar .brand-tagline { display: none; }
+    .menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-block-size: 44px;
+        padding-inline: 10px;
+        border: 1px solid #77927a;
+        border-radius: 7px;
+        background: transparent;
+    }
+    .sidebar[data-menu-open="false"] #workspace-nav { display: none; }
+    #workspace-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #workspace-nav a { min-block-size: 44px; overflow-wrap: anywhere; }
+    .topbar .company-control { min-inline-size: 0; max-inline-size: 100%; }
+    .topbar .company-control select { max-inline-size: 100%; text-overflow: ellipsis; }
+    .lm-ribbon.executive-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .executive-actions { grid-template-columns: minmax(0, 1fr); }
+    .lm-layout:not(.lm-process-only) .lm-map-panel { grid-row: auto; }
+}
+@media (max-width: 470px) {
+    .topbar .company-control { flex-basis: 100%; }
+    .topbar .theme-button { min-inline-size: 44px; min-block-size: 44px; justify-content: center; }
+    .topbar .theme-caption { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .executive-grid article, .lm-node-value, .lm-department { animation: none; transition: none; }
+}

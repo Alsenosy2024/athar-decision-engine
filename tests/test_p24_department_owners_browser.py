@@ -7,7 +7,7 @@ import pytest
 from playwright.sync_api import expect, sync_playwright
 import httpx
 
-from qa.phase16_browser import PASSWORD, capture, server
+from qa.phase16_browser import PASSWORD, capture, server, click_workspace_link
 
 
 def sign_in(page, username):
@@ -69,7 +69,7 @@ def test_department_owner_browser(width):
         try:
             page.goto(url)
             sign_in(page, 'qa-owner')
-            page.get_by_role('link', name='أصحاب البيانات').click()
+            click_workspace_link(page, 'أصحاب البيانات')
             expect(page.get_by_role('heading', name='تكليف الأقسام')).to_be_visible()
             expect(page.get_by_label('الشركة', exact=True)).to_have_value(str(cid))
             tile = page.get_by_role('article').filter(has=page.get_by_role('heading', name='المبيعات والطلب'))
@@ -107,7 +107,7 @@ def test_department_owner_browser(width):
 
             page.get_by_role('button', name='خروج').click()
             sign_in(page, 'qa-owner')
-            page.get_by_role('link', name='أصحاب البيانات').click()
+            click_workspace_link(page, 'أصحاب البيانات')
             page.get_by_role('link', name='طلبات الاعتماد').click()
             item = page.locator('details').filter(has_text='مستني اعتماد')
             expect(item.get_by_role('row').filter(has_text='الطلب الأسبوعي')).to_contain_text('125')

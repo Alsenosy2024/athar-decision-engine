@@ -55,17 +55,6 @@ function mapBriefing(page) {
                 mapPair(edge.from_department, edge.to_department), { progress: 1, pulse: 0, adverse },
             ]));
         },
-        ribbonLabel(metric) {
-            return metric.id === 'credit_breach' && metric.bands ? 'تجاوز الائتمان في السحبات' : metric.label;
-        },
-        ribbonValue(metric) {
-            return metric.bands?.p50 ?? metric.headline;
-        },
-        ribbonCaption(metric) {
-            if (this.ribbonValue(metric) == null) return 'غير متاح';
-            return [metric.bands ? 'P50' : 'خط الأساس', this.source(metric.source),
-                metric.history.length > 1 ? 'الاتجاه التاريخي' : ''].filter(Boolean).join(' · ');
-        },
     };
     return Object.defineProperties(page, Object.getOwnPropertyDescriptors(briefing));
 }

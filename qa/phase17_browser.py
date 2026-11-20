@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from openpyxl import load_workbook
 from playwright.sync_api import expect, sync_playwright
 
-from qa.phase16_browser import capture, check_chart, login, server
+from qa.phase16_browser import capture, check_chart, login, server, click_workspace_link
 
 
 def upload_template(page):
@@ -60,7 +60,7 @@ def run(width, screens=None):
         try:
             page.goto(url)
             login(page, 'qa-owner')
-            page.get_by_role('link', name='تجهيز الشركة', exact=True).click()
+            click_workspace_link(page, 'تجهيز الشركة')
             page.get_by_label('اسم الشركة').fill('شركة توزيع تجريبية')
             page.get_by_label('قالب القطاع').select_option('trading')
             page.get_by_role('button', name='أنشئ الشركة').click()

@@ -139,7 +139,7 @@ function createLivingMapCanvas(stage) {
         for (const road of roads) {
             const focused = !view.focus || view.focus === road.from || view.focus === road.to;
             const lineWidth = 2 + road.weight * 4;
-            ctx.globalAlpha = intro * (focused ? .85 : .21);
+            ctx.globalAlpha = intro * (focused ? .95 : .24);
             ctx.lineCap = 'round';
             ctx.strokeStyle = colors.glow;
             ctx.lineWidth = lineWidth + 6;
@@ -156,15 +156,18 @@ function createLivingMapCanvas(stage) {
             const active = view.effects.get(road.key);
             if (active) {
                 const tone = active.adverse ? colors.alert : colors.surge;
-                ctx.globalAlpha = active.progress >= 1 ? .68 : .92;
+                ctx.globalAlpha = active.progress >= 1 ? .85 : 1;
                 const lead = position(road, active.progress);
                 const trail = road.points.filter((_, i) => road.lengths[i] < active.progress * road.lengths.at(-1));
                 if (trail.length) {
                     ctx.strokeStyle = tone;
-                    ctx.lineWidth = lineWidth + 1;
+                    ctx.lineWidth = lineWidth + 2.5;
                     ctx.stroke(trace([...trail, lead]));
                 }
-                if (active.progress < 1) dot(...lead, 4, tone, 12);
+                if (active.progress < 1 && !reduced.matches) {
+                    dot(...lead, 6, tone, 12);
+                    dot(...lead, 2.3, colors['road-core']);
+                }
                 if (active.pulse && !reduced.matches) {
                     const [x, y] = position(road, 1);
                     ctx.globalAlpha = .8 * (1 - active.pulse);
@@ -187,7 +190,7 @@ function createLivingMapCanvas(stage) {
 
             if (!reduced.matches && focused && !active) {
                 const progress = (elapsed * (.17 + .11 * road.weight) + road.index * .37) % 1;
-                dot(...position(road, progress), 1.6, colors['road-core'], 5);
+                dot(...position(road, progress), 2.2, colors['road-core'], 5);
             }
         }
         ctx.globalAlpha = 1;
@@ -202,6 +205,7 @@ function createLivingMapCanvas(stage) {
     resize.observe(stage);
     const onVisibility = () => { if (!document.hidden) schedule(); };
     document.addEventListener('visibilitychange', onVisibility);
+    reduced.addEventListener('change', schedule);
 
     return {
         update(next) {
@@ -217,6 +221,7 @@ function createLivingMapCanvas(stage) {
             cancelAnimationFrame(frame);
             resize.disconnect();
             document.removeEventListener('visibilitychange', onVisibility);
+            reduced.removeEventListener('change', schedule);
         },
     };
 }

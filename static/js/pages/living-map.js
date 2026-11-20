@@ -33,11 +33,15 @@ function mapTimeline(result, assumptions) {
         if (!source) return [];
         const lag = edge.rule?.lag_weeks || 0;
         const arrival = source.week + lag;
-        return [{ ...edge, lag, arrival, start: source.week + source.depth * .22,
-            end: arrival + (source.depth + 1) * .22 }];
-    }).sort((a, b) => a.end - b.end || a.start - b.start);
-    return { times, waves, lastWeek: Math.max(0, ...waves.map(edge => edge.arrival)) + 1,
-        duration: Math.max(.45, ...waves.map(edge => edge.end + .34)) };
+        return [{ ...edge, lag, arrival, phase: arrival + source.depth * .2 }];
+    }).sort((a, b) => a.phase - b.phase);
+    const lastWeek = Math.max(0, ...waves.map(edge => edge.arrival)) + 1;
+    const interval = Math.min(executiveMotion.duration, 4500 / Math.max(lastWeek, ...waves.map(edge => edge.phase)));
+    for (const edge of waves) {
+        edge.start = edge.phase * interval;
+        edge.end = edge.start + executiveMotion.duration;
+    }
+    return { times, waves, lastWeek, interval, duration: Math.max(780, ...waves.map(edge => edge.end + 230)) };
 }
 
 document.addEventListener('alpine:init', () => {
@@ -45,7 +49,7 @@ document.addEventListener('alpine:init', () => {
         let renderer, animation = 0, timeline;
         let visit = 0, active = '';
         let nodeById = new Map(), resultById = new Map(), departmentById = new Map(), edgeByPair = new Map();
-        const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+        const reduced = executiveMotion.reduced;
 
         const page = {
             processMarkup: '',
@@ -158,6 +162,7 @@ document.addEventListener('alpine:init', () => {
                 active = key;
                 visit++;
                 this.resetBriefing();
+                this.resetExecutiveBaseline();
                 this.stop();
                 renderer?.destroy();
                 renderer = null;
@@ -171,6 +176,7 @@ document.addEventListener('alpine:init', () => {
             destroy() {
                 visit++;
                 this.resetBriefing();
+                this.resetExecutiveBaseline();
                 this.stop();
                 renderer?.destroy();
             },
@@ -212,6 +218,7 @@ document.addEventListener('alpine:init', () => {
                     if (refresh && !map.process_only && !this.map?.process_only &&
                         map.model.id === this.map?.model.id && map.model.version === this.map?.model.version) {
                         this.refreshBriefing();
+                        this.refreshExecutiveBaseline();
                         return;
                     }
                     this.resetBriefing();
@@ -238,18 +245,13 @@ document.addEventListener('alpine:init', () => {
                         week: 0, saved: scoped, scenarioName: '', comparison: null, compareIds: [],
                         goalDriver: '', goalLow: '', goalHigh: '', goalProfit: '', goalCash: '', recommendations: null });
                     if (!map.process_only) this.refreshBriefing();
+                    this.refreshExecutiveBaseline({ defer: true });
                     this.$nextTick(() => {
                         if (live()) this.paint(this.$store.app.theme);
                     });
                 });
             },
             chooseModel(value) { this.load(this.$store.app.companyId, value); },
-            loadBaseline() {
-                return this.work('baseline', async live => {
-                    const values = await api('/enterprise/map/baseline', post({ ...this.selection, weeks: Number(this.weeks) }));
-                    if (live()) this.baselineKpis = values;
-                });
-            },
             makeEdit(row) {
                 return { node_id: row.node_id, operation: row.operation || 'set',
                     value: row.value, uncertainty: row.uncertainty || 0 };
@@ -310,9 +312,9 @@ document.addEventListener('alpine:init', () => {
                     const mapped = edgeByPair.get(mapPair(edge.source, edge.target));
                     if (!mapped || (this.clock == null ? this.week <= edge.arrival : this.clock < edge.start)) continue;
                     const key = mapPair(mapped.from_department, mapped.to_department);
-                    const progress = this.clock == null ? 1 :
-                        Math.max(0, Math.min(1, (this.clock - edge.start) / (edge.end - edge.start)));
-                    const trail = this.clock == null ? 0 : (this.clock - edge.end) / .34;
+                    const progress = this.clock == null ? 1 : executiveMotion.ease(
+                        Math.max(0, Math.min(1, (this.clock - edge.start) / (edge.end - edge.start))));
+                    const trail = this.clock == null ? 0 : (this.clock - edge.end) / 230;
                     const pulse = trail > 0 && trail < 1 ? trail : 0;
                     const adverse = mapAdverse(resultById.get(edge.target));
                     const prior = effects.get(key);
@@ -342,7 +344,7 @@ document.addEventListener('alpine:init', () => {
                 this.selectAlert('');
                 if (this.isSimulating) {
                     this.stop();
-                    this.week = 1;
+                    this.week = reduced.matches ? this.lastWeek : 1;
                     if (reduced.matches) return;
                     this.clock = 0;
                     this.playing = true;
@@ -351,7 +353,8 @@ document.addEventListener('alpine:init', () => {
                     const tick = now => {
                         const elapsed = (now - start) / interval;
                         this.week = Math.min(this.lastWeek, Math.floor(elapsed) + 1);
-                        if (elapsed >= this.lastWeek) {
+                        if (reduced.matches || elapsed >= this.lastWeek) {
+                            this.week = this.lastWeek;
                             this.stop();
                             return;
                         }
@@ -371,16 +374,15 @@ document.addEventListener('alpine:init', () => {
                 this.clock = 0;
                 this.playing = true;
                 const start = performance.now();
-                const duration = Math.min(6500, Math.max(1450, timeline.duration * 700));
                 const tick = now => {
-                    const progress = Math.min(1, (now - start) / duration);
-                    if (progress >= 1) {
+                    const elapsed = now - start;
+                    if (reduced.matches || elapsed >= timeline.duration) {
                         this.stop();
                         this.week = timeline.lastWeek;
                         return;
                     }
-                    this.clock = timeline.duration * progress;
-                    this.week = Math.min(timeline.lastWeek, Math.floor(this.clock) + 1);
+                    this.clock = elapsed;
+                    this.week = Math.min(timeline.lastWeek, Math.floor(this.clock / timeline.interval) + 1);
                     animation = requestAnimationFrame(tick);
                 };
                 animation = requestAnimationFrame(tick);
@@ -433,6 +435,7 @@ document.addEventListener('alpine:init', () => {
             },
         };
         Object.defineProperties(page, Object.getOwnPropertyDescriptors(processFlowControls()));
+        Object.defineProperties(page, Object.getOwnPropertyDescriptors(mapExecutiveControls()));
         return mapBriefing(page);
     });
 });

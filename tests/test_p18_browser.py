@@ -5,7 +5,7 @@ from playwright.sync_api import expect, sync_playwright
 import pytest
 
 from app.db import utc_now
-from qa.phase16_browser import capture, login, post_from, server
+from qa.phase16_browser import capture, login, post_from, server, click_workspace_link
 from test_p18_prescriptive import model_data
 
 
@@ -93,8 +93,8 @@ def test_prescriptive_browser_workflow(width):
         data['graph']['nodes'][3]['baseline']['value'] = 60
         changed = page.request.put(model_url, data={**data, 'expected_version': 1}, headers=headers)
         assert changed.ok, changed.text()
-        page.get_by_role('link', name='لوحة التحكم', exact=True).click()
-        page.get_by_role('link', name='القرارات والمتابعة', exact=True).click()
+        click_workspace_link(page, 'لوحة التحكم')
+        click_workspace_link(page, 'القرارات والمتابعة')
         expect(page.get_by_test_id('p18-alert')).to_have_count(1)
         expect(page.get_by_test_id('p18-alert')).to_contain_text('تأخير')
         screen('monitor')

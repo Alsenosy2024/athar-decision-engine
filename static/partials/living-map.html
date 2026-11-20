@@ -17,10 +17,6 @@
           <span>جاهزية البيانات</span>
           <strong x-text="number(map.readiness) + '%'"></strong>
         </div>
-        <button class="lm-action lm-baseline-button" type="button"
-                x-show="editable && map.has_engines && !result && !baselineKpis && !map.analysis_error"
-                :disabled="!!busy" @click="loadBaseline()"
-                x-text="busy === 'baseline' ? 'بنحسب المؤشرات…' : 'احسب خط الأساس'"></button>
         <label x-show="models.length > 1">النموذج
           <select :value="selectedModel" @change="chooseModel($event.target.value)" :disabled="!!busy">
             <template x-for="model in models" :key="model.id">
@@ -31,41 +27,41 @@
       </div>
     </header>
 
-    <section class="lm-briefing" x-show="!map.process_only" aria-labelledby="lm-briefing-title" data-testid="map-briefing">
-      <div class="lm-briefing-copy" aria-live="polite">
-        <div class="lm-briefing-heading">
-          <h2 id="lm-briefing-title">موجز الشركة</h2>
-          <span class="lm-pill" x-show="briefing"
-                x-text="briefing?.provider === 'codex' ? 'Codex' : 'قواعد محلية'"></span>
-          <span class="lm-pill" x-show="briefing?.alerts.length"
-                x-text="number(briefing?.alerts.length ?? 0) + ' · إشارات على الخريطة'"></span>
-        </div>
-        <p x-show="briefingLoading && !briefing">بنراجع آخر بيانات الشركة…</p>
-        <p x-show="briefing" x-text="briefing?.reply_ar"></p>
-        <p class="lm-briefing-warning" x-show="briefing?.warning" x-text="briefing?.warning"></p>
-        <p class="lm-briefing-warning" x-show="briefing?.unavailable.length">
-          فيه حدود متابعة لسه مفيش مؤشرات كفاية لتقييمها.
-        </p>
-        <p class="lm-briefing-warning" x-show="briefingError" x-text="briefingError"></p>
+    <section class="executive-strip" aria-label="ملخص القرار" x-show="metrics.length">
+      <div class="lm-ribbon executive-grid" aria-label="مؤشرات الشركة" data-testid="map-kpis">
+        <template x-for="metric in executiveMetrics" :key="metric.id">
+          <article :data-tone="executiveChange(metric).tone">
+            <h2 x-text="metric.label"></h2>
+            <div class="lm-ribbon-value">
+              <bdi x-effect="animateValue($el, metric.headline)"
+                   :aria-label="mapValue(metric.headline, metric.unit)"></bdi>
+              <small x-show="metric.headline != null" x-text="unitLabel(metric.unit)"></small>
+              <svg x-show="metric.history.length > 1" viewBox="0 0 80 24" aria-hidden="true">
+                <polyline :points="spark(metric.history)" fill="none" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="executive-delta">
+              <span aria-hidden="true" x-text="executiveChange(metric).arrow"></span>
+              <bdi x-text="executiveChange(metric).text"></bdi>
+            </div>
+            <small x-text="executiveCaption(metric)"></small>
+          </article>
+        </template>
       </div>
-      <button class="lm-action" type="button" :disabled="!!busy || briefingLoading"
-              @click="load($store.app.companyId, selectedModel, { refresh: true })">حدّث الموجز</button>
+      <div class="executive-actions">
+        <div :data-tone="mainAlert ? 'critical' : 'idle'">
+          <h2>أهم تنبيه</h2><p x-text="signalText"></p>
+        </div>
+        <div>
+          <h2>التوصية والخطوة الجاية</h2>
+          <p><span x-text="executiveDecision.text"></span>
+            <a x-show="executiveDecision.href" :href="executiveDecision.href" x-text="executiveDecision.next"></a>
+            <button x-show="!executiveDecision.href" class="lm-text-action" type="button"
+                    @click="executiveDecision.run?.()" x-text="executiveDecision.next"></button>
+          </p>
+        </div>
+      </div>
     </section>
-
-    <div class="lm-ribbon" aria-label="مؤشرات الشركة" x-show="metrics.length" data-testid="map-kpis">
-      <template x-for="metric in metrics" :key="metric.id">
-        <article>
-          <h2 x-text="ribbonLabel(metric)"></h2>
-          <div class="lm-ribbon-value">
-            <bdi x-text="mapValue(ribbonValue(metric), metric.unit)"></bdi>
-            <svg x-show="metric.history.length > 1" viewBox="0 0 80 24" aria-hidden="true">
-              <polyline :points="spark(metric.history)" fill="none" stroke="currentColor" stroke-width="2"/>
-            </svg>
-          </div>
-          <small x-text="ribbonCaption(metric)"></small>
-        </article>
-      </template>
-    </div>
 
     <div class="lm-layout" :class="{ 'lm-process-only': map.process_only }">
       <aside class="lm-panel lm-input" x-show="!map.process_only" x-ref="inputPanel" aria-labelledby="lm-input-title">
@@ -127,7 +123,7 @@
                 <button type="button" class="lm-action" @click="addDriver()" :disabled="!driverId || !!busy || edits.length >= 50">ضيف</button>
               </div>
               <label class="lm-horizon">أفق الحساب
-                <select x-model.number="weeks" @change="baselineKpis = null" :disabled="!!busy">
+                <select x-model.number="weeks" @change="$nextTick(() => refreshExecutiveBaseline())" :disabled="!!busy">
                   <option value="1">أسبوع</option><option value="4">4 أسابيع</option>
                   <option value="13">13 أسبوع</option><option value="26">26 أسبوع</option>
                   <option value="52">52 أسبوع</option><option value="104">104 أسبوع</option>
@@ -143,7 +139,7 @@
         <p x-show="map.analysis_error" x-text="map.analysis_error"></p>
       </aside>
 
-      <section class="lm-map-panel" aria-labelledby="lm-network-title">
+      <section class="lm-map-panel" aria-labelledby="lm-network-title" x-ref="executiveNetwork" tabindex="-1">
         <header class="lm-network-head">
           <div>
             <h2 id="lm-network-title">شبكة الأقسام</h2>
@@ -168,7 +164,8 @@
                       :style="'--lm-enter:' + index" @click="openDepartment(dept.id)">
                 <span class="lm-node-label"><i aria-hidden="true"></i><span x-text="dept.name_ar"></span></span>
                 <span class="lm-node-measure" x-show="dept.headline_id" x-text="label(dept.headline_id)"></span>
-                <bdi class="lm-node-value" x-show="dept.headline_id" x-text="mapValue(nodeAtWeek(dept.headline_id)?.value, unit(dept.headline_id))"></bdi>
+                <bdi class="lm-node-value" x-show="dept.headline_id"
+                     x-effect="animateValue($el, nodeAtWeek(dept.headline_id)?.value, value => mapValue(value, unit(dept.headline_id)))"></bdi>
                 <span class="lm-node-meta" x-show="dept.headline_id" x-text="source(nodeAtWeek(dept.headline_id)?.source)"></span>
                 <span class="lm-alert-pin" x-show="alertsFor(dept.id).length" data-testid="map-alert-pin">
                   <i aria-hidden="true"></i><span>تنبيهات</span><bdi x-text="number(alertsFor(dept.id).length)"></bdi>
@@ -195,7 +192,8 @@
           <button type="button" class="lm-action" x-show="processReport && flowMode === 'impact'" @click="showFlows()">ارجع لتدفقات السجل</button>
         </div>
         <template x-if="activeAlert">
-          <section class="lm-detail lm-alert-trace" data-testid="map-alert-trace" aria-label="تتبّع التنبيه">
+          <section class="lm-detail lm-alert-trace" data-testid="map-alert-trace" aria-label="تتبّع التنبيه"
+                   x-ref="executiveTrace" tabindex="-1">
             <div class="lm-row">
               <h3>تتبّع التنبيه</h3>
               <button class="lm-action" type="button" @click="selectAlert('')">اقفل التتبّع</button>
@@ -243,12 +241,15 @@
         </template>
       </section>
 
-      <aside class="lm-panel lm-output" x-show="!map.process_only" aria-labelledby="lm-output-title">
+      <aside class="lm-panel lm-output" x-show="!map.process_only" aria-labelledby="lm-output-title"
+             x-ref="executiveResults" tabindex="-1">
         <header class="lm-panel-head"><h2 id="lm-output-title">نتائج الأثر</h2></header>
         <p x-show="!result">نتيجة الحساب وسلسلة الأثر هتظهر هنا بعد تأكيد الفرضيات.</p>
         <template x-if="result">
           <div class="lm-stack">
             <p class="lm-result-caption">المؤشرات بتلخّص أفق الحساب. شريط الزمن بيعرض وصول الأثر.</p>
+            <p class="lm-result-caption" x-show="fixedScenario">سيناريو محدد · هامش عدم اليقين صفر، فلكل مؤشر نتيجة واحدة.</p>
+            <p class="lm-result-caption" x-show="!fixedScenario">المئينات بترتّب نتائج المحاكاة من الأقل (P10) للوسيط (P50) للأعلى (P90). التفاؤل حسب اتجاه المؤشر.</p>
             <div class="lm-kpi-list" data-testid="map-impact-kpis">
               <template x-for="metric in metrics" :key="metric.id">
                 <article>
@@ -258,9 +259,10 @@
                   </div>
                   <div class="lm-row lm-kpi-v"><span>قبل <bdi x-text="mapValue(metric.baseline, metric.unit)"></bdi></span>
                     <span>بعد <bdi x-text="mapValue(metric.after, metric.unit)"></bdi></span></div>
-                  <dl class="lm-bands" dir="ltr" aria-label="نطاق المحاكاة">
+                  <dl class="lm-bands" x-show="!fixedScenario && metric.bands" aria-label="نطاق المحاكاة">
                     <template x-for="band in ['p10', 'p50', 'p90']" :key="band">
-                      <div><dt x-text="band.toUpperCase()"></dt><dd x-text="number(metric.bands?.[band])"></dd></div>
+                      <div><dt x-text="percentileLabel(band, executiveRisk(metric))"></dt>
+                        <dd><bdi x-text="mapValue(metric.bands?.[band], metric.unit)"></bdi></dd></div>
                     </template>
                   </dl>
                 </article>
@@ -295,7 +297,7 @@
           </div>
         </template>
 
-        <details class="lm-divider" x-show="canSeek">
+        <details class="lm-divider" x-show="canSeek" x-ref="executiveGoal">
           <summary>توصيات لهدف الربح</summary>
           <form class="lm-stack lm-mini-form" @submit.prevent="seek()">
             <label>المدخل القابل للتحكم
@@ -317,6 +319,7 @@
           </form>
           <template x-if="recommendations">
             <div class="lm-stack" data-testid="map-recommendations">
+              <p x-show="recommendations.evaluated_trials" x-text="'اتحسبت ' + number(recommendations.evaluated_trials) + ' تجربة. الترتيب حسب استيفاء القيود، ثم أعلى ربح، ثم أقل مخاطرة وتغيير.'"></p>
               <p x-show="!recommendations.recommendations.length">مفيش بديل قابل للحساب جوه النطاق ده.</p>
               <template x-for="(item, index) in recommendations.recommendations" :key="index">
                 <article class="lm-recommendation">
@@ -327,6 +330,7 @@
                   <p>أقل سيولة <bdi x-text="mapValue(item.cash, 'SAR')"></bdi></p>
                   <p x-show="item.risk != null">تجاوز الائتمان <bdi x-text="mapValue(item.risk, '%')"></bdi></p>
                   <p x-text="item.violations.length ? 'السيولة أقل من الحد المطلوب' : item.target_met === false ? 'البديل أقل من هدف الربح' : item.target_met ? 'البديل حقّق الهدف' : 'بديل محسوب'"></p>
+                  <small x-text="recommendationBasis(item)"></small>
                   <h3>محامي الشيطان</h3><p x-text="item.critique.reply_ar"></p>
                   <button class="lm-action" type="button" @click="useRecommendation(item)" :disabled="!!busy">راجع الفرضيات دي</button>
                 </article>
@@ -372,5 +376,26 @@
         </details>
       </aside>
     </div>
+
+    <section class="lm-briefing" x-show="!map.process_only" aria-labelledby="lm-briefing-title" data-testid="map-briefing">
+      <div class="lm-briefing-copy" aria-live="polite">
+        <div class="lm-briefing-heading">
+          <h2 id="lm-briefing-title">موجز الشركة</h2>
+          <span class="lm-pill" x-show="briefing"
+                x-text="briefing?.provider === 'codex' ? 'Codex' : 'قواعد محلية'"></span>
+          <span class="lm-pill" x-show="briefing?.alerts.length"
+                x-text="number(briefing?.alerts.length ?? 0) + ' · إشارات على الخريطة'"></span>
+        </div>
+        <p x-show="briefingLoading && !briefing">بنراجع آخر بيانات الشركة…</p>
+        <p x-show="briefing" x-text="briefing?.reply_ar"></p>
+        <p class="lm-briefing-warning" x-show="briefing?.warning" x-text="briefing?.warning"></p>
+        <p class="lm-briefing-warning" x-show="briefing?.unavailable.length">
+          فيه حدود متابعة لسه مفيش مؤشرات كفاية لتقييمها.
+        </p>
+        <p class="lm-briefing-warning" x-show="briefingError" x-text="briefingError"></p>
+      </div>
+      <button class="lm-action" type="button" :disabled="!!busy || briefingLoading"
+              @click="load($store.app.companyId, selectedModel, { refresh: true })">حدّث الموجز</button>
+    </section>
   </div>
 </template>

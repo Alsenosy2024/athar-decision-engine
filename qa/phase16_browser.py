@@ -92,6 +92,14 @@ def login(page, username):
     expect(page.get_by_test_id('company-switcher')).to_be_visible()
 
 
+def click_workspace_link(page, name):
+    page.locator('.sidebar-heading').wait_for()
+    toggle = page.get_by_role('button', name='القائمة', exact=True)
+    if toggle.is_visible() and toggle.get_attribute('aria-expanded') == 'false':
+        toggle.click()
+    page.locator('#workspace-nav').get_by_role('link', name=name, exact=True).click()
+
+
 def capture(page, name, heading, screens):
     page.evaluate('document.fonts.ready')
     assert page.locator('html').get_attribute('dir') == 'rtl'
@@ -179,7 +187,7 @@ def exercise(base, width, screens):
         login(page, 'qa-owner')
 
         def navigate(name, key):
-            page.get_by_role('link', name=name, exact=True).click()
+            click_workspace_link(page, name)
             section = page.get_by_test_id('page-' + key)
             expect(section).to_be_visible()
             return section

@@ -12,7 +12,9 @@
     <link rel="stylesheet" href="/static/css/living-map.css">
     <link rel="stylesheet" href="/static/css/process-flow.css">
     <link rel="stylesheet" href="/static/css/map-briefing.css">
+    <link rel="stylesheet" href="/static/css/executive.css">
     <script defer src="/static/vendor/chart.umd.js"></script>
+    <script defer src="/static/js/executive-motion.js"></script>
     <script defer src="/static/js/charts.js"></script>
     <script defer src="/static/js/app.js"></script>
     <script defer src="/static/js/pages/data.js"></script>
@@ -33,19 +35,28 @@
     <script defer src="/static/js/living-map-canvas.js"></script>
     <script defer src="/static/js/pages/process-flow.js"></script>
     <script defer src="/static/js/pages/map-briefing.js"></script>
+    <script defer src="/static/js/pages/map-executive.js"></script>
     <script defer src="/static/js/pages/living-map.js"></script>
     <script defer src="/static/vendor/alpine.min.js"></script>
 </head>
 <body x-data x-cloak>
 <a class="skip-link" href="#main" @click.prevent="$refs.main.focus()">انتقل إلى المحتوى</a>
 <div class="workspace" :data-page="$store.app.page">
-    <aside class="sidebar">
-        <a class="brand" href="#/map">
-            <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-            أثر | Athar
-        </a>
+    <aside class="sidebar" x-data="{ menuOpen: false }" :data-menu-open="String(menuOpen)"
+           @keydown.escape="if (menuOpen) { menuOpen = false; $refs.menuToggle.focus() }">
+        <div class="sidebar-heading">
+            <a class="brand" href="#/map" @click="menuOpen = false">
+                <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+                أثر | Athar
+            </a>
+            <button class="menu-toggle" x-ref="menuToggle" type="button" aria-controls="workspace-nav"
+                    :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+                <span aria-hidden="true">☰</span> القائمة
+            </button>
+        </div>
         <p class="brand-tagline">كل قرار.. وأثره على شركتك كلها</p>
-        <nav aria-label="أقسام محرك القرارات">
+        <nav id="workspace-nav" aria-label="أقسام محرك القرارات"
+             @click="if (menuOpen && $event.target.closest('a')) { menuOpen = false; $refs.menuToggle.focus() }">
             <template x-for="[group, title] in [['overview', 'نظرة عامة'], ['inputs', 'التهيئة'], ['analysis', 'التخطيط'], ['delivery', 'التنفيذ']]" :key="group">
                 <div class="nav-group" x-show="$store.app.visiblePages.some(item => item[2] === group)">
                     <p x-text="title"></p>
@@ -77,8 +88,9 @@
                 <button class="button secondary" type="button" @click="$store.app.logout()">خروج</button>
             </div>
             <button class="theme-button" type="button" data-testid="theme-toggle" @click="$store.app.toggleTheme()"
-                    :aria-pressed="$store.app.theme === 'dark'">
-                <span class="theme-icon" aria-hidden="true"></span> <span x-text="$store.app.theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></span>
+                    :aria-pressed="$store.app.theme === 'dark'" aria-label="الوضع الداكن">
+                <span class="theme-icon" aria-hidden="true"></span>
+                <span class="theme-caption" aria-hidden="true" x-text="$store.app.theme === 'dark' ? 'الوضع الفاتح' : 'الوضع الداكن'"></span>
             </button>
         </header>
 
@@ -111,21 +123,31 @@
                     <a class="button primary" href="#/optimize">افتح التحسين</a>
                 </div>
                 <div class="stack" x-show="run">
+                    <div class="kpi-grid executive-grid">
+                        <template x-for="item in kpis" :key="item.key">
+                            <article class="card kpi" :data-tone="kpiChange(item).tone">
+                                <h3 x-text="item.label"></h3>
+                                <div class="kpi-value"><bdi x-effect="animateValue($el, item.after)"></bdi> <small x-text="item.unit"></small></div>
+                                <div class="kpi-detail"><span>مرجعي <bdi x-text="number(item.before)"></bdi></span>
+                                    <span class="executive-delta"><span aria-hidden="true" x-text="kpiChange(item).arrow"></span>
+                                        <bdi x-text="kpiChange(item).text"></bdi></span></div>
+                            </article>
+                        </template>
+                    </div>
+                    <div class="executive-actions">
+                        <div :data-tone="planSignal.urgent ? 'critical' : 'idle'">
+                            <h2>أهم تنبيه</h2><p x-text="planSignal.text"></p>
+                        </div>
+                        <div>
+                            <h2>التوصية والخطوة الجاية</h2>
+                            <p><span x-text="outOfDate || !dataset ? 'راجع البيانات وشغّل التحسين.' : 'راجع أثر الخطة قبل اعتمادها.'"></span>
+                                <a href="#/optimize">افتح التحسين</a></p>
+                        </div>
+                    </div>
                     <div class="snapshot">
                         <div class="snapshot-info"><h2>آخر تشغيل للتحسين</h2>
                             <p x-text="'التشغيل ' + number(run?.id) + ' · ' + timestamp(run?.created_at)"></p></div>
-                        <div class="actions"><span class="status" x-text="solverLabel(run?.status)"></span>
-                            <a class="button secondary" href="#/optimize">تفاصيل التشغيل</a></div>
-                    </div>
-                    <div class="kpi-grid">
-                        <template x-for="item in kpis" :key="item.key">
-                            <article class="card kpi">
-                                <h3 x-text="item.label"></h3>
-                                <div class="kpi-value"><bdi x-text="number(item.after)"></bdi> <small x-text="item.unit"></small></div>
-                                <div class="kpi-detail"><span>مرجعي <bdi x-text="number(item.before)"></bdi></span>
-                                    <span class="status neutral"><span>الفرق</span><bdi x-text="signed(item.delta)"></bdi></span></div>
-                            </article>
-                        </template>
+                        <span class="status" x-text="solverLabel(run?.status)"></span>
                     </div>
                     <p class="notice error" x-show="run && !dataset">التشغيل مفيهوش خطة قابلة للعرض.</p>
                     <div class="stack" x-show="dataset">
@@ -575,13 +597,16 @@
                             </div>
                             <article class="card">
                                 <h2>العناصر المتأثرة</h2>
-                                <p>الترتيب بأكبر نسبة تغيّر، والمدى من المحاكاة.</p>
+                                <p x-show="fixedScenario">سيناريو محدد · هامش عدم اليقين صفر، فلكل عنصر نتيجة واحدة.</p>
+                                <p x-show="!fixedScenario">المئينات بترتّب المحاكاة من الأقل (P10) للوسيط (P50) للأعلى (P90). التفاؤل حسب اتجاه العنصر.</p>
                                 <p x-show="!ranked.length">الفرضيات دي ما غيّرتش النتيجة.</p>
                                 <div class="table-scroll" x-show="ranked.length">
                                     <table class="numeric-table" data-testid="impact-ranking">
                                         <thead><tr><th scope="col">العنصر</th><th scope="col">الوحدة</th><th scope="col">قبل</th>
                                             <th scope="col">بعد</th><th scope="col">الفرق</th><th scope="col">التغيّر %</th>
-                                            <th scope="col">P10</th><th scope="col">P50</th><th scope="col">P90</th></tr></thead>
+                                            <th scope="col" x-show="!fixedScenario">P10 · الأقل</th>
+                                            <th scope="col" x-show="!fixedScenario">P50 · متوقع</th>
+                                            <th scope="col" x-show="!fixedScenario">P90 · الأعلى</th></tr></thead>
                                         <tbody>
                                             <template x-for="row in ranked" :key="row.id">
                                                 <tr>
@@ -591,8 +616,9 @@
                                                     <td><bdi x-text="number(row.before)"></bdi> <small x-text="sourceLabel(row.source)"></small></td>
                                                     <td><bdi x-text="number(row.after)"></bdi> <small x-text="sourceLabel(row.scenario_source)"></small></td>
                                                     <td><bdi x-text="signed(row.delta)"></bdi></td><td><bdi x-text="signed(row.delta_pct)"></bdi></td>
-                                                    <td x-text="number(row.quantiles?.p10)"></td><td x-text="number(row.quantiles?.p50)"></td>
-                                                    <td x-text="number(row.quantiles?.p90)"></td>
+                                                    <td x-show="!fixedScenario" x-text="number(row.quantiles?.p10)"></td>
+                                                    <td x-show="!fixedScenario" x-text="number(row.quantiles?.p50)"></td>
+                                                    <td x-show="!fixedScenario" x-text="number(row.quantiles?.p90)"></td>
                                                 </tr>
                                             </template>
                                         </tbody>
@@ -784,6 +810,7 @@
                                 </select>
                             </label>
                         </div>
+                        <p x-text="forecast?.method === 'lognormal' ? 'المدة الأقصر (P10) متفائلة، والوسيط (P50) متوقع، والمدة الأطول (P90) متشائمة.' : 'الطلب الأقل (P10) متشائم، والوسيط (P50) متوقع، والطلب الأعلى (P90) متفائل.'"></p>
                         <div class="chart-scroll"><div class="chart"><canvas data-testid="chart-forecast" x-ref="forecast" role="img" aria-label="التوقع ونطاق الاحتمال من P10 إلى P90"></canvas></div></div>
                     </article>
                     <article class="card">

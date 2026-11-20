@@ -10,6 +10,7 @@ document.addEventListener('alpine:init', () => {
         get focused() { return this.result?.nodes.find(row => row.id === this.selection); },
         get incoming() { return this.result?.paths.filter(edge => edge.target === this.selection) || []; },
         get outgoing() { return this.result?.paths.filter(edge => edge.source === this.selection) || []; },
+        get fixedScenario() { return !this.result?.assumptions.some(row => row.uncertainty > 0); },
         get ranked() {
             return (this.result?.nodes || []).filter(row => row.affected).sort((a, b) =>
                 Math.abs(b.delta_pct ?? 0) - Math.abs(a.delta_pct ?? 0)
@@ -112,7 +113,6 @@ document.addEventListener('alpine:init', () => {
             if (this.busy) return;
             this.busy = 'run';
             this.error = '';
-            this.result = null;
             try {
                 await this.showResult(await api('/enterprise/whatif', post(this.scenarioPayload())));
             } catch (error) { this.error = error.message; }

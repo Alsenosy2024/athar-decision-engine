@@ -9,7 +9,7 @@ from openpyxl import load_workbook
 from playwright.sync_api import expect, sync_playwright
 import pytest
 
-from qa.phase16_browser import capture, check_chart, download_excel, login, post_from, save_scenario, server
+from qa.phase16_browser import capture, check_chart, download_excel, login, post_from, save_scenario, server, click_workspace_link
 
 
 submit = partial(post_from, timeout=12_000)
@@ -143,7 +143,7 @@ def analysis_and_exports(page, model, baseline, delta, tornado_spans, unit_cost,
     assert all((item['company_id'], item['model_id'], item['version']) ==
                (model['company_id'], model_id, version) for item in (neutral, shock))
 
-    page.get_by_role('link', name='مقارنة السيناريوهات', exact=True).click()
+    click_workspace_link(page, 'مقارنة السيناريوهات')
     expect(page.get_by_test_id('scenario-scope')).to_have_value(f'{model_id}:{version}')
     for scenario in (neutral, shock):
         page.get_by_role('checkbox', name=scenario['name']).check()
@@ -183,7 +183,7 @@ def analysis_and_exports(page, model, baseline, delta, tornado_spans, unit_cost,
         for result, row in zip(tornado['rows'], list(book['الحساسية'].values)[1:], strict=True):
             assert row[1] == result['driver']['id'] and row[7] == pytest.approx(result['span'])
 
-    page.get_by_role('link', name='القرارات والمتابعة', exact=True).click()
+    click_workspace_link(page, 'القرارات والمتابعة')
     expect(page.get_by_test_id('p18-model')).to_have_value(str(model_id))
     page.get_by_label('المدخل القابل للتحكم').select_option('unit_cost')
     page.get_by_test_id('p18-profit').fill('10')
@@ -242,7 +242,7 @@ def test_fresh_trading_company(mode, width, name, baseline, delta, spans, cost, 
         page.route('**/*', local_only)
         page.goto('/')
         login(page, 'qa-owner')
-        page.get_by_role('link', name='تجهيز الشركة', exact=True).click()
+        click_workspace_link(page, 'تجهيز الشركة')
         page.get_by_label('اسم الشركة').fill(name)
         page.get_by_label('قالب القطاع').select_option('trading')
         model = submit(page, '/onboarding/companies', page.get_by_role('button', name='أنشئ الشركة'))

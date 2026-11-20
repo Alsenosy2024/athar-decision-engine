@@ -205,7 +205,7 @@ def test_briefing_browser(width):
         page.get_by_role('button', name='ضيف', exact=True).click()
         page.get_by_test_id('map-assumption-value').fill('80')
         page.get_by_test_id('map-run').click()
-        expect(ribbon.locator('article').nth(1)).to_contain_text('P50')
+        expect(ribbon.locator('article').nth(1)).to_contain_text('سيناريو محدد')
         expect(ribbon.locator('article').nth(1)).to_contain_text('310')
 
         next(node for node in body['graph']['nodes'] if node['id'] == 'cash')['baseline'] = series([505] * 10)

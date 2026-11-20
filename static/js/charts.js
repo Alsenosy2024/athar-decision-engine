@@ -25,23 +25,70 @@ function colors() {
 function recolorCharts() {
     document.querySelectorAll('canvas').forEach(canvas => {
         const spec = chartSpecs.get(canvas);
-        if (spec && canvas.offsetWidth) drawChart(canvas, spec);
+        if (spec && canvas.offsetWidth) drawChart(canvas, spec, false);
     });
 }
 
-function drawChart(canvas, spec) {
+const chartChanges = new WeakMap();
+const changedPoints = {
+    id: 'executiveChangedPoints',
+    afterDatasetsDraw(chart) {
+        const marker = chartChanges.get(chart);
+        if (!marker) return;
+        const { ctx, chartArea } = chart;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+        ctx.clip();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = marker.color;
+        for (const [series, points] of marker.changes) {
+            if (!chart.isDatasetVisible(series)) continue;
+            const elements = chart.getDatasetMeta(series).data;
+            for (const index of points) {
+                const { x, y, width, height } = elements[index] ?? {};
+                if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+                ctx.beginPath();
+                if (chart.config.type === 'bar' && chart.options.indexAxis === 'y') {
+                    ctx.moveTo(x, y - height / 2); ctx.lineTo(x, y + height / 2);
+                } else if (chart.config.type === 'bar') {
+                    ctx.moveTo(x - width / 2, y); ctx.lineTo(x + width / 2, y);
+                } else {
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                }
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    },
+};
+
+executiveMotion.reduced.addEventListener('change', () => {
+    for (const key in Chart.instances) {
+        const chart = Chart.instances[key];
+        if (!chartSpecs.has(chart.canvas)) continue;
+        if (executiveMotion.reduced.matches) chart.stop();
+        chart.options.animation = chartAnimation();
+        chart.update('none');
+    }
+});
+
+const chartAnimation = () => executiveMotion.reduced.matches ? false
+    : { duration: executiveMotion.duration, easing: 'easeOutCubic' };
+
+function drawChart(canvas, spec, animate = true) {
     if (!canvas) return;
     chartSpecs.set(canvas, spec);
     const tone = colors();
     const config = spec(tone);
     const options = config.options || {};
-    Chart.getChart(canvas)?.destroy();
-    const chart = new Chart(canvas, {
+    const next = {
         ...config,
+        plugins: [...(config.plugins ?? []), changedPoints],
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: false,
+            animation: chartAnimation(),
             color: tone.ink,
             ...options,
             scales: Object.fromEntries(Object.entries(options.scales || { x: {}, y: {} }).map(([axis, scale]) => [
@@ -60,10 +107,39 @@ function drawChart(canvas, spec) {
                 tooltip: options.plugins?.tooltip || {},
             },
         },
-    });
-    document.fonts.load('700 13px "' + chartFont + '"', 'أسبوع').then(() => {
-        if (Chart.getChart(canvas) === chart && canvas.offsetWidth) chart.update('none');
-    });
+    };
+    const previous = Chart.getChart(canvas);
+    if (previous && !config.plugins && previous.config.type === config.type &&
+        previous.options.indexAxis === (options.indexAxis ?? 'x') &&
+        JSON.stringify(previous.data.labels ?? []) === JSON.stringify(config.data.labels ?? []) &&
+        previous.data.datasets.length === config.data.datasets.length &&
+        previous.data.datasets.every((row, i) => row.label === config.data.datasets[i].label)) {
+        if (animate) {
+            const changes = config.data.datasets.map((row, series) => [
+                series, row.data.flatMap((value, index) =>
+                    value != null && JSON.stringify(value) !== JSON.stringify(previous.data.datasets[series].data[index]) ? [index] : []),
+            ]);
+            if (changes.some(([, points]) => points.length)) chartChanges.set(previous, { color: tone.palette[1], changes });
+        } else {
+            previous.stop();
+            const marker = chartChanges.get(previous);
+            if (marker) marker.color = tone.palette[1];
+        }
+        config.data.datasets.forEach((row, i) => Object.assign(previous.data.datasets[i], row));
+        previous.options = next.options;
+        previous.update(animate ? undefined : 'none');
+        return;
+    }
+    previous?.destroy();
+    const chart = new Chart(canvas, animate ? next : { ...next, options: { ...next.options, animation: false } });
+    const font = '700 13px "' + chartFont + '"';
+    if (!document.fonts.check(font, 'أسبوع')) {
+        document.fonts.load(font, 'أسبوع').then(() => {
+            setTimeout(() => {
+                if (Chart.getChart(canvas) === chart && canvas.offsetWidth) chart.update('none');
+            }, executiveMotion.reduced.matches ? 0 : executiveMotion.duration);
+        });
+    }
 }
 
 const axisTitle = text => ({ display: true, text });
@@ -208,7 +284,7 @@ function forecastChart(canvas, forecast, key) {
             return { type: 'bar', data: {
                 labels: rows.map(row => row.key),
                 datasets: [['p10', c.reference], ['p50', c.main], ['p90', c.palette[2]]].map(([quantile, color]) => ({
-                    label: quantile.toUpperCase(), data: rows.map(row => row[quantile][0]),
+                    label: percentileLabel(quantile, true), data: rows.map(row => row[quantile][0]),
                     backgroundColor: color, maxBarThickness: 35, borderRadius: 3,
                 })),
             }, options: { scales: { x: reverseTime('النشاط'), y: { beginAtZero: true, title: axisTitle('أسبوع') } } } };
@@ -222,9 +298,9 @@ function forecastChart(canvas, forecast, key) {
             labels: [...historyWeeks, ...sku.p50.map((_, i) => end + i + 1)].map(number),
             datasets: [
                 { label: 'الطلب الفعلي', data: sku.history, borderColor: c.reference, pointRadius: 0 },
-                { label: 'P90', data: projected('p90'), borderColor: c.main, borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: c.band },
-                { label: 'P10', data: projected('p10'), borderColor: c.main, borderWidth: 1, pointRadius: 0 },
-                { label: 'P50', data: projected('p50'), borderColor: c.main, pointRadius: 3, borderDash: [5, 3] },
+                { label: percentileLabel('p90'), data: projected('p90'), borderColor: c.main, borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: c.band },
+                { label: percentileLabel('p10'), data: projected('p10'), borderColor: c.main, borderWidth: 1, pointRadius: 0 },
+                { label: percentileLabel('p50'), data: projected('p50'), borderColor: c.main, pointRadius: 3, borderDash: [5, 3] },
             ],
         }, options: {
             interaction: { mode: 'index', intersect: false },
