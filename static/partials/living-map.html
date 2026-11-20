@@ -1,6 +1,6 @@
 <template x-if="map">
   <div class="lm-shell">
-    <header class="lm-brief">
+    <header class="lm-brief" x-show="!emptyScope">
       <div class="lm-identity">
         <span class="lm-brand-glyph" aria-hidden="true">◈</span>
         <div>
@@ -10,13 +10,19 @@
       </div>
       <div class="lm-brief-status">
         <div>
-          <span x-text="map.process_only ? 'خريطة من سجل الأحداث' : map.is_demo ? 'نموذج تجريبي' : 'إصدار النموذج ' + number(map.model.version)"></span>
-          <p x-show="map.is_demo && company">المعروض ديمو روافد. <a href="#/enterprise">اربط نموذج بشركتك</a></p>
+          <span x-show="map.process_only || map.is_demo" x-text="map.process_only ? 'خريطة من سجل الأحداث' : 'نموذج تجريبي'"></span>
+          <p x-show="map.context" x-text="enterpriseResultContext(map.context)" data-testid="map-data-context"></p>
         </div>
         <div x-show="map.readiness != null">
           <span>جاهزية البيانات</span>
           <strong x-text="number(map.readiness) + '%'"></strong>
         </div>
+        <button class="lm-action lm-baseline-button" type="button"
+                x-show="editable && map.has_engines && !result && !baselineKpis && !map.analysis_error"
+                :disabled="!!busy || baselineLoading" @click="refreshExecutiveBaseline()"
+                x-text="baselineLoading ? 'بنحسب المؤشرات…' : 'احسب خط الأساس'"></button>
+        <button class="lm-action" type="button" @click="toggleDemo()"
+                x-text="demoMode ? 'ارجع لخريطة الشركة' : 'افتح ديمو روافد'"></button>
         <label x-show="models.length > 1">النموذج
           <select :value="selectedModel" @change="chooseModel($event.target.value)" :disabled="!!busy">
             <template x-for="model in models" :key="model.id">
@@ -44,7 +50,7 @@
               <span aria-hidden="true" x-text="executiveChange(metric).arrow"></span>
               <bdi x-text="executiveChange(metric).text"></bdi>
             </div>
-            <small x-text="executiveCaption(metric)"></small>
+            <small x-text="[executiveCaption(metric), metricPeriod(metric)].filter(Boolean).join(' · ')"></small>
           </article>
         </template>
       </div>
@@ -81,6 +87,7 @@
                 data-testid="map-ask" x-text="busy === 'ask' ? 'بيفكر…' : 'اسأل'"></button>
             </form>
             <p role="status" class="lm-feedback" x-show="feedback" x-text="feedback"></p>
+            <small x-show="feedback && answerContext" x-text="enterpriseResultContext(answerContext)"></small>
 
             <div class="lm-divider">
               <h3>راجع الفرضيات</h3>
@@ -123,7 +130,8 @@
                 </select>
                 <button type="button" class="lm-action" @click="addDriver()" :disabled="!driverId || !!busy || edits.length >= 50">ضيف</button>
               </div>
-              <label class="lm-horizon">أفق الحساب
+              <p x-show="weeklySnapshot" data-testid="map-weekly-period">أفق الحساب · أسبوع واحد</p>
+              <label class="lm-horizon" x-show="!weeklySnapshot">أفق الحساب
                 <select x-model.number="weeks" @change="$nextTick(() => refreshExecutiveBaseline())" :disabled="!!busy">
                   <option value="1">أسبوع</option><option value="4">4 أسابيع</option>
                   <option value="13">13 أسبوع</option><option value="26">26 أسبوع</option>
@@ -147,14 +155,14 @@
             <span class="lm-pill" data-testid="process-flow-source" x-text="flowSourceLabel"></span>
             <p><bdi x-text="map.departments.length"></bdi> قسم · <bdi x-text="showsCausalRoads ? map?.edges.length : observedRoads.length"></bdi> طريق</p>
           </div>
-          <select aria-label="تركيز على قسم" x-model="focus" @change="selectAlert('')">
+          <select x-show="map.departments.length" aria-label="تركيز على قسم" x-model="focus" @change="selectAlert('')">
             <option value="">كل الأقسام</option>
             <template x-for="dept in map.departments" :key="dept.id">
               <option :value="dept.id" x-text="dept.name_ar"></option>
             </template>
           </select>
         </header>
-        <div class="lm-stage" x-ref="livingStage" data-testid="map-stage"
+        <div class="lm-stage" x-show="map.departments.length" x-ref="livingStage" data-testid="map-stage"
              x-effect="paint($store.app.theme)" :data-ripple="playing ? 'running' : (result || simulation) ? 'complete' : 'idle'"
              :data-active-flows="processFrame ? processFrame.flows.filter(row => row.from_department !== row.to_department).length : 0">
           <canvas aria-hidden="true"></canvas>
@@ -175,7 +183,7 @@
             </template>
           </div>
         </div>
-        <div class="lm-time" data-testid="map-timeline">
+        <div class="lm-time" x-show="map.departments.length" data-testid="map-timeline">
           <button type="button" class="lm-action" :disabled="!hasPlayback" @click="playing ? stop() : replay()"
                 x-text="playing ? 'وقّف' : isSimulating ? 'شغّل الأسابيع' : 'شغّل الأثر'"></button>
           <label>
@@ -184,7 +192,7 @@
                 :max="lastWeek" step="1" :value="week" @input="scrub($event.target.value)" :disabled="!hasPlayback">
           </label>
         </div>
-        <div class="lm-map-key">
+        <div class="lm-map-key" x-show="map.departments.length">
           <p x-show="showsCausalRoads">سمك الطريق حسب قيمة العنصر عند المصدر. <span>الأحمر أثر سلبي أكبر.</span></p>
           <p x-show="!showsCausalRoads">سمك الطريق حسب عدد الانتقالات في السجل.
             <span x-show="isSimulating">الأحمر انتقال لقسم فيه طابور.</span>
@@ -248,15 +256,16 @@
         <p x-show="!result">نتيجة الحساب وسلسلة الأثر هتظهر هنا بعد تأكيد الفرضيات.</p>
         <template x-if="result">
           <div class="lm-stack">
+            <p class="lm-result-caption" x-text="resultContext" data-testid="map-result-context"></p>
             <p class="lm-result-caption">المؤشرات بتلخّص أفق الحساب. شريط الزمن بيعرض وصول الأثر.</p>
             <p class="lm-result-caption" x-show="fixedScenario">سيناريو محدد · هامش عدم اليقين صفر، فلكل مؤشر نتيجة واحدة.</p>
             <p class="lm-result-caption" x-show="!fixedScenario">المئينات بترتّب نتائج المحاكاة من الأقل (P10) للوسيط (P50) للأعلى (P90). التفاؤل حسب اتجاه المؤشر.</p>
             <div class="lm-kpi-list" data-testid="map-impact-kpis">
               <template x-for="metric in metrics" :key="metric.id">
                 <article>
-                  <div class="lm-row">
+                  <div class="lm-row lm-kpi-head">
                     <h3 x-text="metric.label"></h3>
-                    <small class="lm-pill" x-text="source(metric.source)"></small>
+                    <small class="lm-pill" x-text="[source(metric.source), metricPeriod(metric)].filter(Boolean).join(' · ')"></small>
                   </div>
                   <div class="lm-row lm-kpi-v"><span>قبل <bdi x-text="mapValue(metric.baseline, metric.unit)"></bdi></span>
                     <span>بعد <bdi x-text="mapValue(metric.after, metric.unit)"></bdi></span></div>
@@ -314,13 +323,14 @@
               <label>إلى<input type="number" step="any" x-model="goalHigh" required :disabled="!!busy"></label>
             </div>
             <label>زيادة الربح المطلوبة (%)<input type="number" min="0.01" step="any" x-model="goalProfit" :disabled="!!busy"></label>
-            <label>أقل سيولة مقبولة (ريال)<input type="number" step="any" x-model="goalCash" :disabled="!!busy"></label>
+            <label>الحد الأدنى المقبول للسيولة (ر.س)<input type="number" step="any" x-model="goalCash" :disabled="!!busy"></label>
             <button class="lm-action" :disabled="!!busy || !goalDriver"
                 x-text="busy === 'goal' ? 'بندور على بدائل…' : 'دور على توصيات'"></button>
           </form>
           <template x-if="recommendations">
             <div class="lm-stack" data-testid="map-recommendations">
               <p x-show="recommendations.evaluated_trials" x-text="'اتحسبت ' + number(recommendations.evaluated_trials) + ' تجربة. الترتيب حسب استيفاء القيود، ثم أعلى ربح، ثم أقل مخاطرة وتغيير.'"></p>
+              <p x-text="enterpriseResultContext(recommendations.context)"></p>
               <p x-show="!recommendations.recommendations.length">مفيش بديل قابل للحساب جوه النطاق ده.</p>
               <template x-for="(item, index) in recommendations.recommendations" :key="index">
                 <article class="lm-recommendation">
@@ -328,7 +338,7 @@
                     <p><span x-text="label(row.node_id)"></span> <bdi x-text="mapValue(row.value, unit(row.node_id))"></bdi></p>
                   </template>
                   <p>الربح <bdi x-text="mapValue(item.objective, 'SAR')"></bdi></p>
-                  <p>أقل سيولة <bdi x-text="mapValue(item.cash, 'SAR')"></bdi></p>
+                  <p><span x-text="cashLabel"></span> <bdi x-text="mapValue(item.cash, 'SAR')"></bdi></p>
                   <p x-show="item.risk != null">تجاوز الائتمان <bdi x-text="mapValue(item.risk, '%')"></bdi></p>
                   <p x-text="item.violations.length ? 'السيولة أقل من الحد المطلوب' : item.target_met === false ? 'البديل أقل من هدف الربح' : item.target_met ? 'البديل حقّق الهدف' : 'بديل محسوب'"></p>
                   <small x-text="recommendationBasis(item)"></small>
@@ -342,7 +352,7 @@
 
         <details class="lm-divider">
           <summary>مقارنة السيناريوهات</summary>
-          <form class="lm-stack lm-mini-form" x-show="editable && result && ($store.app.companyId || map.model.id || $store.app.user?.role === 'admin')"
+          <form class="lm-stack lm-mini-form" x-show="canSave && result"
                 @submit.prevent="save()">
             <label>اسم آخر سيناريو اتحسب
               <input type="text" x-model="scenarioName" maxlength="120" required :disabled="!!busy">
@@ -364,6 +374,7 @@
               <template x-for="row in comparison.scenarios" :key="row.id">
                 <li class="lm-compare-row">
                   <h3 x-text="row.name"></h3>
+                  <small x-text="enterpriseResultContext(comparison.context)"></small>
                   <dl>
                     <template x-for="[key, info] in Object.entries(comparison.kpis)" :key="key">
                       <div><dt x-text="info.label"></dt><dd><bdi x-text="mapValue(row.kpis[key], key === 'delays' ? 'weeks' : info.unit)"></bdi></dd></div>
@@ -396,7 +407,7 @@
         <p class="lm-briefing-warning" x-show="briefingError" x-text="briefingError"></p>
       </div>
       <button class="lm-action" type="button" :disabled="!!busy || briefingLoading"
-              @click="load($store.app.companyId, selectedModel, { refresh: true })">حدّث الموجز</button>
+              @click="load(scopeId, selectedModel, { refresh: true })">حدّث الموجز</button>
     </section>
   </div>
 </template>

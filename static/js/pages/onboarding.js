@@ -48,7 +48,7 @@ document.addEventListener('alpine:init', () => {
                     }),
                     api('/onboarding/templates'),
                     app.isOnboardingCompany ? api('/companies/' + app.companyId + '/onboarding') : null,
-                    this.admin ? api('/connectors/erp') : [],
+                    this.admin && app.isOnboardingCompany ? api('/companies/' + app.companyId + '/connectors/erp') : [],
                 ]);
                 if (!live()) return;
                 Object.assign(this, { markup, sectors, model, connectors });

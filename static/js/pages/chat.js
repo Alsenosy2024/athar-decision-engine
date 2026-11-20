@@ -5,6 +5,7 @@ document.addEventListener('alpine:init', () => {
     }), {
         assistant: ATHAR_ASSISTANT,
         get sectorAvailable() { return !this.$store.app.isOnboardingCompany && ['admin', 'planner'].includes(this.$store.app.user?.role); },
+        enterpriseResultContext,
         get providerLabel() {
             return { codex: 'Codex', rules: 'قواعد محلية', 'rules(fallback)': 'قواعد محلية · رجوع تلقائي',
                 openai_compat: 'OpenAI-compatible' }[this.reply?.provider || this.provider] || '';
@@ -60,7 +61,7 @@ document.addEventListener('alpine:init', () => {
                     }, { remote: this.remote, focus_node: this.reply?.follow_up_metric ?? null })
                     : await api(base + '/chat', post({ message }));
                 if (!live()) return;
-                this.messages = [...this.messages, { role: 'user', content: message }, { role: 'assistant', content: reply.reply_ar }];
+                this.messages = [...this.messages, { role: 'user', content: message }, { role: 'assistant', content: reply.reply_ar, context: reply.context }];
                 this.reply = reply;
                 this.input = '';
                 this.$nextTick(() => {

@@ -10,10 +10,10 @@
 <div class="stack page-feedback" x-show="mode !== 'p6'">
     <article class="card">
         <h2>النموذج المؤسسي</h2>
-        <p x-show="!models.length">احفظ نموذج مؤسسي الأول عشان تختاره هنا. <a href="#/enterprise">افتح النموذج المؤسسي</a></p>
-        <label class="field" x-show="models.length">النموذج
+        <p x-show="!companyModels.length">احفظ نموذج مؤسسي الأول عشان تختاره هنا. <a href="#/enterprise">افتح النموذج المؤسسي</a></p>
+        <label class="field" x-show="companyModels.length">النموذج
             <select :value="modelId" :disabled="!!busy" @change="selectModel($event.target.value)" data-testid="import-model">
-                <template x-for="item in models" :key="item.id"><option :value="String(item.id)" :selected="String(item.id) === modelId" x-text="item.name"></option></template>
+                <template x-for="item in companyModels" :key="item.id"><option :value="String(item.id)" :selected="String(item.id) === modelId" x-text="item.name"></option></template>
             </select>
         </label>
         <details x-show="model">
@@ -56,6 +56,7 @@
     </form>
     <form class="card" x-show="mode === 'erp'" @submit.prevent="saveConnector()">
         <h2>إعداد موصل ERP</h2>
+        <p id="erp-company-name" x-text="$store.app.company?.name || 'اختار شركة من الهيدر.'"></p>
         <p>اكتب أسماء متغيرات البيئة اللي بتبدأ بـ <bdi>ATHAR_ERP_</bdi>. عنوان الاتصال والتوثيق بيتحددوا على الخادم.</p>
         <div class="field-group">
             <label class="field">الموصل المحفوظ
@@ -65,22 +66,22 @@
                 </select>
             </label>
             <label class="field">نوع الاتصال
-                <select x-model="config.kind" :disabled="!!busy" @change="result = null"><option value="rest">REST / JSON</option><option value="sql">SQL</option></select>
+                <select x-model="config.kind" :disabled="!!busy || !integrationAdmin" @change="result = null"><option value="rest">REST / JSON</option><option value="sql">SQL</option></select>
             </label>
-            <label class="field">اسم الموصل<input x-model.trim="config.name" :disabled="!!busy" maxlength="160" required></label>
-            <label class="field">متغير عنوان الاتصال<input x-model.trim="config.url_env" :disabled="!!busy" dir="ltr" pattern="ATHAR_ERP_[A-Z0-9_]{1,75}" required></label>
+            <label class="field">اسم الموصل<input x-model.trim="config.name" :disabled="!!busy || !integrationAdmin" maxlength="160" required></label>
+            <label class="field">متغير عنوان الاتصال<input x-model.trim="config.url_env" :disabled="!!busy || !integrationAdmin" dir="ltr" pattern="ATHAR_ERP_[A-Z0-9_]{1,75}" required></label>
             <template x-if="config.kind === 'rest'">
-                <label class="field">متغير رمز التوثيق (اختياري)<input x-model.trim="config.token_env" :disabled="!!busy" dir="ltr" pattern="ATHAR_ERP_[A-Z0-9_]{1,75}"></label>
+                <label class="field">متغير رمز التوثيق (اختياري)<input x-model.trim="config.token_env" :disabled="!!busy || !integrationAdmin" dir="ltr" pattern="ATHAR_ERP_[A-Z0-9_]{1,75}"></label>
             </template>
-            <label class="field" x-show="config.kind === 'rest'">مسار قائمة السجلات داخل JSON (اختياري)<input x-model.trim="config.rows_path" :disabled="!!busy" dir="ltr" placeholder="data.rows"></label>
-            <label class="field" x-show="config.kind === 'sql'">اسم الجدول أو العرض<input x-model.trim="config.table" :disabled="!!busy" :required="config.kind === 'sql'" dir="ltr"></label>
-            <label class="field" x-show="config.kind === 'sql'">اسم المخطط (اختياري)<input x-model.trim="config.schema_name" :disabled="!!busy" dir="ltr"></label>
+            <label class="field" x-show="config.kind === 'rest'">مسار قائمة السجلات داخل JSON (اختياري)<input x-model.trim="config.rows_path" :disabled="!!busy || !integrationAdmin" dir="ltr" placeholder="data.rows"></label>
+            <label class="field" x-show="config.kind === 'sql'">اسم الجدول أو العرض<input x-model.trim="config.table" :disabled="!!busy || !integrationAdmin" :required="config.kind === 'sql'" dir="ltr"></label>
+            <label class="field" x-show="config.kind === 'sql'">اسم المخطط (اختياري)<input x-model.trim="config.schema_name" :disabled="!!busy || !integrationAdmin" dir="ltr"></label>
             <template x-for="[key, label] in [['node', 'حقل معرّف العنصر'], ['value', 'حقل القيمة'], ['date', 'حقل التاريخ للسلاسل الزمنية']]" :key="key">
-                <label class="field"><span x-text="label"></span><input x-model.trim="config.mapping[key]" :disabled="!!busy" :required="key !== 'date'" maxlength="200" dir="ltr"></label>
+                <label class="field"><span x-text="label"></span><input x-model.trim="config.mapping[key]" :disabled="!!busy || !integrationAdmin" :required="key !== 'date'" maxlength="200" dir="ltr"></label>
             </template>
         </div>
         <div class="actions">
-            <button class="button secondary" :disabled="!!busy">احفظ إعداد الموصل</button>
+            <button class="button secondary" x-show="integrationAdmin" :disabled="!!busy || !$store.app.companyId">احفظ إعداد الموصل</button>
             <button class="button primary" type="button" :disabled="!!busy || !model || !connectorId" @click="previewErp()">اسحب بالإعداد المحفوظ وراجع</button>
         </div>
     </form>

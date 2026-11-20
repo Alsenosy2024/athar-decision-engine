@@ -229,6 +229,7 @@
 .lm-kpi-list { display: grid; gap: 5px; }
 .lm-kpi-list article, .lm-recommendation { border: 1px solid var(--lm-border); background: var(--lm-card); border-radius: 8px; padding: 6px; }
 .lm-result-caption, .lm-kpi-v, .lm-chain small { font-size: .73rem; }
+.lm-kpi-head { flex-wrap: wrap; gap: 2px 7px; }
 .lm-kpi-v { justify-content: start; flex-wrap: wrap; color: var(--lm-dim); }
 .lm-kpi-v bdi { color: var(--lm-text); }
 .lm-bands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 4px 0 0; text-align: center; }

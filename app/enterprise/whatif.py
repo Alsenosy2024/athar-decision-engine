@@ -5,6 +5,7 @@ from math import isfinite
 
 import numpy as np
 
+from app.enterprise.result_context import WEEKLY_CASH_LABEL, calculation_weeks
 from app.enterprise.arms import Arms, contracting_ledger, production_ledger, start_date
 from app.enterprise.demo import demo_template
 from app.enterprise.finance import Ledger
@@ -102,7 +103,7 @@ class Evaluation:
 
 class ImpactModel:
     def __init__(self, graph, *, weeks, time_limit=15, forecast_engine='stat', foundation=None):
-        self.weeks = weeks
+        self.weeks = calculation_weeks(graph, weeks)
         self.graph = graph
         self.template = standard_graph(graph) if graph.arms else None
         self.arms = Arms((arm.sector for arm in graph.arms), time_limit=time_limit,
@@ -227,8 +228,6 @@ class ImpactModel:
         get, arm_inputs, upstream, upstream_effects = inputs
         if self.graph.onboarding:
             values, effects = projection.evaluate(self.causal, self.weeks, changes)
-            if values['cash'] is not None:
-                values['cash'] = values['cash'][-1:]
             return Evaluation(values, effects, 0)
         computed, iterations, cash_start, fill_rate = self.computed(get, arm_inputs, plans, trial=trial)
         anchors = {
@@ -311,7 +310,8 @@ class ImpactModel:
             if any(value is not None and not isfinite(value) for value in (left, right, delta, pct)):
                 raise ImpactError('الأثر أكبر من النطاق الرقمي المدعوم.')
             rows.append({
-                'id': key, 'name_ar': node.name_ar, 'type': node.type, 'unit': node.unit,
+                'id': key, 'name_ar': WEEKLY_CASH_LABEL if self.graph.onboarding and key == 'cash' else node.name_ar,
+                'type': node.type, 'unit': node.unit,
                 'before': left, 'after': right, 'delta': delta, 'delta_pct': pct,
                 'quantiles': bands.get(key), 'path': paths.get(key, []),
                 **({'source': sources[key],

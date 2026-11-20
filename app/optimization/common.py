@@ -17,9 +17,15 @@ class Weights:
         return tuple(round(weight * 10) for weight in (self.ld, self.financing, self.makespan))
 
 
-def configured_solver(time_limit: float) -> cp_model.CpSolver:
+def configured_solver(time_limit: float, *, deterministic: bool = False) -> cp_model.CpSolver:
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = time_limit
-    solver.parameters.num_workers = 8
     solver.parameters.random_seed = 7
+    if deterministic:
+        # Repeated enterprise calculations must finish at the same search step,
+        # even when the worker is delayed by other requests.
+        solver.parameters.num_workers = 1
+        solver.parameters.max_deterministic_time = 0.8 * time_limit
+    else:
+        solver.parameters.max_time_in_seconds = time_limit
+        solver.parameters.num_workers = 8
     return solver

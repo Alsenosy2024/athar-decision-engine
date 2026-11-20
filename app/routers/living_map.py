@@ -8,6 +8,7 @@ from app.access import require_company
 from app.db import request_conn
 from app.enterprise import store
 from app.enterprise.living_map import map_payload
+from app.enterprise.result_context import result_context
 from app.enterprise.scenarios import kpis
 from app.enterprise.schema import StrictFields
 from app.intelligence import decision
@@ -46,6 +47,7 @@ def read_map(request: Request, company_id: CompanyScope = None, model_id: Select
     if company and snapshot['company_id'] != company_id:
         raise api_error(404, 'enterprise_model_not_found', 'النموذج المؤسسي مش موجود للشركة دي.')
     payload = map_payload(snapshot, company, models, demo=model_id is None)
+    payload['context'] = result_context(connection, snapshot)
     return with_process_flow(connection, payload, snapshot.get('company_id'))
 
 
@@ -87,4 +89,5 @@ def goal_seek(body: MapGoal, request: Request, connection=Depends(request_conn))
     snapshot = body.snapshot(connection)
     with impact_errors():
         result = decision.recommend(impact_model(snapshot, request, body.goal.weeks), body.goal)
-    return {'model_id': snapshot['id'], 'version': snapshot['version'], **result}
+    return {'model_id': snapshot['id'], 'version': snapshot['version'],
+            'context': result_context(connection, snapshot, body.goal.weeks), **result}

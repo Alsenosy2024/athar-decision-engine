@@ -128,8 +128,9 @@ def test_v1_onboarding_company_and_missing_model(client):
     assert public_map.json()['readiness'] == 0
     assert public_map.json()['model']['id'] == created['model_id']
     assert all(node['source'] == 'missing' for node in public_map.json()['nodes'])
-    kpis = client.get(f'{API}/{cid}/kpis', headers=headers(key)).json()['kpis']
-    assert all(value is None for value in kpis.values())
+    baseline = client.get(f'{API}/{cid}/kpis', headers=headers(key), params={'weeks': 104}).json()
+    assert baseline['weeks'] == baseline['context']['calculation_weeks'] == 1
+    assert all(value is None for value in baseline['kpis'].values())
 
     onboarding = f'/api/companies/{cid}/onboarding'
     draft = client.post(onboarding + '/sections/sales/manual/preview', json={

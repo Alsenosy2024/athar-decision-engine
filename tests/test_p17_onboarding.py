@@ -217,7 +217,7 @@ def test_saved_erp_connector_respects_section_and_preview(client, tmp_path, monk
             ('demand', '100', '2026-11-01'), ('department.finance', 'المالية', None), ('ar', '20', None),
         ])
     monkeypatch.setenv('ATHAR_ERP_P17_SQL', f'sqlite:///{source}')
-    connector = ok(client.post('/api/connectors/erp', json={'kind': 'sql', 'name': 'ERP',
+    connector = ok(client.post(f"/api/companies/{model['company_id']}/connectors/erp", json={'kind': 'sql', 'name': 'ERP',
                    'url_env': 'ATHAR_ERP_P17_SQL', 'table': 'metrics',
                    'mapping': {'node': 'field', 'value': 'value', 'date': 'date'}}), 201)
     def pull(section, version):

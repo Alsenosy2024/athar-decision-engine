@@ -21,7 +21,7 @@ from app.optimization import contracting
 from app.templates_registry import load_templates
 from conftest import sign_in
 
-REST_PATH = '/api/connectors/erp'
+REST_PATH = '/api/companies/1/connectors/erp'
 P6_PATH = '/api/companies/1/p6-imports'
 COLUMNS = {'node': 'key', 'value': 'amount', 'date': 'as_of'}
 P6_XML = b'''<APIBusinessObjects xmlns="http://xmlns.oracle.com/Primavera/P6/V24.12/API/BusinessObjects">
@@ -47,7 +47,7 @@ def model_path(client):
              ('rate', 'pricing', {'kind': 'scalar', 'value': None}),
              ('orders', 'demand', {'kind': 'series', 'frequency': 'weekly',
                                     'points': [{'date': '2026-01-05', 'value': 90}]})]
-    response = client.post('/api/enterprise/models', json={'name': 'شركة تجريبية', 'graph': {'nodes': [
+    response = client.post('/api/enterprise/models?company_id=1', json={'name': 'شركة تجريبية', 'graph': {'nodes': [
         {'id': key, 'name_ar': key, 'type': kind, 'unit': 'SAR', 'baseline': baseline,
          'definition': {'kind': 'formula', 'expression': 'مدخل'}}
         for key, kind, baseline in cases

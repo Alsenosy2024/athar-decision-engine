@@ -3,7 +3,7 @@ from collections import defaultdict
 from math import log1p
 
 from app.enterprise.impact_graph import ImpactError, reference
-from app.enterprise.scenarios import KPI_NODES, KPIS
+from app.enterprise.scenarios import KPI_NODES, kpi_specs
 from app.enterprise.schema import NodeType, Series, Unit
 from app.enterprise.whatif import ImpactModel
 from app.intelligence.decision import controllable
@@ -85,12 +85,12 @@ def map_payload(snapshot, company, models, *, demo=False):
             'weight': log1p(volume) / log1p(maximum) if volume and maximum else 0,
         })
 
-    kpis = []
+    kpis, labels = [], kpi_specs(graph)
     for key, node_id in KPI_NODES.items():
         node = nodes.get(node_id, {})
         # The operational template's cash input is its opening balance.
         baseline = None if key == 'cash_low' and graph.arms else node.get('baseline')
-        kpis.append({'id': key, 'node_id': node_id, **KPIS[key], 'baseline': baseline,
+        kpis.append({'id': key, 'node_id': node_id, **labels[key], 'baseline': baseline,
                      'history': node.get('history', []),
                      'source': 'missing' if baseline is None else node['source']})
     readiness = projection.readiness(graph)['score'] if graph.onboarding else None

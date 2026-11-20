@@ -76,7 +76,7 @@
 
     <div class="main-column">
         <header class="topbar">
-            <div class="company-control" x-show="$store.app.companies.length">
+            <div class="company-control" x-show="$store.app.companies.length && !($store.app.page === 'map' && $store.app.mapDemo)">
                 <label for="company">الشركة</label>
                 <select id="company" data-testid="company-switcher" :value="$store.app.companyId" @change="$store.app.switchCompany(Number($event.target.value))" :disabled="$store.app.loading">
                     <template x-for="company in $store.app.companies" :key="company.id">
@@ -96,8 +96,10 @@
             </button>
         </header>
 
-        <section class="athar-assistant" x-data="atharAssistant" x-show="$store.app.company && !$store.app.loading"
-                 x-effect="select($store.app.companyId, $store.app.assistantMapModel?.id, $store.app.assistantMapModel?.version)"
+        <section class="athar-assistant" x-data="atharAssistant"
+                 x-show="$store.app.company && !$store.app.loading && !($store.app.page === 'map' && $store.app.mapDemo)"
+                 x-effect="$store.app.page === 'map' && $store.app.mapDemo
+                     ? select(null) : select($store.app.companyId, $store.app.assistantMapModel?.id, $store.app.assistantMapModel?.version)"
                  x-html="markup" aria-labelledby="athar-assistant-title"></section>
 
         <main id="main" x-ref="main" tabindex="-1">
@@ -109,9 +111,15 @@
 
             <section class="living-map" data-testid="page-map" x-data="livingMapPage"
                      x-show="$store.app.page === 'map' && !$store.app.loading" x-cloak
-                     x-effect="activate($store.app.page, $store.app.companyId, $store.app.loading)">
+                     x-effect="activate($store.app.page, $store.app.companyId, $store.app.loading, $store.app.mapDemo)">
                 <p class="empty" role="status" x-show="busy === 'load' && !map">جارٍ تحميل خريطة الشركة…</p>
                 <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+                <article class="card" x-show="emptyScope" data-testid="map-no-model">
+                    <h1 x-text="$store.app.company?.name || 'خريطة الشركة'"></h1>
+                    <p x-text="$store.app.company ? 'مفيش نموذج مؤسسي مرتبط بالشركة لسه.' : 'خريطة الشركة محتاجة اختيار شركة.'"></p>
+                    <a x-show="$store.app.company" href="#/enterprise">اربط نموذج بالشركة</a>
+                    <button class="button secondary" type="button" @click="toggleDemo()">افتح ديمو روافد</button>
+                </article>
                 <div x-html="markup"></div>
             </section>
 
@@ -539,6 +547,7 @@
                     </form>
                     <template x-if="result">
                         <div class="stack" data-testid="impact-result">
+                            <p x-text="enterpriseResultContext(result.context)"></p>
                             <p class="notice" x-show="result.onboarding">
                                 توقعات أسبوعية تقديرية. راجع جاهزية البيانات في <a href="#/onboarding">تجهيز الشركة</a>.
                             </p>
@@ -598,7 +607,7 @@
                                 <article class="card" x-show="result.charts.cash">
                                     <h2 x-text="result.onboarding ? 'الكاش المتوقع' : 'السيولة بعد التمويل'"></h2>
                                     <p x-text="result.onboarding ? 'الرصيد المتوقع بنهاية الأسبوع' : 'أقل رصيد في كل أسبوع'"></p>
-                                    <div class="chart"><canvas x-ref="cash" data-testid="chart-impact-cash" role="img" aria-label="أقل رصيد أسبوعي قبل وبعد الفرضية"></canvas></div>
+                                    <div class="chart"><canvas x-ref="cash" data-testid="chart-impact-cash" role="img" :aria-label="result.onboarding ? 'رصيد نهاية الأسبوع قبل وبعد الفرضية' : 'أقل رصيد أسبوعي قبل وبعد الفرضية'"></canvas></div>
                                 </article>
                             </div>
                             <article class="card">
@@ -676,6 +685,7 @@
                         </div>
                         <template x-if="comparison">
                             <div class="stack" data-testid="scenario-comparison">
+                                <p x-text="enterpriseResultContext(comparison.context)"></p>
                                 <div class="table-scroll" tabindex="0" role="region" aria-label="جدول مقارنة السيناريوهات">
                                     <table class="numeric-table">
                                         <thead><tr><th scope="col">المؤشر</th><th scope="col">الوحدة</th><th scope="col">خط الأساس</th>
@@ -736,6 +746,7 @@
                         </form>
                         <template x-if="tornado">
                             <div class="stack" data-testid="tornado-result">
+                                <p x-text="enterpriseResultContext(tornado.context)"></p>
                                 <div><h3><span x-text="tornado.metric.label + ' عند'"></span>
                                     <bdi dir="ltr" x-text="'±' + number(tornado.percent) + '%'"></bdi></h3>
                                     <p x-text="'خط الأساس ' + number(tornado.baseline) + ' ' + tornado.metric.unit"></p></div>
@@ -781,7 +792,7 @@
             </section>
 
             <section data-testid="page-connectors" x-show="$store.app.page === 'connectors'" x-data="connectorsPage"
-                     x-init="if ($store.app.page === 'connectors') load(); $watch('$store.app.page', page => { if (page === 'connectors') load() })">
+                     x-effect="activate($store.app.page, $store.app.companyId, $store.app.loading)">
                 <p class="empty" role="status" x-show="!markup && busy">جارٍ تحميل صفحة ربط البيانات…</p>
                 <div class="notice error" x-show="!markup && error"><p role="alert" x-text="error"></p>
                     <button class="button secondary" @click="load()">إعادة المحاولة</button>
@@ -1021,6 +1032,7 @@
                         <template x-for="(item, index) in messages" :key="index">
                             <article class="bubble" :class="item.role">
                                 <h3 x-text="item.role === 'user' ? 'أنت' : assistant.name"></h3><p dir="auto" x-text="item.content"></p>
+                                <small x-show="item.context" x-text="enterpriseResultContext(item.context)"></small>
                             </article>
                         </template>
                     </div>

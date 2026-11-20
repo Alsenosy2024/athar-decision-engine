@@ -11,7 +11,7 @@ document.addEventListener('alpine:init', () => {
         models: [], saved: [], drivers: [], scope: '', scenarioIds: [], driverIds: [],
         variation: 10, kpi: 'profit', comparison: null, tornado: null,
         busy: '', error: '',
-        kpis, number, signed,
+        kpis, number, signed, enterpriseResultContext,
         get scopes() {
             const models = new Map(this.models.map(row => [row.id, row.name]));
             const options = new Map([['demo', 'ديمو شركة روافد']]);

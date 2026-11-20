@@ -4,6 +4,7 @@ from pydantic import Field, model_validator
 from app.access import require_company, require_role
 from app.db import request_conn
 from app.enterprise import store
+from app.enterprise.result_context import result_context
 from app.enterprise.impact_graph import WhatIfRequest
 from app.llm import assistant_language as language
 from app.llm.assistant_answers import citation, period_and_source, read_metrics, requested_keys, sector_answer
@@ -115,9 +116,9 @@ def enterprise_chat(body: EnterpriseChatRequest, request: Request, connection=De
             reply = 'الشركة دي محتاجة بيانات للمؤشر ده. اربط نموذج من تجهيز الشركة أو حمّل بيانات التخطيط المتاحة.'
     else:
         requested_weeks = body.weeks or WhatIfRequest.model_fields['weeks'].default
-        weeks = 1 if snapshot['graph'].onboarding and not body.parse_only else requested_weeks
         with impact_errors():
-            model = impact_model(snapshot, request, weeks)
+            model = impact_model(snapshot, request, requested_weeks)
+            weeks = model.weeks
             if intent == 'what_if':
                 remote = body.remote if body.remote is not None else body.parse_only or company is None
                 provider = get_enterprise_provider(request.app.state.settings, remote=remote)
@@ -146,6 +147,9 @@ def enterprise_chat(body: EnterpriseChatRequest, request: Request, connection=De
                     scenario = EnterpriseScenario(intent='help')
                     reply = 'اسأل عن السيولة أو الربح أو المبيعات أو التكاليف. ' + HELP
 
+    context = result_context(connection, snapshot, weeks) if snapshot else None
+    if result is not None:
+        result['context'] = context
     name = company['name'] if company is not None else snapshot['name']
     if snapshot and snapshot['version'] is not None and company is not None:
         if snapshot['name'] != name:
@@ -159,4 +163,4 @@ def enterprise_chat(body: EnterpriseChatRequest, request: Request, connection=De
             'model_id': snapshot['id'] if snapshot else None, 'version': snapshot['version'] if snapshot else None,
             'name': snapshot['name'] if snapshot else company['name'],
             'company_id': company['id'] if company is not None else snapshot.get('company_id'),
-            'provider': provider_name, 'follow_up_metric': focus}
+            'provider': provider_name, 'follow_up_metric': focus, 'context': context}

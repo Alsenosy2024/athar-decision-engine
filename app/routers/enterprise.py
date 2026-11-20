@@ -9,6 +9,7 @@ from app.access import require_role
 from app.db import audit, request_conn
 from app.delivery.export import scenario_excel, tornado_excel
 from app.enterprise import scenarios, store
+from app.enterprise.result_context import result_context
 from app.enterprise.demo import demo_template
 from app.enterprise.impact_graph import ImpactError, WhatIfRequest
 from app.enterprise.schema import ModelInput, ModelSnapshot, ModelSummary, ModelUpdate, Template
@@ -124,7 +125,8 @@ def whatif(body: WhatIfRequest, request: Request, connection=Depends(request_con
     snapshot = whatif_snapshot(connection, body.model_id, body.version)
     with impact_errors():
         result = impact_model(snapshot, request, body.weeks).scenario(body)
-    return {'model_id': snapshot['id'], 'version': snapshot['version'], 'name': snapshot['name'], **result}
+    return {'model_id': snapshot['id'], 'version': snapshot['version'], 'name': snapshot['name'],
+            'context': result_context(connection, snapshot, body.weeks), **result}
 
 
 @router.get('/scenarios')
@@ -136,8 +138,8 @@ def list_scenarios(connection=Depends(request_conn)):
 def save_scenario(body: scenarios.ScenarioSave, request: Request, company_id: CompanyScope = None,
                   connection=Depends(request_conn)):
     snapshot = whatif_snapshot(connection, body.model_id, body.version)
-    if body.model_id is None:
-        snapshot["company_id"] = company_id
+    if company_id is not None and company_id != snapshot.get('company_id'):
+        raise api_error(422, 'enterprise_scenario_scope', 'احفظ السيناريو في نطاق مصدره.')
     with impact_errors():
         impact_model(snapshot, request, 52).assumption_values(body.assumptions)
     return scenarios.save(connection, body.name, snapshot, body.assumptions)
@@ -152,6 +154,7 @@ def comparison(body, request, connection):
     snapshot = whatif_snapshot(connection, model_id, version)
     with impact_errors():
         result = scenarios.compare(impact_model(snapshot, request, body.weeks), saved, body)
+    result['context'] = result_context(connection, snapshot, body.weeks)
     return result, snapshot
 
 
@@ -159,6 +162,7 @@ def sensitivity(body, request, connection):
     snapshot = whatif_snapshot(connection, body.model_id, body.version)
     with impact_errors():
         result = scenarios.tornado(impact_model(snapshot, request, body.weeks), body)
+    result['context'] = result_context(connection, snapshot, body.weeks)
     return result, snapshot
 
 

@@ -73,8 +73,7 @@ class Arms:
     def plan(self, sector, data, parameters, phase, previous=None):
         if previous and (data, parameters) == (previous.dataset, previous.parameters):
             return previous
-        options = {'deterministic': True} if sector == 'contracting' else {}
-        result = SOLVERS[sector].solve(data, parameters, time_limit=self.time_limit, **options)
+        result = SOLVERS[sector].solve(data, parameters, time_limit=self.time_limit, deterministic=True)
         plan = result['optimized']['plan']
         if not plan:
             raise ImpactError(f"مفيش خطة قابلة للتنفيذ لقطاع {'الإنتاج' if sector == 'production' else 'المقاولات'}.")

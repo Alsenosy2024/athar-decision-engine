@@ -6,30 +6,54 @@ document.addEventListener('alpine:init', () => {
         connectors: [], connectorId: '', config: {},
         p6File: null, p6Result: null, p6Imports: [], p6CompanyId: '', p6Selection: '',
         number,
+        get integrationAdmin() { return this.$store.app.user?.role === 'admin'; },
+        get companyModels() {
+            return this.mode === 'erp'
+                ? this.models.filter(item => item.company_id === this.$store.app.companyId)
+                : this.models;
+        },
+        connectorPath() { return '/companies/' + this.$store.app.companyId + '/connectors/erp'; },
         get columns() { return this.sheets.find(item => item.name === this.sheet)?.columns ?? []; },
         get contracting() { return this.$store.app.companies.filter(item => item.template === 'contracting'); },
         async run(action, work) {
-            if (this.busy) return;
+            if (this.busy && action !== 'load') return;
+            const generation = (this.generation ?? 0) + 1;
+            this.generation = generation;
+            const companyId = this.$store.app.companyId;
+            const live = () => this.generation === generation && this.$store.app.companyId === companyId;
             this.busy = action;
             this.error = this.message = '';
-            try { await work(); }
-            catch (error) { this.error = error.message; }
-            finally { this.busy = ''; }
+            try { await work(live); }
+            catch (error) { if (live()) this.error = error.message; }
+            finally { if (live()) this.busy = ''; }
+        },
+        activate(page, companyId, loading) {
+            if (page !== 'connectors' || loading) return;
+            queueMicrotask(() => {
+                if (this.$store.app.page !== 'connectors' || this.$store.app.companyId !== companyId) return;
+                this.result = this.model = null;
+                this.connectors = [];
+                this.selectConnector();
+                this.load();
+            });
         },
         load() {
-            return this.run('load', async () => {
+            return this.run('load', async live => {
+                const companyId = this.$store.app.companyId;
                 const [fragment, models, connectors] = await Promise.all([
                     this.markup || fetch('/static/partials/connectors.html').then(response => {
                         if (!response.ok) throw new Error('تعذّر فتح صفحة ربط البيانات.');
                         return response.text();
-                    }), api('/enterprise/models'), api('/connectors/erp'),
+                    }), api('/enterprise/models'), companyId ? api(this.connectorPath()) : [],
                 ]);
+                if (!live()) return;
                 this.models = models;
-                if (!models.some(item => String(item.id) === this.modelId)) {
-                    this.modelId = String(models[0]?.id ?? '');
+                if (!this.companyModels.some(item => String(item.id) === this.modelId)) {
+                    this.modelId = String(this.companyModels[0]?.id ?? '');
                     this.result = null;
                 }
                 const model = this.modelId ? await api(this.modelPath()) : null;
+                if (!live()) return;
                 if (this.model?.version !== model?.version) this.result = null;
                 this.model = model;
                 this.connectors = connectors;
@@ -41,6 +65,9 @@ document.addEventListener('alpine:init', () => {
             this.mode = mode;
             this.result = null;
             this.error = this.message = '';
+            if (mode !== 'p6' && !this.companyModels.some(item => String(item.id) === this.modelId)) {
+                this.selectModel(String(this.companyModels[0]?.id ?? ''));
+            }
             if (mode === 'p6' && !this.p6CompanyId && this.contracting.length) {
                 this.p6CompanyId = String(this.contracting[0].id);
                 this.loadP6();
@@ -50,7 +77,10 @@ document.addEventListener('alpine:init', () => {
         selectModel(id) {
             this.modelId = id;
             this.model = this.result = null;
-            if (id) return this.run('model', async () => { this.model = await api(this.modelPath()); });
+            if (id) return this.run('model', async live => {
+                const model = await api(this.modelPath());
+                if (live()) this.model = model;
+            });
         },
         node(id) { return this.model?.graph.nodes.find(item => item.id === id); },
         form(file) {
@@ -79,17 +109,20 @@ document.addEventListener('alpine:init', () => {
         columnMapping(mapping) { return {...mapping, date: mapping.date || null}; },
         previewFile() {
             this.result = null;
-            return this.run('preview', async () => {
+            return this.run('preview', async live => {
                 const data = this.form(this.file);
                 data.append('sheet', this.sheet);
                 data.append('columns', JSON.stringify(this.columnMapping(this.fileMapping)));
-                this.result = await api(this.modelPath() + '/imports/preview', {method: 'POST', body: data});
+                const result = await api(this.modelPath() + '/imports/preview', {method: 'POST', body: data});
+                if (live()) this.result = result;
             });
         },
         apply() {
-            return this.run('apply', async () => {
+            return this.run('apply', async live => {
                 const {version, updates} = this.result;
-                this.model = await api(this.modelPath() + '/imports/apply', post({expected_version: version, updates}));
+                const model = await api(this.modelPath() + '/imports/apply', post({expected_version: version, updates}));
+                if (!live()) return;
+                this.model = model;
                 this.result = null;
                 this.message = 'اتحفظ إصدار النموذج رقم ' + this.model.version + '.';
             });
@@ -104,7 +137,9 @@ document.addEventListener('alpine:init', () => {
             this.result = null;
         },
         saveConnector() {
-            return this.run('erp-save', async () => {
+            if (!this.integrationAdmin || !this.$store.app.companyId) return;
+            return this.run('erp-save', async live => {
+                const path = this.connectorPath();
                 const config = this.config;
                 const body = {kind: config.kind, name: config.name, url_env: config.url_env,
                     mapping: this.columnMapping(config.mapping)};
@@ -114,16 +149,20 @@ document.addEventListener('alpine:init', () => {
                 else Object.assign(body, {table: config.table, schema_name: config.schema_name || null});
                 const options = post(body);
                 if (this.connectorId) options.method = 'PUT';
-                const saved = await api('/connectors/erp' + (this.connectorId ? '/' + this.connectorId : ''), options);
-                this.connectors = await api('/connectors/erp');
+                const saved = await api(path + (this.connectorId ? '/' + this.connectorId : ''), options);
+                if (!live()) return;
+                const connectors = await api(path);
+                if (!live()) return;
+                this.connectors = connectors;
                 this.selectConnector(String(saved.id));
                 this.message = 'اتحفظ إعداد الموصل.';
             });
         },
         previewErp() {
             this.result = null;
-            return this.run('erp-pull', async () => {
-                this.result = await api(this.modelPath() + '/imports/erp/' + this.connectorId + '/preview', post());
+            return this.run('erp-pull', async live => {
+                const result = await api(this.modelPath() + '/imports/erp/' + this.connectorId + '/preview', post());
+                if (live()) this.result = result;
             });
         },
         p6Path() { return '/companies/' + this.p6CompanyId + '/p6-imports'; },

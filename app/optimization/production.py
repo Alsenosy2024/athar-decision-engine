@@ -274,7 +274,7 @@ def build_model(problem, weights, hint):
     return model, quantities, ship, hint_score
 
 
-def solve(dataset, parameters=None, weights=None, time_limit=None):
+def solve(dataset, parameters=None, weights=None, time_limit=None, *, deterministic=False):
     defaults = load_templates()['production'].model_defaults()
     problem = prepare(dataset, defaults['parameters'] | (parameters or {}))
     weights = defaults['weights'] | (weights or {})
@@ -290,13 +290,10 @@ def solve(dataset, parameters=None, weights=None, time_limit=None):
     if model.validate():
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.')
 
-    solver = configured_solver(time_limit)
-    solver.parameters.random_seed = 7
-    solver.parameters.num_workers = 1
-    # End the usual search on repeatable work units, with the wall limit as a backstop.
-    solver.parameters.max_deterministic_time = 0.8 * time_limit
-    # Generous wall backstop so the deterministic limit binds even on a busy machine.
-    solver.parameters.max_time_in_seconds = 3 * time_limit
+    solver = configured_solver(time_limit, deterministic=True)
+    if not deterministic:
+        # Sector runs honor the wall-clock limit supplied by the caller.
+        solver.parameters.max_time_in_seconds = time_limit
     status = solver.solve(model)
     chosen = objective = bound = None
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):

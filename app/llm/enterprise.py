@@ -156,9 +156,8 @@ def grounded_explanation(result, preferred=()):
     parts = []
     for row in selected[:6]:
         name = row['name_ar']
-        if row['id'] == 'cash':
-            name = ('رصيد السيولة الأسبوعي التقديري' if 'onboarding' in result else
-                    'أقل رصيد سيولة' if (result['charts']['cash'] or {}).get('dates') else name)
+        if row['id'] == 'cash' and (result['charts']['cash'] or {}).get('dates'):
+            name = 'أقل رصيد سيولة'
         if row['id'] == 'risk.credit':
             parts.append(f"{name} بعد التغيير بلغ {_display(row['after'], row['unit'])} حسب المحاكاة.")
         else:

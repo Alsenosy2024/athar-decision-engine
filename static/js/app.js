@@ -149,6 +149,7 @@ document.addEventListener('alpine:init', () => {
     Alpine.store('app', {
         pages, number,
         page: 'map',
+        mapDemo: false,
         user: null,
         companies: [],
         templates: {},
@@ -217,7 +218,10 @@ document.addEventListener('alpine:init', () => {
             this.toast = '';
             const changed = this.companyId !== id;
             this.companyId = id;
-            if (changed) this.assistantMapModel = null;
+            if (changed) {
+                this.assistantMapModel = null;
+                this.mapDemo = false;
+            }
             if (changed && this.isOnboardingCompany && !['map', 'chat'].includes(this.page)) {
                 this.page = 'onboarding';
                 location.hash = '#/onboarding';

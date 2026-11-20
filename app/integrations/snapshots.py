@@ -1,6 +1,7 @@
 """Resolve an explicitly company-owned enterprise snapshot."""
 from app.enterprise import store
 from app.enterprise.living_map import map_payload
+from app.enterprise.result_context import result_context
 from app.schemas import api_error
 
 
@@ -27,4 +28,4 @@ def snapshot_for(connection, company_id, model_id=None, version=None):
 
 def project_map(connection, company_id, snapshot):
     company = connection.execute('SELECT id, name, template FROM companies WHERE id = ?', (company_id,)).fetchone()
-    return map_payload(snapshot, dict(company), [])
+    return {**map_payload(snapshot, dict(company), []), 'context': result_context(connection, snapshot)}

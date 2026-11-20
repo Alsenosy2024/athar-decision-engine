@@ -39,7 +39,7 @@ def test_anonymous_requests_and_login_csrf(client):
         assert guest.get('/login').status_code == 200
         for path in ('/companies', '/templates', '/enterprise/models', '/auth/me', '/users'):
             assert guest.get('/api' + path).status_code == 401
-        assert guest.get('/api/connectors/erp').status_code == 401
+        assert guest.get('/api/companies/1/connectors/erp').status_code == 401
         assert guest.post('/api/enterprise/chat', json={'message': 'راجع الخطة'}).status_code == 401
         credentials = {'username': TEST_ADMIN, 'password': TEST_PASSWORD}
         assert guest.post('/api/auth/login', json=credentials).status_code == 403

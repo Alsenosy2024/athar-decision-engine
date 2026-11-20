@@ -6,8 +6,8 @@ const enterpriseTypes = {
     profit_loss: 'الأرباح والخسائر', risk_kpi: 'المخاطر',
 };
 const enterpriseUnits = {
-    SAR: 'ريال', 'SAR/unit': 'ريال لكل وحدة', units: 'وحدة', storage_units: 'وحدة تخزين',
-    teams: 'فرق', days: 'أيام', weeks: 'أسابيع', '%': '%',
+    SAR: 'ر.س', 'SAR/unit': 'ر.س/وحدة', units: 'وحدة', storage_units: 'وحدة تخزين',
+    teams: 'فرق', days: 'يوم', weeks: 'أسبوع', months: 'شهر', '%': '%',
 };
 const enterpriseEngines = {
     forecasting: 'محرك التوقعات',

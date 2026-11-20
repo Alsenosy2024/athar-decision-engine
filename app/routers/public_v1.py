@@ -9,6 +9,7 @@ from pydantic import Field
 
 from app.db import request_conn
 from app.enterprise.impact_graph import WhatIfRequest
+from app.enterprise.result_context import result_context
 from app.enterprise.scenarios import kpis
 from app.integrations import contracts, credentials
 from app.integrations.snapshots import project_map, snapshot_for
@@ -56,13 +57,14 @@ def get_map(company_id: CompanyId, model_id: Selection = None, version: Selectio
             dependencies=[Depends(require_key('kpis:read'))])
 def get_kpis(company_id: CompanyId, request: Request, model_id: Selection = None,
              version: Selection = None, weeks: Weeks = 52, connection=Depends(request_conn)):
-    """Calculate the baseline KPIs over the requested horizon. Requires kpis:read."""
+    """Calculate baseline KPIs. Onboarding models use a one-week horizon. Requires kpis:read."""
     snapshot = snapshot_for(connection, company_id, model_id, version)
     with impact_errors():
         baseline, _ = impact_model(snapshot, request, weeks).baseline()
         metrics = kpis(baseline.metrics(), baseline.fill_rate)
+    context = result_context(connection, snapshot, weeks)
     return {'company_id': company_id, 'model_id': snapshot['id'], 'version': snapshot['version'],
-            'weeks': weeks, 'kpis': metrics}
+            'weeks': context['calculation_weeks'], 'context': context, 'kpis': metrics}
 
 
 class PublicWhatIf(WhatIfRequest):
@@ -80,7 +82,7 @@ def whatif(company_id: CompanyId, body: PublicWhatIf, request: Request, connecti
     if 'onboarding' in result:
         result['onboarding'] = jsonable_encoder(result['onboarding'])
     return {'company_id': company_id, 'model_id': snapshot['id'], 'version': snapshot['version'],
-            'name': snapshot['name'], **result}
+            'name': snapshot['name'], 'context': result_context(connection, snapshot, body.weeks), **result}
 
 
 class EmbedRequest(MapSelection):

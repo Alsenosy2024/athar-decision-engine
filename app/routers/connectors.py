@@ -2,10 +2,11 @@ import json
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import ValidationError
 
+from app.access import require_role
 from app.connectors import erp, mapping, p6
 from app.connectors.files import read_tables, upload_bytes
 from app.db import audit, encode, request_conn, utc_now
@@ -44,43 +45,59 @@ def apply_import(model_id: int, body: mapping.ApplyRequest, connection=Depends(r
     return mapping.apply(connection, model_id, store.read(connection, model_id), body)
 
 
-def saved_connector(connection, connector_id):
-    row = connection.execute('SELECT id, config_json FROM erp_connectors WHERE id=?', (connector_id,)).fetchone()
+def saved_connector(connection, company_id, connector_id):
+    row = connection.execute('SELECT id, config_json FROM erp_connectors WHERE company_id=? AND id=?',
+                             (company_id, connector_id)).fetchone()
     if row is None:
-        raise api_error(404, 'erp_connector_not_found', 'موصل ERP مش موجود.')
+        raise api_error(404, 'erp_connector_not_found', 'موصل ERP مش موجود للشركة دي.')
     return {'id': row['id'], **json.loads(row['config_json'])}
 
 
-@router.get('/connectors/erp')
-def connectors(connection=Depends(request_conn)):
+def require_existing_company(connection, company_id):
+    if not connection.execute('SELECT 1 FROM companies WHERE id=?', (company_id,)).fetchone():
+        raise api_error(404, 'company_not_found', 'الشركة غير موجودة.')
+
+
+ERP_PATH = '/companies/{company_id}/connectors/erp'
+
+
+@router.get(ERP_PATH)
+def connectors(company_id: int, connection=Depends(request_conn)):
+    require_existing_company(connection, company_id)
     return [{'id': row['id'], **json.loads(row['config_json'])}
-            for row in connection.execute('SELECT id, config_json FROM erp_connectors ORDER BY id')]
+            for row in connection.execute(
+                'SELECT id, config_json FROM erp_connectors WHERE company_id=? ORDER BY id', (company_id,))]
 
 
-@router.post('/connectors/erp', status_code=201)
-def add_connector(body: erp.ConnectorConfig, connection=Depends(request_conn)):
+@router.post(ERP_PATH, status_code=201)
+def add_connector(company_id: int, body: erp.ConnectorConfig, request: Request, connection=Depends(request_conn)):
+    require_role(request.state.principal)
+    require_existing_company(connection, company_id)
     with connection:
-        connector_id = connection.execute('INSERT INTO erp_connectors (config_json, created_at) VALUES (?, ?)',
-                                          (body.model_dump_json(), utc_now())).lastrowid
-        audit(connection, None, 'erp.create', 'erp_connector', connector_id)
-    return saved_connector(connection, connector_id)
+        connector_id = connection.execute(
+            'INSERT INTO erp_connectors (company_id, config_json, created_at) VALUES (?, ?, ?)',
+            (company_id, body.model_dump_json(), utc_now())).lastrowid
+        audit(connection, company_id, 'erp.create', 'erp_connector', connector_id)
+    return saved_connector(connection, company_id, connector_id)
 
 
-@router.put('/connectors/erp/{connector_id}')
-def update_connector(connector_id: int, body: erp.ConnectorConfig, connection=Depends(request_conn)):
+@router.put(ERP_PATH + '/{connector_id}')
+def update_connector(company_id: int, connector_id: int, body: erp.ConnectorConfig, request: Request,
+                     connection=Depends(request_conn)):
+    require_role(request.state.principal)
     with connection:
-        updated = connection.execute('UPDATE erp_connectors SET config_json=? WHERE id=?',
-                                     (body.model_dump_json(), connector_id))
+        updated = connection.execute('UPDATE erp_connectors SET config_json=? WHERE company_id=? AND id=?',
+                                     (body.model_dump_json(), company_id, connector_id))
         if updated.rowcount != 1:
-            raise api_error(404, 'erp_connector_not_found', 'موصل ERP مش موجود.')
-        audit(connection, None, 'erp.update', 'erp_connector', connector_id)
+            raise api_error(404, 'erp_connector_not_found', 'موصل ERP مش موجود للشركة دي.')
+        audit(connection, company_id, 'erp.update', 'erp_connector', connector_id)
     return {'id': connector_id, **body.model_dump()}
 
 
 @router.post('/enterprise/models/{model_id}/imports/erp/{connector_id}/preview')
 def preview_erp(model_id: int, connector_id: int, connection=Depends(request_conn)):
     snapshot = store.read(connection, model_id)
-    saved = saved_connector(connection, connector_id)
+    saved = saved_connector(connection, snapshot['company_id'], connector_id)
     saved.pop('id')
     config = (erp.RestConfig if saved['kind'] == 'rest' else erp.SqlConfig).model_validate(saved)
     return mapping.preview(snapshot, config.name, erp.pull(config), config.mapping)

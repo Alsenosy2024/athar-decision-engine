@@ -121,12 +121,11 @@ def excel(company_id: CompanyID, request: Request, file: Annotated[UploadFile, F
 @router.post(BASE + '/sections/{section}/erp/{connector_id}/preview')
 def connector(company_id: CompanyID, section: str, connector_id: int, body: Version, request: Request,
               connection=Depends(request_conn)):
-    # Phase 13 saved ERP configs are instance-wide. Pulling them remains an admin operation here.
     require_role(request.state.principal)
     model = storage.snapshot(connection, company_id)
     storage.check_version(model, body.expected_version)
     check_section(section)
-    saved = saved_connector(connection, connector_id)
+    saved = saved_connector(connection, company_id, connector_id)
     saved.pop('id')
     config = (erp.RestConfig if saved['kind'] == 'rest' else erp.SqlConfig).model_validate(saved)
     table = erp.pull(config)

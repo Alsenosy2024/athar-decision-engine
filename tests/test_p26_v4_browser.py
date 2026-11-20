@@ -166,7 +166,7 @@ def compare(page):
     panel.get_by_label('من', exact=True).fill('25')
     panel.get_by_label('إلى', exact=True).fill('30')
     panel.get_by_label('زيادة الربح المطلوبة (%)').fill('5')
-    panel.get_by_label('أقل سيولة مقبولة (ريال)').fill('1700')
+    panel.get_by_label('الحد الأدنى المقبول للسيولة (ر.س)').fill('1700')
     goal = post_from(page, '/enterprise/map/goal-seek', panel.get_by_role('button', name='دور على توصيات'))
     assert goal['recommendations'][0]['target_met'] and goal['recommendations'][0]['cash'] >= 1700
     expect(page.get_by_test_id('map-recommendations')).to_contain_text('محامي الشيطان')

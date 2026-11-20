@@ -45,7 +45,7 @@ function mapExecutiveControls() {
                 if (row?.baseline == null) return [];
                 const impact = this.result?.nodes.find(node => node.id === id);
                 const headline = impact ? impact.quantiles?.p50 ?? impact.after : row.baseline;
-                return [{ ...row, label: row.name_ar, headline, baseline: impact?.before ?? row.baseline,
+                return [{ ...row, label: row.name_ar, headline, baseline: impact?.before ?? row.baseline, history: [],
                     bands: impact?.quantiles }];
             });
             return [...metrics.slice(0, 2),

@@ -1,6 +1,14 @@
-const mapUnits = { SAR: 'ريال', 'SAR/unit': 'ريال/وحدة', units: 'وحدة', storage_units: 'وحدة تخزين',
-    teams: 'فريق', days: 'يوم', weeks: 'أسبوع', '%': '%' };
-const mapValue = (value, unit) => value == null ? '—' : number(value) + (unit ? ' ' + (mapUnits[unit] || unit) : '');
+const mapUnits = enterpriseUnits;
+const mapValue = (value, unit) => value == null ? '—' : number(value) + (unit === '%' ? '%' : unit ? ' ' + (mapUnits[unit] || unit) : '');
+function enterpriseResultContext(context) {
+    if (!context) return '';
+    const { company_name, model_version, source, data_from, data_to, weekly_snapshot, calculation_weeks } = context;
+    const dates = data_from === data_to ? data_from : data_from + ' – ' + data_to;
+    return [company_name, 'إصدار النموذج ' + number(model_version), source,
+        data_from ? 'تواريخ البيانات \u2066' + dates + '\u2069' : 'البيانات من غير تواريخ مرجعية',
+        weekly_snapshot ? 'تقدير لأسبوع واحد' : calculation_weeks ? 'أفق الفرضية ' + number(calculation_weeks) + ' أسبوع' : ''
+    ].filter(Boolean).join(' · ');
+}
 const mapPair = (source, target) => source + ':' + target;
 const higherIsAdverse = row => (row.id.startsWith('risk.') && row.id !== 'risk.fill') ||
     row.type === 'supplier' || row.type === 'payables' ||
@@ -53,12 +61,26 @@ document.addEventListener('alpine:init', () => {
 
         const page = {
             processMarkup: '',
-            markup: '', map: null, company: null, causalRoads: [], observedRoads: [], focus: '', selectedModel: '',
-            busy: '', error: '', feedback: '', question: '', provider: '', lastMetric: null, edits: [], driverId: '',
+            markup: '', map: null, emptyScope: false, company: null, causalRoads: [], observedRoads: [], focus: '', selectedModel: '',
+            busy: '', error: '', feedback: '', question: '', provider: '', lastMetric: null, answerContext: null, edits: [], driverId: '',
             weeks: 52, baselineKpis: null, result: null, submitted: [], week: 0, clock: null, playing: false,
             saved: [], scenarioName: '', compareIds: [], comparison: null,
             goalDriver: '', goalLow: '', goalHigh: '', goalProfit: '', goalCash: '', recommendations: null,
-            number, mapValue, assistant: ATHAR_ASSISTANT,
+            number, mapValue, assistant: ATHAR_ASSISTANT, enterpriseResultContext,
+            get scopeId() { return this.demoMode ? null : this.$store.app.companyId; },
+            get demoMode() { return this.$store.app.mapDemo; },
+            get weeklySnapshot() { return !!this.map?.context?.weekly_snapshot; },
+            get cashLabel() { return this.map?.kpis.find(row => row.id === 'cash_low')?.label; },
+            get resultContext() { return enterpriseResultContext(this.result?.context || this.map?.context); },
+            get canSave() { return this.editable && (!this.demoMode || this.$store.app.user?.role === 'admin'); },
+            toggleDemo() { this.$store.app.mapDemo = !this.demoMode; },
+            metricPeriod(metric) {
+                if (metric.headline == null) return '';
+                if (this.weeklySnapshot) return metric.id === 'cash_low' ? 'نهاية الأسبوع' : 'أسبوع واحد';
+                if (metric.id === 'cash_low' && this.map?.has_engines) return 'أدنى رصيد في دفتر السيولة اليومي';
+                const weeks = this.result?.context?.calculation_weeks;
+                return weeks ? 'أفق الفرضية ' + number(weeks) + ' أسبوع' : '';
+            },
             unitLabel(unit) { return mapUnits[unit] || unit; },
             get editable() { return ['admin', 'planner'].includes(this.$store.app.user?.role); },
             get selection() {
@@ -121,7 +143,7 @@ document.addEventListener('alpine:init', () => {
             source(value) { return { actual: 'فعلي', estimated: 'مقدّر', missing: 'غير متاح' }[value]; },
             operationUnit(row) { return row.operation === 'pct' ? '%' : this.unit(row.node_id); },
             deltaText(row) {
-                return row?.delta == null ? '—' : signed(row.delta) + ' ' + (mapUnits[row.unit] || row.unit);
+                return row?.delta == null ? '—' : signed(row.delta) + (row.unit === '%' ? '%' : ' ' + this.unitLabel(row.unit));
             },
             tone(row) {
                 if (!row?.affected) return 'idle';
@@ -156,8 +178,8 @@ document.addEventListener('alpine:init', () => {
                     (22 - (value - low) / span * 20)).join(' ');
             },
 
-            activate(page, companyId, loading) {
-                const key = page === 'map' && !loading ? String(companyId ?? 'demo') : '';
+            activate(page, companyId, loading, demo) {
+                const key = page === 'map' && !loading ? (demo ? 'demo' : String(companyId ?? 'empty')) : '';
                 if (key === active) return;
                 active = key;
                 visit++;
@@ -168,13 +190,14 @@ document.addEventListener('alpine:init', () => {
                 renderer = null;
                 if (!key) return;
                 this.map = null;
+                this.emptyScope = key === 'empty';
                 this.edits = [];
                 this.driverId = this.question = '';
-                this.lastMetric = null;
+                this.lastMetric = this.answerContext = null;
                 this.busy = this.error = this.feedback = '';
                 this.weeks = 52;
                 const current = visit;
-                queueMicrotask(() => { if (current === visit) this.load(companyId); });
+                queueMicrotask(() => { if (current === visit && key !== 'empty') this.load(demo ? null : companyId); });
             },
             destroy() {
                 visit++;
@@ -190,6 +213,7 @@ document.addEventListener('alpine:init', () => {
                 const live = () => current === visit && this.$store.app.companyId === companyId && this.$store.app.page === 'map';
                 this.busy = action;
                 this.error = this.feedback = '';
+                this.answerContext = null;
                 try { await fn(live); }
                 catch (error) { if (live()) this.error = error.message; }
                 finally { if (live()) this.busy = ''; }
@@ -216,9 +240,10 @@ document.addEventListener('alpine:init', () => {
                             return response.text();
                         }),
                     ]);
-                    const map = original.model ? original : original.process_mining
-                        ? this.processOnlyMap(original) : await api('/enterprise/map');
                     if (!live()) return;
+                    this.emptyScope = !original.model && !original.process_mining;
+                    const map = original.model ? original : this.processOnlyMap(original);
+                    if (!map.departments) map.departments = [];
                     if (refresh && !map.process_only && !this.map?.process_only &&
                         map.model.id === this.map?.model.id && map.model.version === this.map?.model.version) {
                         this.refreshBriefing();
@@ -241,14 +266,16 @@ document.addEventListener('alpine:init', () => {
                             weight: Math.max(old?.weight || 0, edge.weight) });
                     }
                     const scoped = scenarios.filter(row => row.model_id === map.model.id &&
-                        row.version === map.model.version && row.company_id === (companyId ?? null));
+                        row.version === map.model.version && row.company_id === (map.context?.company_id ?? null));
                     this.resetProcessFlow(map);
                     Object.assign(this, { map, markup, processMarkup, company: original.company, causalRoads: [...grouped.values()],
                         selectedModel: map.model.id == null ? '' : String(map.model.id),
-                        focus: '', edits: [], question: '', provider: '', lastMetric: null, driverId: '', result: null, submitted: [], baselineKpis: null,
+                        focus: '', edits: [], question: '', provider: '', lastMetric: null, answerContext: null,
+                        driverId: '', result: null, submitted: [], baselineKpis: null,
+                        weeks: map.context?.weekly_snapshot ? 1 : this.weeklySnapshot ? 52 : this.weeks,
                         week: 0, saved: scoped, scenarioName: '', comparison: null, compareIds: [],
                         goalDriver: '', goalLow: '', goalHigh: '', goalProfit: '', goalCash: '', recommendations: null });
-                    this.$store.app.assistantMapModel = map.model?.id == null ? null : map.model;
+                    if (!map.is_demo) this.$store.app.assistantMapModel = map.model?.id == null ? null : map.model;
                     if (!map.process_only) this.refreshBriefing();
                     this.refreshExecutiveBaseline({ defer: true });
                     this.$nextTick(() => {
@@ -256,7 +283,7 @@ document.addEventListener('alpine:init', () => {
                     });
                 });
             },
-            chooseModel(value) { this.load(this.$store.app.companyId, value); },
+            chooseModel(value) { this.load(this.scopeId, value); },
             makeEdit(row) {
                 return { node_id: row.node_id, operation: row.operation || 'set',
                     value: row.value, uncertainty: row.uncertainty || 0 };
@@ -292,6 +319,7 @@ document.addEventListener('alpine:init', () => {
                     if (!live()) return;
                     this.lastMetric = response.follow_up_metric;
                     this.provider = response.provider;
+                    this.answerContext = response.context;
                     this.feedback = response.reply_ar;
                     if (response.scenario.intent === 'what_if') {
                         this.edits = response.scenario.assumptions.map(row => this.makeEdit(row));
@@ -412,10 +440,9 @@ document.addEventListener('alpine:init', () => {
             },
             save() {
                 const name = this.scenarioName.trim();
-                if (!name || !this.submitted.length) return;
+                if (!this.canSave || !name || !this.submitted.length) return;
                 return this.work('save', async live => {
-                    const query = this.$store.app.companyId == null ? '' : '?company_id=' + this.$store.app.companyId;
-                    const row = await api('/enterprise/scenarios' + query, post({
+                    const row = await api('/enterprise/scenarios', post({
                         ...this.selection, name, assumptions: this.submitted,
                     }));
                     if (!live()) return;

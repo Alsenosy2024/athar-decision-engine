@@ -197,6 +197,7 @@ def test_map_browser(width):
         page.route('**/*', local_only)
         page.goto('/')
         login(page, 'qa-owner')
+        page.get_by_role('button', name='افتح ديمو روافد').click()
         stage = page.get_by_test_id('map-stage')
         expect(stage).to_be_visible()
         expect(page.get_by_role('heading', name='خريطة الشركة')).to_be_visible()
@@ -271,7 +272,7 @@ def test_map_browser(width):
         panel.get_by_label('من', exact=True).fill('90')
         panel.get_by_label('إلى', exact=True).fill('120')
         panel.get_by_label('زيادة الربح المطلوبة (%)').fill('5')
-        panel.get_by_label('أقل سيولة مقبولة (ريال)').fill('450')
+        panel.get_by_label('الحد الأدنى المقبول للسيولة (ر.س)').fill('450')
         recommended = post_from(page, '/enterprise/map/goal-seek', panel.get_by_role('button', name='دور على توصيات'))
         assert recommended['recommendations'][0]['target_met']
         expect(page.get_by_test_id('map-recommendations')).to_contain_text('محامي الشيطان')

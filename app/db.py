@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS enterprise_scenarios (
 );
 CREATE TABLE IF NOT EXISTS erp_connectors (
     id INTEGER PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
     config_json TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
@@ -83,6 +84,12 @@ def initialize(path: Path):
     with get_conn(path) as connection:
         connection.execute('PRAGMA journal_mode = WAL')
         connection.executescript(DDL)
+        connection.execute('BEGIN IMMEDIATE')
+        columns = {row['name'] for row in connection.execute('PRAGMA table_info(erp_connectors)')}
+        if 'company_id' not in columns:
+            # Legacy settings have no trusted owner. Preserve them without granting access.
+            connection.execute('ALTER TABLE erp_connectors ADD COLUMN company_id INTEGER REFERENCES companies(id)')
+        connection.execute('CREATE INDEX IF NOT EXISTS erp_connectors_company ON erp_connectors(company_id, id)')
     from app.access import initialize_access_schema
     initialize_access_schema(path)
 

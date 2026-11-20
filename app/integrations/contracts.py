@@ -1,4 +1,5 @@
 """Public response schemas for the v1 integration contract."""
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, JsonValue
@@ -73,7 +74,19 @@ class MapKpi(BaseModel):
     source: Source
 
 
+class ResultContext(BaseModel):
+    company_id: int
+    company_name: str
+    model_version: int
+    source: str
+    data_from: date | None
+    data_to: date | None
+    weekly_snapshot: bool
+    calculation_weeks: int | None
+
+
 class MapResult(BaseModel):
+    context: ResultContext
     company: CompanyRef
     model: ModelRef
     departments: list[Department]
@@ -96,6 +109,7 @@ class Kpis(BaseModel):
 
 
 class KpiResult(SelectionResult):
+    context: ResultContext
     weeks: int
     kpis: Kpis
 
@@ -158,6 +172,7 @@ class Charts(BaseModel):
 
 
 class WhatIfResult(SelectionResult):
+    context: ResultContext
     name: str
     nodes: list[ImpactNode]
     assumptions: list[AppliedAssumption]

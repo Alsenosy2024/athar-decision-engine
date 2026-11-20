@@ -278,11 +278,7 @@ def solve(dataset, parameters=None, weights=None, time_limit=None, *, determinis
     if model.validate():
         raise OptimizationInputError('القيم الرقمية أكبر من النطاق المدعوم للتحسين.')
 
-    solver = configured_solver(time_limit)
-    if deterministic:
-        solver.parameters.num_workers = 1
-        solver.parameters.max_deterministic_time = 0.8 * time_limit
-        solver.parameters.max_time_in_seconds = 3 * time_limit
+    solver = configured_solver(time_limit, deterministic=deterministic)
     status = solver.solve(model)
     objective = None
     bound = None

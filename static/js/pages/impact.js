@@ -5,7 +5,7 @@ document.addEventListener('alpine:init', () => {
         models: [], modelId: '', drivers: [], assumptions: [], result: null, version: null,
         selection: '', busy: '', error: '', scenarioName: '', saving: false, savedName: '',
         units: enterpriseUnits,
-        number, signed,
+        number, signed, enterpriseResultContext,
         sourceLabel: value => ({actual: 'فعلي', estimated: 'مقدّر', missing: 'ناقص'}[value] || ''),
         get focused() { return this.result?.nodes.find(row => row.id === this.selection); },
         get incoming() { return this.result?.paths.filter(edge => edge.target === this.selection) || []; },
@@ -100,9 +100,7 @@ document.addEventListener('alpine:init', () => {
             }
             this.busy = 'save';
             try {
-                const company = this.$store.app.companyId;
-                const scope = !this.modelId && company ? '?company_id=' + company : '';
-                const saved = await api('/enterprise/scenarios' + scope, post({ name, ...this.scenarioPayload() }));
+                const saved = await api('/enterprise/scenarios', post({ name, ...this.scenarioPayload() }));
                 this.savedName = saved.name;
                 this.saving = false;
                 this.scenarioName = '';
@@ -134,7 +132,7 @@ document.addEventListener('alpine:init', () => {
                 };
                 const peak = Math.max(...pnl.flatMap(row => [Math.abs(row.before), Math.abs(row.after)]));
                 const scale = peak >= 1e6 ? 1e6 : peak >= 1e3 ? 1e3 : 1;
-                const currency = { 1: 'ريال', 1000: 'ألف ريال', 1000000: 'مليون ريال' }[scale];
+                const currency = { 1: 'ر.س', 1000: 'ألف ر.س', 1000000: 'مليون ر.س' }[scale];
                 drawChart(this.$refs.pnl, c => ({
                     type: 'bar',
                     data: {
@@ -161,7 +159,7 @@ document.addEventListener('alpine:init', () => {
                         { label: legends[0], data: cash.before, backgroundColor: c.reference },
                         { label: legends[1], data: cash.after, backgroundColor: c.main },
                     ] },
-                    options: { scales: { y: { title: axisTitle('ريال') } } },
+                    options: { scales: { y: { title: axisTitle('ر.س') } } },
                 }));
             } else if (cash) {
                 const weekly = series => Array.from({ length: Math.ceil((series.length - 1) / 7) }, (_, index) =>
@@ -177,7 +175,7 @@ document.addEventListener('alpine:init', () => {
                     },
                     options: {
                         interaction: { mode: 'index', intersect: false },
-                        scales: { x: reverseTime('الأسبوع'), y: { title: axisTitle('ريال') } },
+                        scales: { x: reverseTime('الأسبوع'), y: { title: axisTitle('ر.س') } },
                         plugins: { tooltip: { callbacks: {
                             title: items => 'أسبوع ' + cash.dates[1 + items[0].dataIndex * 7],
                         } } },

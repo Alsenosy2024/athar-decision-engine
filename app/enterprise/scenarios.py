@@ -8,6 +8,7 @@ from pydantic import Field, StringConstraints, model_validator
 from app.access import active_principal, company_visible, require_company
 from app.db import audit, encode, utc_now
 from app.enterprise.impact_graph import Assumption, ImpactError, ScenarioAssumptions, WhatIfRequest
+from app.enterprise.result_context import WEEKLY_CASH_LABEL
 from app.enterprise.schema import NodeId, Number, StrictFields
 from app.optimization.common import OptimizationInputError
 from app.schemas import api_error
@@ -15,14 +16,23 @@ from app.schemas import api_error
 Kpi = Literal['profit', 'cash_low', 'credit_breach', 'delays', 'fill_rate']
 ModelId = Annotated[int, Field(strict=True, ge=1)]
 KPIS = {
-    'profit': {'label': 'النتيجة بعد التمويل', 'unit': 'ريال'},
-    'cash_low': {'label': 'أقل رصيد سيولة', 'unit': 'ريال'},
+    'profit': {'label': 'النتيجة بعد التمويل', 'unit': 'ر.س'},
+    'cash_low': {'label': 'أقل رصيد سيولة', 'unit': 'ر.س'},
     'credit_breach': {'label': 'احتمال تجاوز الائتمان', 'unit': '%'},
     'delays': {'label': 'إجمالي تأخير المشروعات', 'unit': 'أسبوع'},
     'fill_rate': {'label': 'نسبة تلبية طلبات الإنتاج', 'unit': '%'},
 }
 KPI_NODES = {'profit': 'pnl.result', 'cash_low': 'cash', 'credit_breach': 'risk.credit',
              'delays': 'risk.delay', 'fill_rate': 'risk.fill'}
+
+
+def kpi_specs(graph):
+    if not graph.onboarding:
+        return KPIS
+    return KPIS | {
+        'cash_low': {**KPIS['cash_low'], 'label': WEEKLY_CASH_LABEL},
+        'profit': {**KPIS['profit'], 'label': 'الربح الأسبوعي بعد التمويل'},
+    }
 
 
 class ScenarioSave(ScenarioAssumptions):
@@ -70,13 +80,13 @@ def scenario_row(row):
 
 def list_saved(connection):
     principal = active_principal.get()
-    return [scenario_row(row) for row in connection.execute('SELECT * FROM enterprise_scenarios ORDER BY id DESC')
+    return [scenario_row(row) for row in connection.execute('SELECT * FROM enterprise_scenarios WHERE model_id IS NOT NULL OR company_id IS NULL ORDER BY id DESC')
             if company_visible(principal, row['company_id'])]
 
 
 def read_saved(connection, scenario_ids):
     placeholders = ','.join('?' for _ in scenario_ids)
-    rows = connection.execute(f'SELECT * FROM enterprise_scenarios WHERE id IN ({placeholders})', scenario_ids)
+    rows = connection.execute(f'SELECT * FROM enterprise_scenarios WHERE id IN ({placeholders}) AND (model_id IS NOT NULL OR company_id IS NULL)', scenario_ids)
     principal = active_principal.get()
     found = {row['id']: scenario_row(row) for row in rows if company_visible(principal, row['company_id'])}
     if len(found) != len(scenario_ids):
@@ -131,8 +141,8 @@ def compare(model, scenarios, body):
         except (ImpactError, OptimizationInputError) as error:
             raise ImpactError(f"السيناريو «{saved['name']}»: {error}") from None
         results.append({**saved, 'kpis': metrics})
-    return {'kpis': KPIS, 'baseline': baseline, 'scenarios': results,
-            'settings': body.model_dump(exclude={'scenario_ids'})}
+    return {'kpis': kpi_specs(model.graph), 'baseline': baseline, 'scenarios': results,
+            'settings': {**body.model_dump(exclude={'scenario_ids'}), 'weeks': model.weeks}}
 
 
 def sweep_case(model, base, key, variation, kpi, reference):
@@ -174,5 +184,5 @@ def tornado(model, body):
         rows.append({'driver': drivers[key], 'low': low, 'high': high, 'span': span,
                      'zero_reference': drivers[key]['value'] == 0})
     rows.sort(key=lambda row: (row['span'] is None, -(row['span'] or 0), row['driver']['id']))
-    return {'kpi': body.kpi, 'metric': KPIS[body.kpi], 'percent': body.percent,
-            'baseline': baseline, 'weeks': body.weeks, 'rows': rows}
+    return {'kpi': body.kpi, 'metric': kpi_specs(model.graph)[body.kpi], 'percent': body.percent,
+            'baseline': baseline, 'weeks': model.weeks, 'rows': rows}

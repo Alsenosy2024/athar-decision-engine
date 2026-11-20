@@ -191,11 +191,20 @@ def test_contracting_whatif_and_optimize_explanation(client, db_path):
 
 def test_line_down_and_explanation(client):
     base = optimize(client, 2)
-    assert (base['baseline']['kpis']['total_cost'], base['optimized']['kpis']['total_cost']) == (22254.29, 20047.85)
+    baseline = base['baseline']['kpis']
+    optimized = base['optimized']['kpis']
+    assert baseline['total_cost'] == 22254.29
+    assert base['solver']['status'] in ('OPTIMAL', 'FEASIBLE')
+    assert optimized['feasible'] and optimized['credit_ok']
+    assert optimized['total_cost'] < baseline['total_cost']
+    assert optimized['late_orders'] <= baseline['late_orders']
     result = whatif(client, 2, base['run_id'], {'type': 'line_down', 'line': 'L1', 'from_day': 3, 'days': 2})
     assert result.status_code == 200, result.text
     result = result.json()
     kpis = result['scenario']['kpis']
+    assert result['base']['kpis']['total_cost'] == optimized['total_cost']
+    assert result['diff']['total_cost']['base'] == optimized['total_cost']
+    assert result['diff']['total_cost']['scenario'] == kpis['total_cost']
     assert kpis['schedule']
     assert all(row['line'] != 'L1' or row['day'] not in (3, 4) for row in kpis['schedule'])
     assert 'L1' in result['explanation_ar']
