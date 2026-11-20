@@ -6,7 +6,7 @@ import pytest
 
 from app.decision_loop.api import PlanMetrics, ProductionExperiment
 from app.decision_loop.candidates import SOLVE_SECONDS, prefix, solve_candidate
-from app.decision_loop.evaluation import assess, cvar
+from app.decision_loop.evaluation import assess, cvar, dispatch, measure
 from app.decision_loop.frontier import shared_frontier
 from app.decision_loop.rolling import ledger, rolling
 from app.decision_loop.scenarios import Demand, draw_paths, reduced_sample
@@ -68,7 +68,7 @@ def test_p1a_fractional_cvar_changes_choice_and_excludes_ineligible_tradeoff():
         assert select(candidates, 'assessment')['id'] == winner
 
 
-def test_p1a_demonstration_keeps_solver_evidence_and_full_sample_guard(demo_run):
+def test_p1a_demonstration_keeps_solver_evidence_and_full_sample_guard(demo, demo_run):
     assert demo_run['settings']['seed'] == 7
     assert demo_run['settings']['workers'] == 1
     assert len(demo_run['candidates']) >= 3
@@ -76,6 +76,12 @@ def test_p1a_demonstration_keeps_solver_evidence_and_full_sample_guard(demo_run)
     assert len({row['version'] for row in demo_run['candidates']}) == len(demo_run['candidates'])
     assert demo_run['selected_id'] == select(demo_run['candidates'], 'assessment')['id']
     assert len(demo_run['frontier']) >= 2
+    demand = Demand.from_problem(demo[2], demo_run['policy']['forecast_uplift'])
+    paths = draw_paths(demand, demo_run['scenario_set']['full_count'], demo_run['settings']['seed'])
+    for row in demo_run['candidates']:
+        cases = [demand.problem(demo[2], path) for path in paths]
+        costs = [measure(case, dispatch(case, row['plan']))['cost_sar'] for case in cases]
+        assert row['p50_cost_sar'] == pytest.approx(np.percentile(costs, 50))
     for point in demo_run['frontier']:
         row = next(row for row in demo_run['candidates'] if row['id'] == point['candidate_id'])
         assert row['assessment']['breaches']['physical']['max_excess'] == 0

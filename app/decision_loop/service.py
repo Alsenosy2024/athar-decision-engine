@@ -1,4 +1,5 @@
 """Production experiment orchestration. The existing optimize endpoint stays independent."""
+from statistics import median
 from time import perf_counter
 
 from app.decision_loop.candidates import SEED, SOLVE_SECONDS, WORKERS, prefix, solve_candidate
@@ -83,7 +84,9 @@ def experiment(dataset, parameters, weights, policy, *, hard_credit=False, contr
         full = assess(rows, full_probs, policy, scales, hard_credit)
         short = assess([rows[index] for index, _ in reduced], [weight for _, weight in reduced],
                        policy, scales, hard_credit)
+        # This display summary uses the same equally weighted paths as the full CVaR.
         candidates.append(attempt | {'version': version, 'plan': plan, 'assessment': full,
+                                     'p50_cost_sar': median(row['cost_sar'] for row in rows),
                                      'reduced_assessment': short})
     chosen, short_chosen = (select(candidates, key) for key in ('assessment', 'reduced_assessment'))
     reference = next((row for row in candidates if row['id'] == 'central'), None)

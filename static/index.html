@@ -28,6 +28,7 @@
     <script defer src="/static/js/pages/onboarding.js"></script>
     <script defer src="/static/js/pages/impact.js"></script>
     <script defer src="/static/js/pages/scenarios.js"></script>
+    <script defer src="/static/js/pages/hybrid-charts.js"></script>
     <script defer src="/static/js/pages/connectors.js"></script>
     <script defer src="/static/js/pages/prescriptive.js"></script>
     <script defer src="/static/js/pages/now.js"></script>
@@ -660,6 +661,183 @@
                 </header>
                 <p class="notice error page-feedback" role="alert" x-show="error" x-text="error"></p>
                 <p role="status" class="page-feedback" x-show="busy === 'load'">جارٍ تحميل السيناريوهات والمدخلات…</p>
+                <div class="stack hybrid-panel" x-data="hybridScenarios" x-show="template === 'production'"
+                     x-effect="activate($store.app.page, $store.app.companyId)">
+                    <p class="notice error" role="alert" x-show="error" x-text="error"></p>
+                    <article class="card stack" data-testid="hybrid-risk">
+                        <header class="now-card-head">
+                            <h2>مقارنة بدائل الإنتاج بالتوقع</h2>
+                            <button type="button" class="button secondary" x-show="$store.app.canPlan"
+                                    :disabled="!!busy || !$store.app.company?.active_dataset_id" @click="runHybrid()"
+                                    x-text="busy === 'solve' ? 'بنحسب التوقع والبدائل…' : 'شغّل تقييم بالتوقع'"></button>
+                        </header>
+                        <p role="status" x-show="busy === 'load'">بنحمّل تقييم المخاطر المحفوظ…</p>
+                        <p class="now-empty" x-show="!saved && !busy && !error">مفيش تقييم مخاطر بالتوقع لمجموعة البيانات النشطة.</p>
+                        <template x-if="saved">
+                            <div class="stack">
+                                <p class="now-source">
+                                    <bdi x-text="$store.app.company.name"></bdi> · تشغيل <bdi x-text="'#' + saved.id"></bdi>
+                                    · توقع <bdi x-text="'#' + saved.contract.forecast_id"></bdi>
+                                    · بيانات <bdi x-text="'#' + saved.dataset_id"></bdi>
+                                    · نموذج <bdi x-text="'#' + saved.model_id"></bdi>
+                                    · من <bdi x-text="saved.risk.start_date"></bdi> لمدة
+                                    <bdi x-text="number(saved.contract.horizon.periods)"></bdi> يوم
+                                    · <bdi x-text="number(saved.risk.path_count)"></bdi> مسار طلب
+                                </p>
+                                <p x-show="saved.contract.approval_policy === 'shadow_only'">التشغيل للمراجعة التجريبية فقط.</p>
+                                <p x-text="saved.risk.selected_id ? 'البديل المختار · ' + candidateLabel(saved.risk.selected_id) : 'مفيش بديل عدّى قيود التقييم.'"></p>
+                                <div class="hybrid-grid">
+                                    <section>
+                                        <h3>وسيط التكلفة (P50) مقابل (CVaR)</h3>
+                                        <p x-text="'(CVaR) متوسط تكلفة أسوأ ' + percent(1 - saved.risk.alpha) + ' من المسارات.'"></p>
+                                        <template x-if="saved.risk.candidates.length">
+                                            <div class="hybrid-plot">
+                                                <canvas role="img" aria-label="وسيط وتكلفة الذيل لكل خطة مرشحة" data-testid="candidate-cost-chart"
+                                                        x-hybrid-chart:cost="saved.risk"></canvas>
+                                            </div>
+                                        </template>
+                                        <p class="now-empty" x-show="!saved.risk.candidates.length">السولفر مارجّعش خطط مرشحة.</p>
+                                        <p class="now-empty" x-show="saved.risk.candidates.some(row => row.p50_cost_sar == null)">الوسيط مش محفوظ لبعض الخطط. شغّل تقييم جديد لحسابه.</p>
+                                        <details x-show="saved.risk.candidates.length" class="hybrid-details">
+                                            <summary>قيم المرشحين بالريال</summary>
+                                            <div class="table-scroll" tabindex="0" aria-label="تكلفة المرشحين">
+                                                <table class="numeric-table">
+                                                    <thead><tr><th>البديل</th><th>P50</th><th>CVaR</th><th>اجتياز قيود التقييم</th></tr></thead>
+                                                    <tbody><template x-for="row in saved.risk.candidates" :key="row.id">
+                                                        <tr><th scope="row" x-text="candidateLabel(row.id)"></th><td x-text="number(row.p50_cost_sar)"></td>
+                                                            <td x-text="number(row.cvar_cost_sar)"></td>
+                                                            <td x-text="row.eligible ? 'اجتاز' : 'لم يجتز'"></td></tr>
+                                                    </template></tbody>
+                                                </table>
+                                            </div>
+                                        </details>
+                                    </section>
+                                    <section>
+                                        <h3>جبهة المفاضلة بين الأقسام (Pareto)</h3>
+                                        <p x-text="saved.risk.reference_id ? 'الفرق على كل قسم محسوب قدام ' + candidateLabel(saved.risk.reference_id) + '.' : ''"></p>
+                                        <template x-if="saved.risk.frontier.length">
+                                            <div class="hybrid-plot">
+                                                <canvas role="img" aria-label="التكلفة مقابل فاقد الخدمة للخطط على الجبهة" data-testid="production-pareto-chart"
+                                                        x-hybrid-chart:pareto="saved.risk.frontier"></canvas>
+                                            </div>
+                                        </template>
+                                        <p class="now-empty" x-show="!saved.risk.frontier.length">مفيش خطط مؤهلة على الجبهة.</p>
+                                        <details x-show="saved.risk.frontier.length" class="hybrid-details">
+                                            <summary>أثر البدائل على الأقسام</summary>
+                                            <template x-for="point in saved.risk.frontier" :key="point.candidate_id">
+                                                <div class="hybrid-point">
+                                                    <h4 x-text="paretoPointLabel(point)"></h4>
+                                                    <p>التكلفة <bdi x-text="number(point.objectives.cost_sar)"></bdi> ريال · فاقد الخدمة
+                                                        <bdi x-text="number(point.objectives.service_loss_pct) + '%'"></bdi> · أقصى سحب
+                                                        <bdi x-text="number(point.objectives.peak_credit_sar)"></bdi> ريال</p>
+                                                    <dl class="now-decision-facts">
+                                                        <template x-for="[department, metrics] in Object.entries(point.department_deltas)" :key="department">
+                                                            <div><dt x-text="paretoDepartments[department]"></dt><dd>
+                                                                <template x-for="[key, value] in Object.entries(metrics)" :key="key">
+                                                                    <span class="hybrid-delta"><span x-text="paretoMetrics[key]"></span> <bdi x-text="signed(value)"></bdi></span>
+                                                                </template>
+                                                            </dd></div>
+                                                        </template>
+                                                    </dl>
+                                                </div>
+                                            </template>
+                                        </details>
+                                    </section>
+                                </div>
+                            </div>
+                        </template>
+                    </article>
+                    <article class="card stack" data-testid="regret-card">
+                        <header class="now-card-head">
+                            <div><h2>فرق تكلفة القرار (Regret)</h2><p class="now-source">بنشمارك تاريخي لسياسات التخطيط على ديمو الإنتاج</p></div>
+                            <button type="button" class="button secondary" x-show="$store.app.canPlan" :disabled="!!busy"
+                                    @click="runBenchmark()" x-text="busy === 'benchmark' ? 'بنحسب البنشمارك…' : 'شغّل البنشمارك'"></button>
+                        </header>
+                        <template x-if="benchmark">
+                            <div>
+                                <dl class="hybrid-kpis">
+                                    <div><dt>متوسط Regret · الخطة الحالية</dt><dd><bdi x-text="number(benchmark.summary.current.mean_regret_sar)"></bdi> ريال</dd></div>
+                                    <div><dt>متوسط Regret · سياسة السيناريوهات</dt><dd><bdi x-text="number(benchmark.summary.scenario.mean_regret_sar)"></bdi> ريال</dd></div>
+                                    <div><dt>الفرق المقترن (الحالية ناقص السيناريوهات)</dt><dd><bdi x-text="signed(regret?.mean_improvement_sar)"></bdi> ريال</dd></div>
+                                </dl>
+                                <p data-testid="regret-ci" x-show="regret?.ci95_sar">فاصل الثقة 95% للفرق ·
+                                    من <bdi x-text="signed(regret?.ci95_sar?.[0])"></bdi> إلى <bdi x-text="signed(regret?.ci95_sar?.[1])"></bdi> ريال</p>
+                                <p x-show="!regret?.ci95_sar">فاصل الثقة غير متاح للمقارنة دي.</p>
+                                <p class="now-source" x-show="regret">
+                                    <bdi x-text="number(regret?.paired_windows)"></bdi> أسبوع مقترن · من
+                                    <bdi x-text="benchmark.manifest.test_window[0]"></bdi> لحد ما قبل
+                                    <bdi x-text="benchmark.manifest.test_window[1]"></bdi>
+                                </p>
+                            </div>
+                        </template>
+                        <p class="now-empty" x-show="!benchmark && busy !== 'benchmark'">شغّل البنشمارك لعرض مقارنة ديمو الإنتاج.</p>
+                    </article>
+                    <details class="card hybrid-details" data-testid="hybrid-allocation" x-ref="allocationForm"
+                             x-show="$store.app.canPlan" @toggle="if ($el.open) loadAllocation()">
+                        <summary>مفاضلة توزيع الموارد بين الخطط المعتمدة</summary>
+                        <button type="button" class="button chip" :disabled="!!busy" @click="loadAllocation()">حدّث الخطط المتاحة</button>
+                        <p class="now-empty" x-show="approvedPlans.length < 2 && busy !== 'plans'">التخصيص محتاج خطة معتمدة ومؤهلة لكل قسم من قسمين على الأقل.</p>
+                        <form class="stack" x-show="approvedPlans.length >= 2" @submit.prevent="runAllocation()">
+                            <p>اختار خطط بأفق واحد ومن غير تداخل في الخطوط أو الطلبات. اليوم 0 هو أول يوم في الخطط.</p>
+                            <template x-for="(row, index) in units" :key="index">
+                                <fieldset class="hybrid-fieldset"><legend x-text="'قسم ' + number(index + 1)"></legend>
+                                    <label>معرّف القسم <input required pattern="[A-Za-z][A-Za-z0-9_\.\-]{0,79}" dir="ltr" x-model="row.id"></label>
+                                    <label>الخطة المرجعية
+                                        <select required x-model="row.current"><option value="">اختار خطة</option>
+                                            <template x-for="plan in approvedPlans" :key="plan.id">
+                                                <option :value="String(plan.id)" x-text="'خطة #' + plan.id + ' · تشغيل #' + plan.run_id"></option>
+                                            </template>
+                                        </select>
+                                    </label>
+                                    <fieldset class="hybrid-fieldset"><legend>بدائل إضافية</legend>
+                                        <template x-for="plan in approvedPlans" :key="plan.id">
+                                            <label><input type="checkbox" x-model="row.plans" :value="String(plan.id)"> <bdi x-text="'خطة #' + plan.id"></bdi></label>
+                                        </template>
+                                    </fieldset>
+                                    <button type="button" class="button chip" x-show="units.length > 2" @click="units.splice(index, 1)">احذف القسم من المقارنة</button>
+                                </fieldset>
+                            </template>
+                            <button type="button" class="button chip" :disabled="units.length >= 12" @click="addUnit()">أضف قسم</button>
+                            <template x-for="(row, index) in limits" :key="index">
+                                <fieldset class="hybrid-fieldset"><legend x-text="'حد المورد ' + number(index + 1)"></legend>
+                                    <label>المورد <select x-model="row.kind"><option value="credit">الائتمان (ريال)</option><option value="storage">التخزين (حجم)</option></select></label>
+                                    <label>اليوم <input type="number" min="0" max="99" required x-model="row.day"></label>
+                                    <label>الحد <input type="number" min="0" step="any" required x-model="row.amount"></label>
+                                    <button type="button" class="button chip" x-show="limits.length > 1" @click="limits.splice(index, 1)">احذف الحد من المقارنة</button>
+                                </fieldset>
+                            </template>
+                            <div class="actions">
+                                <button type="button" class="button chip" :disabled="limits.length >= 12" @click="addLimit()">أضف حد مورد</button>
+                                <button class="button secondary" :disabled="!!busy" x-text="busy === 'allocation' ? 'بنحسب المفاضلة…' : 'احسب جبهة التخصيص'"></button>
+                            </div>
+                        </form>
+                        <template x-if="allocation">
+                            <div class="stack">
+                                <p>بداية الأفق <bdi x-text="allocation.period_origin"></bdi> لمدة <bdi x-text="number(allocation.horizon_days)"></bdi> يوم ·
+                                    فُحصت <bdi x-text="number(allocation.checked_combinations)"></bdi> من <bdi x-text="number(allocation.total_combinations)"></bdi> حزمة.
+                                    <span x-show="allocation.status === 'PARTIAL'">البحث وقف قبل فحص كل الحزم.</span>
+                                </p>
+                                <template x-if="allocation.frontier.length">
+                                    <div class="hybrid-plot"><canvas role="img" data-testid="allocation-pareto-chart"
+                                        aria-label="تكلفة الحزم مقابل فاقد الخدمة بوزن متساوٍ للأقسام" x-hybrid-chart:pareto="allocation.frontier"></canvas></div>
+                                </template>
+                                <p class="now-empty" x-show="!allocation.frontier.length">مفيش حزم عدّت حدود الموارد بين الحزم اللي اتفحصت.</p>
+                                <template x-for="point in allocation.frontier" :key="paretoPointLabel(point)">
+                                    <div class="hybrid-point">
+                                        <h4 x-text="paretoPointLabel(point)"></h4>
+                                        <p>التكلفة <bdi x-text="number(point.objectives.cost_sar)"></bdi> ريال · فاقد الخدمة
+                                            <bdi x-text="number(point.objectives.service_loss_pct) + '%'"></bdi> · أقصى سحب
+                                            <bdi x-text="number(point.objectives.peak_credit_sar)"></bdi> ريال</p>
+                                        <template x-for="[department, delta] in Object.entries(point.department_deltas)" :key="department">
+                                            <p><bdi x-text="department"></bdi> · فرق التكلفة <bdi x-text="signed(delta.cost_sar)"></bdi> ريال
+                                               · فرق التسليم في الموعد <bdi x-text="signed(delta.on_time_service_pp)"></bdi> نقطة مئوية</p>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </details>
+                </div>
                 <div class="stack">
                     <div class="card scenario-scope-panel">
                         <label class="enterprise-select">النموذج والإصدار

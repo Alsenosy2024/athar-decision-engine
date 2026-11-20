@@ -5,9 +5,12 @@ const eligibilityReasons = {
     solver_no_solution: 'السولفر ما لاقاش حل في المهلة. المتاح خطة إرشادية للمراجعة',
     invalid_schedule: 'جدول الخطة ما عداش التحقق',
     mandatory_violation: 'فيه تجاوز لقيد إلزامي',
+    sector_arms_unverified: 'خطط القطاعات محتاجة تحقق',
+    model_version_changed: 'إصدار النموذج اتغيّر والقرار محتاج حساب جديد',
 };
 
-const eligibilityLabel = verdict => verdict?.eligible ? 'مؤهلة للاعتماد' : 'غير مؤهلة للاعتماد';
+const eligibilityLabel = verdict => verdict == null ? 'الأهلية غير مسجلة'
+    : verdict.eligible ? 'مؤهلة للاعتماد' : 'غير مؤهلة للاعتماد';
 const eligibilityText = verdict => verdict?.reasons.map(key => eligibilityReasons[key]).join(' · ') || '';
 
 const searchStatusLabel = status => ({

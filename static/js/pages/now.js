@@ -91,7 +91,7 @@ document.addEventListener('alpine:init', () => {
         return {
             snapshot: null, preview: {departments: []}, mapReady: false, busy: false, error: '',
             forecastKey: '', markup: '', decisionMarkup: '', selected: null,
-            number, signed, percent, animateValue,
+            number, signed, percent, animateValue, eligibilityLabel, eligibilityText,
             unit(value) { return mapUnits[value] || value; },
             statusLabel(status) {
                 return {approved: 'معتمد', pending: 'مستني', rejected: 'مرفوض', infeasible: 'غير قابل للتنفيذ'}[status] || status;

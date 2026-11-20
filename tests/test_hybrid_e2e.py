@@ -25,6 +25,17 @@ def test_hybrid_decision_lifecycle(http_client):
     assert saved['decision_contract'] == contract and saved['risk_assessment'] == risk
     assert contract['forecast_id'] == forecast['forecast_id']
     assert contract['approval_policy'] == 'shadow_only'
+    ui_path = '/api/ui/companies/2/hybrid-run'
+    view = payload(client.get(ui_path))
+    assert view['id'] == rid
+    assert view['contract']['input_fingerprint'] == contract['input_fingerprint']
+    assert view['risk']['frontier'] == risk['frontier']
+    assert view['risk']['candidates'] == [
+        {'id': row['id'], 'p50_cost_sar': row['p50_cost_sar'],
+         'cvar_cost_sar': row['assessment']['cvar']['cost_sar'], 'eligible': row['assessment']['eligible']}
+        for row in risk['candidates']
+    ]
+    assert payload(client.get('/api/ui/companies/1/hybrid-run')) is None
     for row in forecast['series']:
         for band in ('p10', 'p50', 'p90'):
             frozen = contract['scenarios'][band][row['key']]

@@ -1,8 +1,4 @@
 document.addEventListener('alpine:init', () => {
-    const labels = {
-        central: 'الطلب المركزي', low_demand: 'طلب تقديري أقل', high_demand: 'طلب تقديري أعلى',
-        service: 'أولوية الخدمة', liquidity: 'أولوية السيولة',
-    };
     const rules = { physical: 'قيد تشغيل', credit: 'حد الائتمان', service: 'حد الخدمة' };
     const statuses = {
         OPTIMAL: 'الأمثل', FEASIBLE: 'حل ممكن', UNKNOWN: 'المهلة انتهت', INFEASIBLE: 'مفيش حل ممكن',
@@ -15,7 +11,7 @@ document.addEventListener('alpine:init', () => {
         result: null, activeCandidate: null, rolling: true,
     }), {
         load() {},
-        label: id => labels[id] ?? id ?? '—',
+        label: candidateLabel,
         rule: id => rules[id],
         status: id => statuses[id] ?? id,
         stageStatus: id => stageStatuses[id] ?? id,

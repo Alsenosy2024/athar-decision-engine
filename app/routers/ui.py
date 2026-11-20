@@ -6,6 +6,7 @@ from math import isfinite
 from fastapi import APIRouter, Depends, Response
 
 from app.db import request_conn
+from app.decision_loop.approval_gate import eligibility_for_run
 from app.enterprise import store
 from app.enterprise.schema import Series
 from app.intelligence.reviews import observed_history
@@ -210,7 +211,8 @@ def decision_cards(connection, cid, template, models):
                               confidence=forecast.get('confidence'), focus=assumptions + ([spec['node_id']] if spec else []),
                               created=row['created_at'], href='#/prescriptive',
                               model_id=model['id'], version=row['version'], note=row['comment'],
-                              source=f"{model['name']} · إصدار {row['version']}"))
+                              source=f"{model['name']} · إصدار {row['version']}",
+                              eligibility=enterprise_eligibility(forecast, row['version'] == model['version'])))
     for row in connection.execute(
         '''SELECT p.*, r.result_json,
                   (SELECT c.scenario_json FROM chat_messages c
@@ -232,7 +234,8 @@ def decision_cards(connection, cid, template, models):
                           value=value * scale if value is not None else None,
                           focus=['operations' if template == 'production' else 'projects'], created=row['created_at'],
                           note=row['comment'] or run.get('explanation_ar'), href='#/approvals',
-                          source=f"تشغيل #{row['run_id']}"))
+                          source=f"تشغيل #{row['run_id']}", eligibility=public_eligibility(
+                              eligibility_for_run(connection, cid, row['run_id'], row['variant']))))
     for row in connection.execute(
         """SELECT id, result_json, created_at FROM runs
            WHERE company_id = ? AND kind IN ('optimize', 'whatif') AND status = 'INFEASIBLE'
@@ -242,10 +245,61 @@ def decision_cards(connection, cid, template, models):
         cards.append(dict(id=f"infeasible-{row['id']}", name=f"بديل التشغيل {row['id']}", status='infeasible',
                           impact=None, confidence=None, focus=['projects' if template == 'contracting' else 'operations'],
                           created=row['created_at'], note=result.get('explanation_ar'),
-                          href='#/whatif' if 'scenario' in result else '#/optimize', source=f"تشغيل #{row['id']}"))
+                          href='#/whatif' if 'scenario' in result else '#/optimize', source=f"تشغيل #{row['id']}",
+                          eligibility=public_eligibility(eligibility_for_run(
+                              connection, cid, row['id'], 'scenario' if 'scenario' in result else 'optimized'))))
     return sorted(cards, key=lambda row: (
         row['impact'] is not None and isfinite(row['impact']), abs(row['impact'] or 0), row['created'],
     ), reverse=True)[:3]
+
+
+def public_eligibility(verdict):
+    return {key: verdict[key] for key in ('eligible', 'reasons')}
+
+
+def enterprise_eligibility(forecast, current_version):
+    if not current_version:
+        return {'eligible': False, 'reasons': ['model_version_changed']}
+    if 'ineligible_arms' not in forecast:
+        return None
+    blocked = bool(forecast['ineligible_arms'])
+    return {'eligible': not blocked, 'reasons': ['sector_arms_unverified'] if blocked else []}
+
+
+@router.get('/companies/{cid}/hybrid-run')
+def latest_hybrid_run(cid: int, response: Response, connection=Depends(request_conn)):
+    connection.execute('BEGIN')
+    company = get_company(connection, cid)
+    response.headers['Cache-Control'] = 'no-store'
+    row = connection.execute(
+        """SELECT id, dataset_id, model_id, result_json FROM runs
+           WHERE company_id = ? AND dataset_id = ? AND kind = 'optimize'
+             AND json_type(result_json, '$.risk_assessment') = 'object'
+           ORDER BY id DESC LIMIT 1""",
+        (cid, company['active_dataset_id']),
+    ).fetchone()
+    if row is None:
+        return None
+    result = json.loads(row['result_json'])
+    risk = result['risk_assessment']
+    contract = result['decision_contract']
+    return {
+        'id': row['id'], 'dataset_id': row['dataset_id'], 'model_id': row['model_id'],
+        'contract': {key: contract[key] for key in ('forecast_id', 'input_fingerprint', 'horizon', 'approval_policy')},
+        'risk': {
+            'alpha': risk['policy']['alpha'],
+            'start_date': risk['settings']['plan_start_date'],
+            'path_count': risk['scenario_set']['full_count'],
+            'frontier': risk['frontier'],
+            'selected_id': risk['selected_id'],
+            'reference_id': risk['reference_id'],
+            'candidates': [{
+                'id': item['id'], 'p50_cost_sar': item.get('p50_cost_sar'),
+                'cvar_cost_sar': item['assessment']['cvar']['cost_sar'],
+                'eligible': item['assessment']['eligible'],
+            } for item in risk['candidates']],
+        },
+    }
 
 
 @router.get('/companies/{cid}/now')

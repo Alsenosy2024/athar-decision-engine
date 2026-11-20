@@ -17,6 +17,9 @@
                 <div class="now-value"><bdi x-effect="animateValue($el, item.impact, signed)"></bdi>
                     <small x-show="item.impact != null">ريال</small>
                     <small x-show="item.impact == null">الأثر غير متاح</small></div>
+                <span class="now-eligibility" data-testid="decision-eligibility"
+                      :data-eligible="item.eligibility?.eligible ?? 'unknown'"
+                      x-text="eligibilityLabel(item.eligibility)"></span>
                 <div class="now-decision-actions">
                     <small x-text="item.confidence == null ? 'الثقة غير مسجلة' : 'ثقة فهم السؤال ' + percent(item.confidence)"></small>
                     <button class="now-explain" type="button" @click="explain(item, $event.currentTarget)">اشرح</button>
@@ -31,10 +34,12 @@
                     <button type="button" class="now-explain" @click="$refs.explanation.close()">اقفل</button></header>
                 <dl class="now-decision-facts">
                     <div><dt>الحالة</dt><dd x-text="statusLabel(selected.status)"></dd></div>
+                    <div><dt>الأهلية</dt><dd x-text="eligibilityLabel(selected.eligibility)"></dd></div>
                     <div><dt x-text="selected.impact_label || 'الأثر المالي'"></dt>
                         <dd x-text="selected.impact == null ? 'غير متاح' : signed(selected.impact) + ' ريال'"></dd></div>
                     <div><dt x-text="selected.confidence == null ? 'الثقة' : 'ثقة فهم السؤال'"></dt><dd x-text="selected.confidence == null ? 'غير مسجلة' : percent(selected.confidence)"></dd></div>
                 </dl>
+                <p x-show="eligibilityText(selected.eligibility)" x-text="eligibilityText(selected.eligibility)"></p>
                 <p x-show="selected.before != null && selected.value != null">المرجع <bdi x-text="number(selected.before)"></bdi> ريال
                     · المتوقع <bdi x-text="number(selected.value)"></bdi> ريال</p>
                 <p x-show="selected.note" x-text="selected.note"></p>

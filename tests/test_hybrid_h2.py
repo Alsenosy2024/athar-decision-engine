@@ -114,6 +114,10 @@ def test_policy_change_rechecks_draft_but_soft_credit_is_eligible(client):
     second = ok(draft(client, run))
     assert ok(decide(client, first['id']))['status'] == 'approved'
     ok(client.put(endpoint, json={'constraints': {'credit_limit': 'hard'}}))
+    cards = ok(client.get('/api/ui/companies/1/now'))['decisions']
+    card = next(row for row in cards if row['id'] == f"sector-{first['id']}")
+    assert card['status'] == 'approved'
+    assert card['eligibility'] == {'eligible': False, 'reasons': ['mandatory_violation']}
     assert decide(client, second['id']).status_code == 422
     assert ok(decide(client, second['id'], 'rejected'))['status'] == 'rejected'
     assert client.get(f"/api/plans/{first['id']}/export.json").status_code == 422
